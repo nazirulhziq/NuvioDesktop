@@ -1,8 +1,8 @@
 package com.nuvio.app.features.downloads
 
-import com.nuvio.app.core.storage.DesktopStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -10,6 +10,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import java.awt.Desktop
 import java.io.File
 import java.io.FileOutputStream
@@ -19,7 +20,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
-import kotlin.io.path.createDirectories
 
 private val desktopDownloadHttpClient: HttpClient = HttpClient.newBuilder()
     .connectTimeout(Duration.ofSeconds(60))
@@ -27,8 +27,13 @@ private val desktopDownloadHttpClient: HttpClient = HttpClient.newBuilder()
     .build()
 
 internal actual object DownloadsPlatformDownloader {
+    private val transfers = DesktopDownloadTransferRegistry()
+
     private val downloadsDir: File
-        get() = File(DesktopStorage.rootDir.resolve("downloads").also { it.createDirectories() }.toUri())
+        get() = DesktopDownloadLocation.directory().also { it.mkdirs() }
+
+    suspend fun awaitTransfersClosed(fileNames: List<String>) =
+        transfers.awaitClosed(fileNames.map { File(downloadsDir, "$it.part") }.toSet())
 
     actual fun restoreItem(item: DownloadItem): DownloadItem =
         if (item.status == DownloadStatus.Downloading) {
@@ -47,10 +52,9 @@ internal actual object DownloadsPlatformDownloader {
         val job = SupervisorJob()
         val scope = CoroutineScope(job + Dispatchers.IO)
 
-        scope.launch {
-            val destination = File(downloadsDir, request.destinationFileName)
-            val tempFile = File(downloadsDir, "${request.destinationFileName}.part")
-
+        val destination = File(downloadsDir, request.destinationFileName)
+        val tempFile = File(downloadsDir, "${request.destinationFileName}.part")
+        val transfer = scope.launch(start = CoroutineStart.LAZY) {
             // Dropped connections are retried in place (resuming from the .part file) with backoff.
             // The retry budget resets whenever an attempt makes progress, so long downloads survive
             // periodic disconnects and only fail after repeated attempts that receive nothing.
@@ -91,6 +95,8 @@ internal actual object DownloadsPlatformDownloader {
             }
         }
 
+        transfers.register(tempFile, transfer)
+        transfer.start()
         return DesktopDownloadsTaskHandle(job)
     }
 
@@ -102,8 +108,7 @@ internal actual object DownloadsPlatformDownloader {
 
     actual fun removePartialFile(destinationFileName: String): Boolean {
         val tempFile = File(downloadsDir, "$destinationFileName.part")
-        if (!tempFile.exists()) return true
-        return runCatching { tempFile.delete() }.getOrDefault(false)
+        return transfers.removePartialFile(tempFile)
     }
 
     actual fun resolveLocalFileUri(localFileUri: String?, destinationFileName: String): String? {
@@ -173,19 +178,29 @@ internal actual object DownloadsPlatformDownloader {
         var downloadedBytes = startingBytes
         onProgress(downloadedBytes, totalBytes)
 
+        var lastReportedBytes = downloadedBytes
+        var lastProgressAtNs = System.nanoTime()
+
         response.body().use { input ->
             FileOutputStream(tempFile, appendToTemp).use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                val buffer = ByteArray(256 * 1024)
                 while (true) {
                     currentCoroutineContext().ensureActive()
-                    val read = input.read(buffer)
+                    val read = runInterruptible { input.read(buffer) }
                     if (read <= 0) break
                     output.write(buffer, 0, read)
                     downloadedBytes += read.toLong()
-                    onProgress(downloadedBytes, totalBytes)
+                    if (System.nanoTime() - lastProgressAtNs >= 250_000_000L) {
+                        onProgress(downloadedBytes, totalBytes)
+                        lastReportedBytes = downloadedBytes
+                        lastProgressAtNs = System.nanoTime()
+                    }
                 }
                 output.flush()
             }
+        }
+        if (downloadedBytes != lastReportedBytes) {
+            onProgress(downloadedBytes, totalBytes)
         }
 
         // A server that ends the stream early would otherwise leave a truncated file marked as completed.
@@ -212,6 +227,50 @@ internal actual object DownloadsPlatformDownloader {
             builder.header("Range", "bytes=$rangeStart-")
         }
         return desktopDownloadHttpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
+    }
+}
+
+internal class DesktopDownloadTransferRegistry {
+    private class Transfers {
+        val jobs = mutableSetOf<Job>()
+        var removePartialFile = false
+    }
+
+    private val lock = Any()
+    private val active = mutableMapOf<File, Transfers>()
+
+    suspend fun awaitClosed(files: Set<File>) {
+        val jobs = synchronized(lock) { active.filterKeys { it in files }.values.flatMap { it.jobs }.toList() }
+        jobs.forEach { it.cancel() }
+        jobs.forEach { it.join() }
+    }
+
+    fun register(tempFile: File, job: Job) = synchronized(lock) {
+        val transfers = active.getOrPut(tempFile) { Transfers() }
+        transfers.jobs.add(job)
+        job.invokeOnCompletion {
+            synchronized(lock) {
+                transfers.jobs.remove(job)
+                if (transfers.jobs.isEmpty()) {
+                    active.remove(tempFile)
+                    if (transfers.removePartialFile) {
+                        tempFile.delete()
+                    }
+                }
+            }
+        }
+    }
+
+    fun removePartialFile(tempFile: File): Boolean = synchronized(lock) {
+        val transfers = active[tempFile]
+        if (transfers != null) {
+            // Pause only cancels the job. Explicit removal also waits for every writer to close.
+            transfers.removePartialFile = true
+            transfers.jobs.toList().forEach { it.cancel() }
+            true
+        } else {
+            !tempFile.exists() || tempFile.delete()
+        }
     }
 }
 

@@ -7,6 +7,11 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.awt.SwingWindow
 import androidx.compose.ui.configureSwingGlobalsForCompose
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import com.nuvio.app.core.ui.LocalRemotePlatformFocus
+import com.nuvio.app.core.ui.LocalRemoteHiddenPointerIcon
+import com.nuvio.app.core.ui.LocalRemoteCursorHidden
+import com.nuvio.app.core.ui.remoteNavigationPointerIcon
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -22,11 +27,13 @@ import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.deeplink.handleAppUrl
 import com.nuvio.app.core.diagnostics.SentryInitializer
+import com.nuvio.app.core.instance.DesktopSingleInstanceController
+import com.nuvio.app.core.ui.DesktopAppShutdown
 import com.nuvio.app.core.ui.NuvioTheme
 import com.nuvio.app.core.ui.ProvideDesktopWindowInsets
-import com.nuvio.app.core.ui.platformTouchScroll
 import com.nuvio.app.features.discordrpc.DiscordPresenceManager
-import com.nuvio.app.features.p2p.P2pStreamingEngine
+import com.nuvio.app.features.home.components.LocalAuroraRenderer
+import com.nuvio.app.features.home.components.rememberDesktopAuroraRenderer
 import com.nuvio.app.features.plugins.configureDesktopQuickJsLibrary
 import com.nuvio.app.features.player.PlatformPlayerSurface
 import com.nuvio.app.features.player.desktop.DesktopAppFullscreenController
@@ -37,6 +44,7 @@ import com.nuvio.app.features.player.desktop.NativePlayerBridge
 import com.nuvio.app.features.player.desktop.applyNativeDesktopWindowChrome
 import com.nuvio.app.features.player.desktop.configureMacosWindowBeforePeer
 import com.nuvio.app.features.player.desktop.installDesktopAppFullscreenShortcuts
+import com.nuvio.app.features.settings.installDesktopAppScaleShortcuts
 import com.nuvio.app.features.player.desktop.macosTitleBarDoubleClick
 import com.nuvio.app.features.player.desktop.MacosAppMenuBar
 import com.nuvio.app.features.player.desktop.preloadNativePlayerBridgeAsync
@@ -44,6 +52,8 @@ import com.nuvio.app.features.player.desktop.registerDesktopAppFullscreenToggle
 import com.nuvio.app.features.player.desktop.trackMaximizedBoundsForCurrentScreen
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.settings.AppIconRepository
+import com.nuvio.app.features.settings.LocalWindowsMpvConfigRow
+import com.nuvio.app.features.settings.WindowsMpvConfigSettings
 import com.nuvio.app.features.settings.applyDesktopRendererPreference
 import com.nuvio.app.features.settings.transparentPreviewResource
 import java.awt.Desktop
@@ -56,12 +66,33 @@ private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main(args: Array<String>) {
+    if (!DesktopSingleInstanceController.startOrForward(args)) {
+        return
+    }
+
     // On Linux, initialize GTK BEFORE AWT/Compose/Skia to prevent GdkDisplayManager
     // type registration conflict (Skiko partially loads GDK without full GTK init).
     if (System.getProperty("os.name", "").lowercase().contains("linux")) {
         runCatching { NativePlayerBridge.initGtkEarly() }
     }
+    val keyboardNavigationStore = com.nuvio.app.core.storage.DesktopStorage.store("nuvio_keyboard_navigation")
+    com.nuvio.app.features.settings.KeyboardNavigationSettings.initialize(
+        enabled = keyboardNavigationStore.getBoolean("enabled") ?: true,
+        save = { keyboardNavigationStore.putBoolean("enabled", it) },
+    )
+    val randomPickerStore = com.nuvio.app.core.storage.DesktopStorage.store("nuvio_random_picker")
+    com.nuvio.app.features.randompicker.RandomPickerPreferences.load = { profileId ->
+        randomPickerStore.getString(com.nuvio.app.core.storage.ProfileScopedKey.of("filters", profileId))
+    }
+    com.nuvio.app.features.randompicker.RandomPickerPreferences.save = { profileId, value ->
+        randomPickerStore.putString(com.nuvio.app.core.storage.ProfileScopedKey.of("filters", profileId), value)
+    }
     applyDesktopRendererPreference()
+    val navigationFeelStore = com.nuvio.app.core.storage.DesktopStorage.store("nuvio_navigation_feel")
+    com.nuvio.app.core.ui.NavigationMotionSettings.initialize(
+        storedKey = navigationFeelStore.getString("feel"),
+        save = { navigationFeelStore.putString("feel", it) },
+    )
     SentryInitializer.start()
     configureDesktopQuickJsLibrary()
     configureDesktopChrome()
@@ -71,6 +102,8 @@ fun main(args: Array<String>) {
     preloadNativePlayerBridgeAsync()
     // Load cached profile data synchronously so the profile color is available
     // on the very first Compose frame (matching Android's SharedPreferences behavior).
+    com.nuvio.app.features.downloads.DesktopDownloadLocation.install()
+    com.nuvio.app.features.remote.DesktopRemoteServer.install()
     ProfileRepository.loadCachedProfiles()
     AppIconRepository.ensureLoaded()
     AutoSyncPreferencesDesktop.initialize()
@@ -104,16 +137,16 @@ fun main(args: Array<String>) {
         val maxScreenBounds = remember {
             runCatching {
                 java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
-            }.getOrNull()
+            }.getOrNull()?.takeIf { it.width > 200 && it.height > 200 }
         }
         val initialWidth = when {
             isStartingMaximizedOrFullscreen && maxScreenBounds != null -> maxScreenBounds.width.dp
-            savedGeometry != null -> savedGeometry.width.dp
+            savedGeometry != null && savedGeometry.width > 200f -> savedGeometry.width.dp
             else -> 1280.dp
         }
         val initialHeight = when {
             isStartingMaximizedOrFullscreen && maxScreenBounds != null -> maxScreenBounds.height.dp
-            savedGeometry != null -> savedGeometry.height.dp
+            savedGeometry != null && savedGeometry.height > 200f -> savedGeometry.height.dp
             else -> 820.dp
         }
         val windowState = rememberWindowState(
@@ -127,15 +160,12 @@ fun main(args: Array<String>) {
         )
         val fullscreenController = remember { DesktopAppFullscreenController() }
         val closeApplication = {
-            P2pStreamingEngine.shutdown()
-            DiscordPresenceManager.shutdown()
-            SentryInitializer.close()
-            exitApplication()
+            DesktopAppShutdown.requestExit(exitApplication = ::exitApplication)
         }
 
         SwingWindow(
             onCloseRequest = closeApplication,
-            title = if (smokePlayerUrl == null) "Nuvio Desktop Enhanced" else "Nuvio Player Smoke",
+            title = if (smokePlayerUrl == null) "NuvioCodeineXO" else "NuvioCodeineXO Player Smoke",
             state = windowState,
             icon = painterResource(appIconState.selected.transparentPreviewResource),
             init = ::configureMacosWindowBeforePeer,
@@ -149,6 +179,7 @@ fun main(args: Array<String>) {
                 window.rootPane.background = NuvioDesktopNativeBackground
                 window.contentPane.background = NuvioDesktopNativeBackground
                 (window.contentPane as? JComponent)?.isOpaque = true
+                window.dropTarget = com.nuvio.app.features.player.SubtitleImportPlatform.createDropTarget()
             }
             LaunchedEffect(window, appIconState.selected) {
                 val backgroundSuffix = "-transparent"
@@ -161,12 +192,14 @@ fun main(args: Array<String>) {
             }
 
             LaunchedEffect(window) {
+                window.isVisible = true
                 applyNativeDesktopWindowChrome(window)
                 installLinuxExtendedMouseButtons()
-                installWindowsTouchScroll()
                 // Windows fullscreen is emulated natively and isn't reflected by
                 // WindowPlacement, so it must be re-applied once the window peer exists.
                 fullscreenController.applyRestoredFullscreenState(window, windowState, wasFullscreenOnLastExit)
+                window.toFront()
+                window.repaint()
             }
             LaunchedEffect(windowState) {
                 // Covers OS-driven placement changes too (e.g. the native macOS
@@ -201,6 +234,7 @@ fun main(args: Array<String>) {
                     }
             }
             DisposableEffect(window, windowState) {
+                DesktopSingleInstanceController.attachWindow(window, windowState)
                 val unregisterFullscreenToggle = registerDesktopAppFullscreenToggle(
                     handler = { targetWindow ->
                         if (targetWindow == null || targetWindow === window) {
@@ -216,26 +250,41 @@ fun main(args: Array<String>) {
                     },
                 )
                 val uninstallFullscreenShortcuts = installDesktopAppFullscreenShortcuts(window)
+                val uninstallGlobalBackNavigation = installDesktopGlobalBackNavigation(window)
+                val uninstallAppScaleShortcuts = installDesktopAppScaleShortcuts(window)
                 val untrackMaximizedBounds = window.trackMaximizedBoundsForCurrentScreen()
                 onDispose {
+                    DesktopSingleInstanceController.detachWindow()
                     fullscreenController.dispose(window)
                     uninstallFullscreenShortcuts()
+                    uninstallGlobalBackNavigation()
+                    uninstallAppScaleShortcuts()
                     untrackMaximizedBounds()
                     unregisterFullscreenToggle()
                 }
             }
 
             if (smokePlayerUrl == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .platformTouchScroll()
-                        .macosTitleBarDoubleClick(window = window, windowState = windowState),
+                CompositionLocalProvider(
+                    LocalAuroraRenderer provides { background, colors, intensity ->
+                        rememberDesktopAuroraRenderer(window, background, colors, intensity)
+                    },
+                    LocalRemotePlatformFocus provides { requestDesktopComposeFocus(window) },
+                    LocalRemoteHiddenPointerIcon provides desktopNavigationHiddenPointerIcon,
+                    LocalRemoteCursorHidden provides DesktopRemoteCursorController.isHidden,
+                    LocalWindowsMpvConfigRow provides { isTablet, enabled ->
+                        WindowsMpvConfigSettings(isTablet, enabled)
+                    },
                 ) {
-                    ProvideDesktopWindowInsets(
-                        isFullscreen = windowState.placement == WindowPlacement.Fullscreen,
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .remoteNavigationPointerIcon()
+                            .macosTitleBarDoubleClick(window = window, windowState = windowState),
                     ) {
-                        MiddleClickAutoscroll { App() }
+                        ProvideDesktopWindowInsets(isFullscreen = windowState.placement == WindowPlacement.Fullscreen) {
+                            MiddleClickAutoscroll { App() }
+                        }
                     }
                 }
             } else {
@@ -290,8 +339,8 @@ private fun installDesktopOpenUriHandler() {
         desktop.setOpenURIHandler { event ->
             event.uri
                 ?.toString()
-                ?.trim()
-                ?.takeIf(::isDesktopAppUrl)
+                ?.let(DesktopSingleInstanceController::cleanArgument)
+                ?.takeIf(DesktopSingleInstanceController::isDesktopAppUrl)
                 ?.let(::handleAppUrl)
         }
     }
@@ -299,11 +348,10 @@ private fun installDesktopOpenUriHandler() {
 
 private fun handleDesktopLaunchArgs(args: Array<String>) {
     args.asSequence()
-        .map(String::trim)
-        .filter(::isDesktopAppUrl)
+        .map(DesktopSingleInstanceController::cleanArgument)
+        .filter(DesktopSingleInstanceController::isDesktopAppUrl)
         .forEach(::handleAppUrl)
 }
 
 private fun isDesktopAppUrl(value: String): Boolean =
-    value.startsWith("nuvio://", ignoreCase = true) ||
-        value.startsWith("stremio://", ignoreCase = true)
+    DesktopSingleInstanceController.isDesktopAppUrl(value)

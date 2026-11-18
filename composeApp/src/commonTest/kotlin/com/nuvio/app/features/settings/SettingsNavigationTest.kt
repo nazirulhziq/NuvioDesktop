@@ -36,7 +36,7 @@ class SettingsNavigationTest {
         AndroidPlaybackEngine.entries.forEach { engine ->
             val android = visiblePlaybackSections(ios = false, engine = engine, p2pVisible = false)
             val ios = visiblePlaybackSections(ios = true, engine = engine, p2pVisible = false)
-            assertEquals(engine != AndroidPlaybackEngine.Libmpv, PlaybackSection.Buffer in android)
+            assertEquals(com.nuvio.app.isDesktop || engine != AndroidPlaybackEngine.Libmpv, PlaybackSection.Buffer in android)
             assertFalse(PlaybackSection.Buffer in ios)
             assertFalse(PlaybackSection.P2p in android)
             assertFalse(PlaybackSection.P2p in ios)

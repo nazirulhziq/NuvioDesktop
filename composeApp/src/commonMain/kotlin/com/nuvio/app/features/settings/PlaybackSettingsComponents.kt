@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.nuvio.app.core.ui.remoteNavigationTarget
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -125,7 +126,7 @@ internal fun SettingsSliderRow(
             enabled = enabled,
             valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
             steps = calculateSteps(valueRange.first.toFloat(), valueRange.last.toFloat(), step.toFloat()),
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = title },
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = title }.remoteNavigationTarget(adjustable = true),
         )
     }
 }

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
@@ -16,6 +17,7 @@ fun HomePosterCard(
     modifier: Modifier = Modifier,
     useLandscapeBackdropMode: Boolean = false,
     isWatched: Boolean = false,
+    fillMaxWidth: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     showLandscapeOverlay: Boolean = true,
@@ -38,19 +40,21 @@ fun HomePosterCard(
         isWatched = isWatched,
         onClick = onClick,
         onLongClick = onLongClick,
+        modifier = if (fillMaxWidth) modifier.fillMaxWidth() else modifier,
     ) { hoverModifier ->
         NuvioPosterCard(
             title = item.name,
             imageUrl = imageUrl,
-            modifier = modifier.then(hoverModifier),
+            modifier = hoverModifier,
             fallbackImageUrl = fallbackImageUrl,
             basePosterWidthDp = desktopCatalogShelfPosterBaseWidthDp(posterCardStyle.widthDp),
             shape = if (isLandscapeMode) NuvioPosterShape.Landscape else item.posterShape.toNuvioPosterShape(),
-            detailLine = if (isLandscapeMode || posterCardStyle.hideLabelsEnabled) null else item.releaseInfo?.let { formatReleaseDateForDisplay(it) },
+            detailLine = if (isLandscapeMode || posterCardStyle.hideLabelsEnabled || posterCardStyle.hideYearEnabled) null else item.releaseInfo?.let { formatReleaseDateForDisplay(it) },
             showTitleBelow = !posterCardStyle.hideLabelsEnabled,
             bottomLeftLogoUrl = if (isLandscapeMode && showLandscapeOverlay && effectiveLandscapePoster.isNullOrBlank()) item.logo else null,
             bottomLeftText = if (isLandscapeMode && showLandscapeOverlay && effectiveLandscapePoster.isNullOrBlank() && item.logo.isNullOrBlank() && !posterCardStyle.hideLabelsEnabled) item.name else null,
             isWatched = isWatched,
+            fillMaxWidth = fillMaxWidth,
             onClick = onClick,
             onLongClick = onLongClick,
         )

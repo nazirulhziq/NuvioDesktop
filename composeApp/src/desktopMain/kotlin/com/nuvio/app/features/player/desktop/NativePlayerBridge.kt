@@ -27,6 +27,9 @@ internal object NativePlayerBridge {
 
     private val loadFailure: Throwable? = try {
         loadNativeLibrary()
+        if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+            com.nuvio.app.features.player.SvpRuntimeInstaller.prepareForBridge(::configureSvpRuntime)
+        }
         null
     } catch (error: Throwable) {
         log.e(error) { "native player library failed to load" }
@@ -52,6 +55,7 @@ internal object NativePlayerBridge {
     external fun create(
         hostViewPtr: Long,
         sourceUrl: String,
+        audioUrl: String,
         headerLines: Array<String>,
         playWhenReady: Boolean,
         initialPositionMs: Long,
@@ -61,6 +65,26 @@ internal object NativePlayerBridge {
         nvidiaRtxHdrEnabled: Boolean,
         eventSink: NativePlayerEventSink,
     ): Long
+
+    external fun createWindows(
+        hostViewPtr: Long,
+        sourceUrl: String,
+        audioUrl: String,
+        headerLines: Array<String>,
+        playWhenReady: Boolean,
+        initialPositionMs: Long,
+        controlsPageUrl: String,
+        decoderPriority: Int,
+        nvidiaRtxSuperResolutionEnabled: Boolean,
+        options: Array<String>?,
+        eventSink: NativePlayerEventSink,
+    ): Long
+
+    external fun validateWindowsMpvOptions(options: Array<String>): Array<String?>
+    external fun usedDefaultWindowsMpvConfig(handle: Long): Boolean
+    external fun windowsPlaybackStatsJson(handle: Long): String?
+    external fun setWindowsGlslShaders(handle: Long, shaders: Array<String>): Boolean
+    external fun setWindowsAudioNightFilter(handle: Long, filter: String): Boolean
 
     external fun dispose(handle: Long)
     external fun updateControls(handle: Long, controlsJson: String)
@@ -88,6 +112,7 @@ internal object NativePlayerBridge {
     external fun positionMs(handle: Long): Long
     external fun bufferedPositionMs(handle: Long): Long
     external fun isLoading(handle: Long): Boolean
+    external fun isOpeningWindowsSource(handle: Long): Boolean
     external fun isEnded(handle: Long): Boolean
     external fun isPaused(handle: Long): Boolean
     external fun speed(handle: Long): Float
@@ -97,7 +122,32 @@ internal object NativePlayerBridge {
     external fun selectAudioTrack(handle: Long, trackId: Int)
     external fun setAudioLanguages(handle: Long, languages: String)
     external fun selectSubtitleTrack(handle: Long, trackId: Int)
+    external fun selectSecondarySubtitle(handle: Long, trackId: Int, path: String): Boolean
+    external fun setSecondarySubtitleStyle(
+        handle: Long,
+        tags: String,
+        box: String,
+        fontsDir: String,
+        offset: Int,
+        delayMs: Int,
+        useLibass: Boolean,
+    )
+    external fun setGlslShaders(handle: Long, shaders: String)
+    external fun setAudioFilter(handle: Long, filter: String)
+    external fun isSvpAvailable(): Boolean
+    external fun configureSvpRuntime(directory: String): Boolean
+    external fun setSvpFilter(handle: Long, enabled: Boolean, vpyPath: String): Boolean
+    fun setPlaybackBufferPreset(handle: Long, preset: com.nuvio.app.features.player.PlaybackBufferPreset) {
+        if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+            setPlaybackBufferPresetNative(handle, preset.nativeId)
+        }
+    }
+    private external fun setPlaybackBufferPresetNative(handle: Long, presetId: Int)
     external fun addSubtitleUrl(handle: Long, url: String)
+    external fun addAudioUrl(handle: Long, url: String)
+    /** Windows only: replaces a source that has not started playing yet. */
+    external fun reloadStartupSource(handle: Long, url: String): Boolean
+    external fun popLastImportedSubtitle(handle: Long): String?
     external fun clearExternalSubtitles(handle: Long)
     external fun clearExternalSubtitlesAndSelect(handle: Long, trackId: Int)
     external fun applyWindowChrome(
@@ -315,6 +365,7 @@ internal object NativePlayerBridge {
             "controls.css" to readTextResource("/player-ui/controls.css")
                 .replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces())
                 .toByteArray(Charsets.UTF_8),
+            "controls-codeinexo.css" to readResourceBytes("/player-ui/controls-codeinexo.css"),
             "controls.js" to readResourceBytes("/player-ui/controls.js"),
             "party.css" to readResourceBytes("/player-ui/party.css"),
             "party.js" to readResourceBytes("/player-ui/party.js"),

@@ -1,5 +1,14 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.core.ui.LocalSurfaceStyle
+import com.nuvio.app.core.ui.DarkGlassSurfaceColor
+import com.nuvio.app.features.settings.SurfaceStyle
+
+import com.nuvio.app.core.ui.LocalFrostedGlassEnabled
+import com.nuvio.app.core.ui.frostedGlassSecondaryContentColor
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -10,6 +19,8 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,11 +45,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -46,12 +59,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
-import com.nuvio.app.core.ui.nuvioFocusBorder
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.secondaryClickAt
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.navigationGlassFeedback
 import com.nuvio.app.core.ui.SkeletonBlock
-import com.nuvio.app.core.ui.nuvioFocusBorder
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.isDesktop
 
@@ -79,42 +91,73 @@ internal fun StreamCard(
     isCurrent: Boolean = false,
     currentLabel: String? = null,
     outlined: Boolean = false,
+    desktopDragMomentumEnabled: Boolean = false,
 ) {
-    val partyLabel = if (isCurrent) null else LocalStreamHighlight.current(stream)
+    val highlightLabel = if (isCurrent) null else LocalStreamHighlight.current(stream)
+    val partyLabel = highlightLabel
+    val marked = isCurrent || highlightLabel != null
+    val markedLabel = if (isCurrent) currentLabel else highlightLabel
     val cardShape = RoundedCornerShape(12.dp)
+    val resultsGlass = LocalStreamResultsGlass.current
+    val detailColor = frostedGlassSecondaryContentColor(if (resultsGlass) {
+        lerp(MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.onSurface, 0.4f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    })
+    val interactionSource = remember { MutableInteractionSource() }
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val surfaceStyle = LocalSurfaceStyle.current
+    val cardElevation = if (surfaceStyle == SurfaceStyle.DarkGlass) 0.dp else 2.dp
     val badgeImages = stream.badges.filter { it.imageURL.isNotBlank() }
-    val hasBadges = badgeImages.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints.videoSize != null)
+    val streamSize = stream.resolvedVideoSize
+    val hasBadges = badgeImages.isNotEmpty() || (showFileSizeBadges && streamSize != null && streamSize > 0L)
     var cardPositionInRoot by remember { mutableStateOf(Offset.Zero) }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 68.dp)
             .shadow(
-                elevation = 2.dp,
+                elevation = cardElevation,
                 shape = cardShape,
-                ambientColor = Color.Black.copy(alpha = 0.04f),
-                spotColor = Color.Black.copy(alpha = 0.04f),
+                ambientColor = if (surfaceStyle == SurfaceStyle.DarkGlass) Color.Transparent else if (surfaceStyle == SurfaceStyle.Flat) Color.Black.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.04f),
+                spotColor = if (surfaceStyle == SurfaceStyle.DarkGlass) Color.Transparent else if (surfaceStyle == SurfaceStyle.Flat) Color.Black.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.04f),
             )
             .clip(cardShape)
-            .background(
-                if (isCurrent) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            .then(
+                if (resultsGlass) {
+                    Modifier.streamResultsSurface().then(
+                        if (marked) Modifier.background(primaryColor.copy(alpha = 0.12f)) else Modifier,
+                    )
+                } else if (LocalSurfaceStyle.current == SurfaceStyle.DarkGlass) {
+                    Modifier.background(DarkGlassSurfaceColor).then(
+                        if (marked) Modifier.background(primaryColor.copy(alpha = 0.12f)) else Modifier,
+                    )
                 } else {
-                    Color.White.copy(alpha = 0.05f)
+                    Modifier.background(
+                        if (!LocalFrostedGlassEnabled.current) {
+                            val surface = MaterialTheme.nuvio.colors.surfaceCard.copy(alpha = 1f)
+                            if (marked) primaryColor.copy(alpha = 0.12f).compositeOver(surface) else surface
+                        } else if (marked) {
+                            primaryColor.copy(alpha = 0.12f)
+                        } else {
+                            Color.White.copy(alpha = 0.05f)
+                        },
+                    )
                 },
             )
             .then(
-                if (isCurrent || outlined) {
+                if (marked || outlined) {
                     Modifier.border(
                         width = 1.dp,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.52f),
+                        color = primaryColor.copy(alpha = 0.52f),
                         shape = cardShape,
                     )
+                } else if (resultsGlass) {
+                    Modifier.streamResultsBorder(cardShape)
                 } else {
                     Modifier
                 },
             )
-            .nuvioFocusBorder(cardShape)
             .then(
                 if (isDesktop) {
                     Modifier.onGloballyPositioned { coordinates ->
@@ -124,8 +167,15 @@ internal fun StreamCard(
                     Modifier
                 },
             )
-            .nuvioFocusBorder(cardShape)
-            .combinedClickable(
+            .then(
+                if (resultsGlass) Modifier
+                    .navigationGlassFeedback(interactionSource, cardShape)
+                    .hoverable(interactionSource)
+                else Modifier,
+            )
+            .remoteNavigationTarget(shape = cardShape).combinedClickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.foundation.LocalIndication.current,
                 enabled = enabled,
                 onClick = onClick,
                 onLongClick = if (isDesktop) null else onLongClick,
@@ -143,6 +193,7 @@ internal fun StreamCard(
         Column(modifier = Modifier.weight(1f)) {
             if (hasBadges && badgePlacement == StreamBadgePlacement.TOP) {
                 StreamCardBadgeRow(
+                    desktopDragMomentumEnabled = desktopDragMomentumEnabled,
                     badgeImages = badgeImages,
                     stream = stream,
                     showFileSizeBadges = showFileSizeBadges,
@@ -180,13 +231,14 @@ internal fun StreamCard(
                         fontSize = 12.sp,
                         lineHeight = 18.sp,
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = detailColor,
                 )
             }
 
             if (hasBadges && badgePlacement == StreamBadgePlacement.BOTTOM) {
                 Spacer(modifier = Modifier.height(5.dp))
                 StreamCardBadgeRow(
+                    desktopDragMomentumEnabled = desktopDragMomentumEnabled,
                     badgeImages = badgeImages,
                     stream = stream,
                     showFileSizeBadges = showFileSizeBadges,
@@ -213,7 +265,7 @@ internal fun StreamCard(
                 Text(
                     text = stream.addonName,
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = detailColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -224,12 +276,28 @@ internal fun StreamCard(
 
 @Composable
 internal fun StreamCardSkeleton(modifier: Modifier = Modifier) {
+    val cardShape = RoundedCornerShape(12.dp)
     Column(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 68.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .clip(cardShape)
+            .then(
+                if (LocalStreamResultsGlass.current) {
+                    Modifier.streamResultsSurface()
+                } else if (LocalSurfaceStyle.current == SurfaceStyle.DarkGlass) {
+                    Modifier.background(DarkGlassSurfaceColor)
+                } else {
+                    Modifier.background(if (LocalFrostedGlassEnabled.current) Color.White.copy(alpha = 0.05f) else MaterialTheme.nuvio.colors.surfaceCard.copy(alpha = 1f))
+                },
+            )
+            .then(
+                if (LocalStreamResultsGlass.current) {
+                    Modifier.streamResultsBorder(cardShape)
+                } else {
+                    Modifier
+                },
+            )
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
     ) {
@@ -240,6 +308,7 @@ internal fun StreamCardSkeleton(modifier: Modifier = Modifier) {
 
 @Composable
 private fun StreamCardBadgeRow(
+    desktopDragMomentumEnabled: Boolean,
     badgeImages: List<StreamBadge>,
     stream: StreamItem,
     showFileSizeBadges: Boolean,
@@ -249,7 +318,7 @@ private fun StreamCardBadgeRow(
 
     Row(
         modifier = modifier
-            .nuvioDesktopDragScroll(scrollState)
+            .nuvioDesktopDragScroll(scrollState, momentumEnabled = desktopDragMomentumEnabled)
             .horizontalScroll(scrollState),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -257,7 +326,7 @@ private fun StreamCardBadgeRow(
         badgeImages.forEach { badge ->
             StreamBadgeImage(badge = badge)
         }
-        if (showFileSizeBadges) {
+        if (showFileSizeBadges && (stream.resolvedVideoSize ?: 0L) > 0L) {
             StreamFileSizeBadge(stream = stream)
         }
     }

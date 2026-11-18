@@ -49,9 +49,13 @@ data class PlayerLaunch(
     val initialPositionMs: Long = 0L,
     val initialProgressFraction: Float? = null,
     val contentLanguage: String? = null,
+    val streamLaunchId: Long? = null,
+    val mediaContentType: MediaContentType = MediaContentType.UNKNOWN,
     val subtitleExtras: SubtitleRequestExtras? = null,
     val sourceFilename: String? = null,
     val stream: com.nuvio.app.features.streams.StreamItem? = null,
+    val classificationHint: MediaClassificationHint? = null,
+    val playbackOrigin: String = "player",
     /** The source was taken from the reuse-last-link cache, not picked fresh from add-ons. */
     val sourceFromLinkCache: Boolean = false,
     /** The source was picked by auto source selection (or reused from the link cache). */
@@ -307,10 +311,38 @@ data class PlayerPlaybackSnapshot(
     val playbackSpeed: Float = 1f,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
+    val downloadSpeedBytes: Long = 0L,
+    val downloadSpeedAvailable: Boolean = false,
+    // Explicit pause state, independent of transient loading during seeks.
+    val isPaused: Boolean = !isPlaying,
 )
+
+internal fun PlayerPlaybackSnapshot.isPlayingForPresence(temporarySeekPause: Boolean = false): Boolean =
+    !isEnded && (!isPaused || temporarySeekPause)
 
 data class PlayerNowPlayingInfo(
     val title: String,
     val subtitle: String? = null,
     val artworkUrl: String? = null,
 )
+
+data class PlayerPlaybackStats(
+    val videoCodec: String = "",
+    val videoDecoder: String = "",
+    val videoResolution: String = "",
+    val videoColor: String = "",
+    val containerFps: Double = 0.0,
+    val outputFps: Double = 0.0,
+    val displayFps: Double = 0.0,
+    val videoBitrateKbps: Long = 0L,
+    val droppedFrames: Long = 0L,
+    val voDroppedFrames: Long = 0L,
+    val audioCodec: String = "",
+    val audioChannels: String = "",
+    val audioSampleRateHz: Long = 0L,
+    val audioBitrateKbps: Long = 0L,
+    val cacheDurationSec: Double = 0.0,
+    val cacheUsedBytes: Long = 0L,
+    val cacheSpeedBytes: Long = 0L,
+)
+

@@ -1,9 +1,6 @@
 package com.nuvio.app.features.home.components
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -21,6 +18,7 @@ import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
+import com.nuvio.app.core.ui.LocalPosterGlowImageState
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -39,15 +37,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import org.jetbrains.skia.Bitmap
-import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.Codec
 import org.jetbrains.skia.Data
-import org.jetbrains.skia.Image
 import org.jetbrains.skia.ImageInfo
-import org.jetbrains.skia.Rect
-import org.jetbrains.skia.SamplingMode
-
-private const val MAX_FRAME_DIMENSION = 512
 
 // How many decoded gif bytes we're willing to keep on disk between app runs.
 private const val MAX_DISK_CACHE_FILES = 200
@@ -63,8 +55,8 @@ private val desktopGifHttpClient by lazy {
 
 private val downloadSemaphore = Semaphore(4)
 
-// Disk-persisted cache of raw gif bytes, so a gif that was ever hovered doesn't need to hit
-// the network again on the next app launch - only the very first hover ever pays network cost.
+// Disk-persisted cache of raw gif bytes, so a gif that was ever shown doesn't need to hit
+// the network again on the next app launch - only the very first display ever pays network cost.
 private val gifDiskCacheDir: Path by lazy {
     DesktopStorage.cacheDir.resolve("gif-cache").also {
         runCatching { Files.createDirectories(it) }
@@ -121,9 +113,6 @@ private class GifCodecHolder(
     val frameDelaysMs: List<Long>,
     val width: Int,
     val height: Int,
-    val targetWidth: Int,
-    val targetHeight: Int,
-    val needsScale: Boolean,
 )
 
 // LRU Cache holding raw GIF Codecs (max 15 items in memory, tiny compressed bytes ~10-20MB total)
@@ -193,19 +182,11 @@ private suspend fun decodeGifCodec(url: String): GifCodecHolder? {
         val h = codec.height
         if (w <= 0 || h <= 0) return null
 
-        val scale = if (w > MAX_FRAME_DIMENSION || h > MAX_FRAME_DIMENSION) {
-            minOf(MAX_FRAME_DIMENSION.toFloat() / w, MAX_FRAME_DIMENSION.toFloat() / h)
-        } else 1f
-
-        val tw = (w * scale).toInt().coerceAtLeast(1)
-        val th = (h * scale).toInt().coerceAtLeast(1)
-        val needsScale = tw != w || th != h
-
         val delays = List(count) { i ->
             val duration = codec.getFrameInfo(i).duration
             if (duration > 0) duration.toLong() else 100L
         }
-        GifCodecHolder(codec, delays, w, h, tw, th, needsScale)
+        GifCodecHolder(codec, delays, w, h)
     } catch (_: Exception) {
         null
     }
@@ -220,96 +201,47 @@ internal actual fun CollectionCardRemoteImage(
     contentScale: ContentScale,
     animateIfPossible: Boolean,
 ) {
-    val hoverInteractionSource = remember { MutableInteractionSource() }
-    val isHovered by hoverInteractionSource.collectIsHoveredAsState()
-
-    val shouldAnimate = animateIfPossible && (isHovered || staticImageUrl.isNullOrBlank())
-
+    val glow = LocalPosterGlowImageState.current
+    val shouldAnimate = animateIfPossible
     var composeBitmap by remember(imageUrl) { mutableStateOf<ImageBitmap?>(null) }
-
-    // Prefetch as soon as the card becomes visible (not on hover) so the codec is already
-    // downloaded/decoded and cached by the time the user actually hovers - hover then reads
-    // straight from gifCodecCache with zero network/decode delay.
-    if (animateIfPossible) {
-        LaunchedEffect(imageUrl) {
-            if (synchronized(gifCodecCache) { !gifCodecCache.containsKey(imageUrl) }) {
-                loadDesktopGifCodec(imageUrl)
-            }
-        }
-    }
+    var frameIndex by remember(imageUrl) { mutableStateOf(0) }
 
     if (shouldAnimate) {
         var codecHolder by remember(imageUrl) {
             mutableStateOf(synchronized(gifCodecCache) { gifCodecCache[imageUrl] })
         }
-
         LaunchedEffect(imageUrl) {
-            if (codecHolder == null && synchronized(gifCodecCache) { !gifCodecCache.containsKey(imageUrl) }) {
-                codecHolder = loadDesktopGifCodec(imageUrl)
-            }
+            if (codecHolder == null) codecHolder = loadDesktopGifCodec(imageUrl)
         }
 
         val currentHolder = codecHolder
         if (currentHolder != null && currentHolder.frameDelaysMs.isNotEmpty()) {
-            var frameIndex by remember(imageUrl) { mutableStateOf(0) }
 
-            // Allocate ONLY ONE single reusable Skia Bitmap for this card while hovered
+            // Allocate ONLY ONE single reusable Skia Bitmap for this card while animating
             val singleBitmap = remember(imageUrl, currentHolder) {
                 try {
                     Bitmap().apply {
-                        allocPixels(ImageInfo.makeN32Premul(currentHolder.targetWidth, currentHolder.targetHeight))
+                        allocPixels(ImageInfo.makeN32Premul(currentHolder.width, currentHolder.height))
                     }
                 } catch (_: Exception) {
                     null
                 }
             }
 
-            // Full-res buffer if downscaling is required
-            val fullBitmap = remember(imageUrl, currentHolder) {
-                if (currentHolder.needsScale) {
-                    try {
-                        Bitmap().apply {
-                            allocPixels(ImageInfo.makeN32Premul(currentHolder.width, currentHolder.height))
-                        }
-                    } catch (_: Exception) {
-                        null
-                    }
-                } else null
-            }
-
-            DisposableEffect(singleBitmap, fullBitmap) {
+            DisposableEffect(singleBitmap) {
                 onDispose {
+                    composeBitmap = null
                     try {
                         singleBitmap?.close()
-                    } catch (_: Exception) {}
-                    try {
-                        fullBitmap?.close()
                     } catch (_: Exception) {}
                 }
             }
 
             if (singleBitmap != null) {
-                LaunchedEffect(imageUrl, currentHolder, singleBitmap, fullBitmap) {
+                LaunchedEffect(imageUrl, currentHolder, singleBitmap) {
                     while (true) {
                         try {
-                            if (currentHolder.needsScale && fullBitmap != null) {
-                                currentHolder.codec.readPixels(fullBitmap, frameIndex)
-                                val skiaImg = Image.makeFromBitmap(fullBitmap)
-                                try {
-                                    Canvas(singleBitmap).drawImageRect(
-                                        skiaImg,
-                                        Rect.makeWH(currentHolder.width.toFloat(), currentHolder.height.toFloat()),
-                                        Rect.makeWH(currentHolder.targetWidth.toFloat(), currentHolder.targetHeight.toFloat()),
-                                        SamplingMode.LINEAR,
-                                        null,
-                                        true,
-                                    )
-                                } finally {
-                                    skiaImg.close()
-                                }
-                            } else {
-                                currentHolder.codec.readPixels(singleBitmap, frameIndex)
-                            }
+                            currentHolder.codec.readPixels(singleBitmap, frameIndex)
                             composeBitmap = singleBitmap.asComposeImageBitmap()
                         } catch (_: Exception) {}
 
@@ -320,16 +252,10 @@ internal actual fun CollectionCardRemoteImage(
                 }
             }
         }
-    } else {
-        composeBitmap = null
     }
 
     val context = LocalPlatformContext.current
-    val displayImageUrl = if (animateIfPossible) {
-        staticImageUrl?.takeIf { it.isNotBlank() } ?: imageUrl
-    } else {
-        imageUrl
-    }
+    val displayImageUrl = staticImageUrl?.takeIf { it.isNotBlank() } ?: imageUrl
     val request = remember(context, displayImageUrl) {
         ImageRequest.Builder(context)
             .data(displayImageUrl)
@@ -338,7 +264,7 @@ internal actual fun CollectionCardRemoteImage(
             .build()
     }
 
-    Box(modifier = modifier.hoverable(hoverInteractionSource)) {
+    Box(modifier = modifier) {
         // Stacked Base Layer: uses NuvioAsyncImage with desktop high-quality anti-aliased scaling
         AsyncImage(
             model = request,
@@ -346,9 +272,10 @@ internal actual fun CollectionCardRemoteImage(
             modifier = Modifier.matchParentSize(),
             contentScale = contentScale,
             filterQuality = FilterQuality.High,
+            onSuccess = { result -> glow?.painter = result.painter },
         )
 
-        val animatedFrame = composeBitmap
+        val animatedFrame = composeBitmap.takeIf { shouldAnimate }
         if (animatedFrame != null) {
             Image(
                 bitmap = animatedFrame,

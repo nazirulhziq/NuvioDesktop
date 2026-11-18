@@ -277,8 +277,6 @@ class LibraryDisplaySettingsTest {
         val state = LibraryDisplaySettingsUiState(
             layoutMode = LibraryLayoutMode.VERTICAL,
             sortOption = LibrarySortOption.TITLE_DESC,
-            selectedSectionKey = "personal:1",
-            selectedType = "series",
         )
 
         assertEquals(state, decodeLibraryDisplaySettings(encodeLibraryDisplaySettings(state)))

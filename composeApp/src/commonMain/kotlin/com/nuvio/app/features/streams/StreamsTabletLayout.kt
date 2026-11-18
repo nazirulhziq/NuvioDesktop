@@ -1,5 +1,13 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.core.ui.LocalSurfaceStyle
+import com.nuvio.app.core.ui.DarkGlassSurfaceColor
+import com.nuvio.app.core.ui.DarkGlassPanelContent
+import com.nuvio.app.features.settings.SurfaceStyle
+
+import com.nuvio.app.core.ui.LocalFrostedGlassEnabled
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
+import com.nuvio.app.core.ui.nuvio
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.animateColorAsState
@@ -54,6 +62,11 @@ import com.nuvio.app.core.ui.StreamResultsWideArtworkAspectRatio
 import com.nuvio.app.core.ui.expandingWideArtworkWidthDp
 import com.nuvio.app.core.ui.dominantBackdropBlendColor
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.FrostedGlassTokens
+import com.nuvio.app.core.ui.frostedGlassShadow
+import com.nuvio.app.core.ui.frostedGlassBorder
+import com.nuvio.app.core.ui.navigationGlassSource
+import com.nuvio.app.core.ui.navigationGlass
 import com.kmpalette.extensions.painter.rememberPainterDominantColorState
 import androidx.compose.ui.platform.LocalLayoutDirection
 import com.nuvio.app.core.ui.platformPhysicalTopInset
@@ -62,7 +75,10 @@ import com.nuvio.app.core.ui.LocalOnBackdrop
 import com.nuvio.app.core.ui.LocalVerticalBarPadding
 import com.nuvio.app.isIos
 import com.nuvio.app.isDesktop
+import com.nuvio.app.features.details.components.DetailBackdropImage
 import dev.chrisbanes.haze.HazeInputScale
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -72,6 +88,8 @@ import com.nuvio.app.core.i18n.localizedEpisodeTitle
 
 @Composable
 internal fun TabletStreamsLayout(
+    metadataInfoContent: (@Composable () -> Unit)? = null,
+    description: String? = null,
     isEpisode: Boolean,
     title: String,
     logo: String?,
@@ -86,15 +104,19 @@ internal fun TabletStreamsLayout(
     appendInstantServiceToDefaultName: Boolean,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
+    resumeControls: @Composable (Modifier) -> Unit,
     dominantColorEnabled: Boolean,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
     onStreamLongPress: (StreamItem) -> Unit,
     onStreamSecondaryClick: (StreamItem, Offset) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
+    carriedBackdrop: Painter? = null,
 ) {
     if (!isDesktop) {
         LegacyTabletStreamsLayout(
+            metadataInfoContent = metadataInfoContent,
+            description = description,
             isEpisode = isEpisode,
             title = title,
             logo = logo,
@@ -109,6 +131,7 @@ internal fun TabletStreamsLayout(
             appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
             resumePositionMs = resumePositionMs,
             resumeProgressFraction = resumeProgressFraction,
+            resumeControls = resumeControls,
             onStreamSelected = onStreamSelected,
             onStreamLongPress = onStreamLongPress,
             onStreamSecondaryClick = onStreamSecondaryClick,
@@ -118,13 +141,140 @@ internal fun TabletStreamsLayout(
         return
     }
 
-    val hazeState = rememberHazeState()
-    val opacity = com.nuvio.app.core.ui.NuvioTokens.Opacity
-    val tabletBackdrop = remember(background, poster) {
-        background ?: poster
+    val resultsNavigation = remember { StreamResultsNavigation() }
+    val resultTabs = listOf<String?>(null) + uiState.groups
+        .filter { it.streams.isNotEmpty() || it.isLoading }
+        .map { it.addonId }
+    LaunchedEffect(uiState.selectedFilter) {
+        if (resultsNavigation.pending?.filter != uiState.selectedFilter) resultsNavigation.pending = null
     }
+    val hazeState = rememberHazeState()
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val aspectRatio = maxWidth.value / maxHeight.value
+        val isWideLayout = aspectRatio >= 2f
+        val baseArtworkWidth = (maxHeight.value * StandardDesktopViewportAspectRatio).dp.coerceAtMost(maxWidth)
+        val resultsWidth = (baseArtworkWidth * 0.6f).coerceAtMost(maxWidth)
+
+        DesktopStreamsBackdrop(
+            backdrop = background ?: poster,
+            carriedArtwork = carriedBackdrop,
+            dominantColorEnabled = dominantColorEnabled,
+            hazeState = hazeState,
+        )
+
+        val sidebarContentInset = LocalDesktopSidebarContentInset.current
+        val infoPanelAreaWidth = (maxWidth - resultsWidth).coerceAtLeast(0.dp)
+        val infoPanelCenterOffset = (sidebarContentInset / 2)
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .width(infoPanelAreaWidth)
+                .fillMaxHeight()
+                .padding(start = sidebarContentInset, end = 24.dp)
+                .padding(vertical = 24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isEpisode && seasonNumber != null && episodeNumber != null) {
+                TabletEpisodeInfoPanel(
+                    modifier = Modifier.navigationGlass(shape = RoundedCornerShape(20.dp), panel = true, hazeState = hazeState),
+                    description = description,
+                    logo = logo,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
+                    showTitle = title,
+                )
+            } else {
+                TabletMovieInfoPanel(
+                    modifier = Modifier.navigationGlass(shape = RoundedCornerShape(20.dp), panel = true, hazeState = hazeState),
+                    description = description,
+                    title = title,
+                    logo = logo,
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .width(if (isWideLayout) resultsWidth else maxWidth * 0.6f)
+                .fillMaxHeight()
+                .padding(
+                    top = 36.dp,
+                    end = 12.dp,
+                    bottom = 36.dp,
+                ),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationGlass(shape = RoundedCornerShape(24.dp), panel = true, hazeState = hazeState),
+            ) {
+                DarkGlassPanelContent {
+                    CompositionLocalProvider(
+                        LocalStreamResultsGlass provides true,
+                        LocalStreamResultsNavigation provides resultsNavigation,
+                    ) {
+                    Column(
+                        modifier = Modifier
+                            .streamResultsNavigation(resultsNavigation, resultTabs, uiState.selectedFilter) {
+                                StreamsRepository.selectFilter(it)
+                            }
+                            .fillMaxSize()
+                            .padding(16.dp),
+                    ) {
+                        resumeControls(Modifier.padding(bottom = 8.dp))
+
+                        metadataInfoContent?.invoke()
+                        ProviderFilterRow(
+                            // Provider controls follow the optional metadata panel.
+                            desktopDragMomentumEnabled = true,
+                            groups = uiState.groups,
+                            selectedFilter = uiState.selectedFilter,
+                            onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
+                            onRefresh = onRefresh,
+                        )
+
+                        ActiveScrapersStatusBlock(
+                            groups = uiState.groups,
+                            modifier = Modifier.padding(bottom = 4.dp),
+                        )
+
+                        StreamList(
+                            uiState = uiState,
+                            debridEnabled = debridEnabled,
+                            appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
+                            onStreamSelected = onStreamSelected,
+                            onStreamLongPress = onStreamLongPress,
+                            onStreamSecondaryClick = onStreamSecondaryClick,
+                            resumePositionMs = resumePositionMs,
+                            resumeProgressFraction = resumeProgressFraction,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+    }
+}
+
+/**
+ * Desktop stream-page artwork. [carriedArtwork] is the persistent hero's already-loaded painter for the same
+ * title; it is drawn immediately and crossfades into [backdrop] once that loads, so there is no blank frame.
+ */
+@Composable
+internal fun DesktopStreamsBackdrop(
+    backdrop: String?,
+    carriedArtwork: Painter?,
+    dominantColorEnabled: Boolean,
+    hazeState: HazeState?,
+    modifier: Modifier = Modifier,
+) {
+    val opacity = com.nuvio.app.core.ui.NuvioTokens.Opacity
     val colorScheme = MaterialTheme.colorScheme
-    var dominantBackdropPainter by remember(tabletBackdrop) { mutableStateOf<Painter?>(null) }
+    var dominantBackdropPainter by remember(backdrop) { mutableStateOf(carriedArtwork) }
     val dominantColorState = rememberPainterDominantColorState(
         defaultColor = colorScheme.background,
         defaultOnColor = colorScheme.onBackground,
@@ -145,16 +295,13 @@ internal fun TabletStreamsLayout(
     )
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val aspectRatio = maxWidth.value / maxHeight.value
-        val isWideLayout = aspectRatio >= 2f
         val useWideArtworkFrame = aspectRatio > StandardDesktopViewportAspectRatio
         val cropWideArtwork = aspectRatio > StreamResultsWideArtworkAspectRatio
-        val baseArtworkWidth = (maxHeight.value * StandardDesktopViewportAspectRatio).dp.coerceAtMost(maxWidth)
         val artworkWidth = expandingWideArtworkWidthDp(
             maxWidth.value,
             maxHeight.value,
             StreamResultsWideArtworkAspectRatio,
         ).dp
-        val resultsWidth = (baseArtworkWidth * 0.6f).coerceAtMost(maxWidth)
         val artworkModifier = if (useWideArtworkFrame) {
             Modifier
                 .align(Alignment.CenterStart)
@@ -167,23 +314,23 @@ internal fun TabletStreamsLayout(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .navigationGlassSource(zIndex = -1f)
                 .background(if (useWideArtworkFrame) wideFadeColor else colorScheme.background)
-                .hazeSource(state = hazeState),
+                .then(
+                    if (hazeState != null && LocalFrostedGlassEnabled.current) {
+                        Modifier.hazeSource(state = hazeState, zIndex = -1f)
+                    } else Modifier,
+                ),
         ) {
-            if (tabletBackdrop != null) {
-                AsyncImage(
-                    model = tabletBackdrop,
+            if (backdrop != null || carriedArtwork != null) {
+                DetailBackdropImage(
+                    model = backdrop,
                     contentDescription = null,
+                    carriedArtwork = carriedArtwork,
                     modifier = artworkModifier,
                     alignment = BiasAlignment(-0.05f, DesktopBackdropVerticalBias),
                     contentScale = if (useWideArtworkFrame && !cropWideArtwork) ContentScale.Fit else ContentScale.Crop,
                     onSuccess = { state -> dominantBackdropPainter = state.painter },
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
                 )
             }
 
@@ -213,96 +360,13 @@ internal fun TabletStreamsLayout(
                     ),
             )
         }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .width(if (isWideLayout) artworkWidth else maxWidth * 0.4f)
-                .fillMaxHeight()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (isEpisode && seasonNumber != null && episodeNumber != null) {
-                TabletEpisodeInfoPanel(
-                    logo = logo,
-                    seasonNumber = seasonNumber,
-                    episodeNumber = episodeNumber,
-                    episodeTitle = episodeTitle,
-                    showTitle = title,
-                )
-            } else {
-                TabletMovieInfoPanel(
-                    title = title,
-                    logo = logo,
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .width(if (isWideLayout) resultsWidth else maxWidth * 0.6f)
-                .fillMaxHeight()
-                .padding(
-                    top = if (isIos) 20.dp else 60.dp,
-                    end = 12.dp,
-                    bottom = 12.dp,
-                ),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(24.dp))
-                    .hazeEffect(state = hazeState) {
-                        inputScale = HazeInputScale.Fixed(0.66f)
-                        blurRadius = 56.dp
-                    }
-                    .background(Color.Black.copy(alpha = 0.36f)),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                ) {
-                    if ((resumePositionMs != null && resumePositionMs > 0L) || (resumeProgressFraction != null && resumeProgressFraction > 0f)) {
-                        ResumeBanner(
-                            positionMs = resumePositionMs,
-                            progressFraction = resumeProgressFraction,
-                            modifier = Modifier.padding(bottom = 8.dp),
-                        )
-                    }
-
-                    ProviderFilterRow(
-                        groups = uiState.groups,
-                        selectedFilter = uiState.selectedFilter,
-                        onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
-                        onRefresh = onRefresh,
-                    )
-
-                    ActiveScrapersStatusBlock(
-                        groups = uiState.groups,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    )
-
-                    StreamList(
-                        uiState = uiState,
-                        debridEnabled = debridEnabled,
-                        appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
-                        onStreamSelected = onStreamSelected,
-                        onStreamLongPress = onStreamLongPress,
-                        onStreamSecondaryClick = onStreamSecondaryClick,
-                        resumePositionMs = resumePositionMs,
-                        resumeProgressFraction = resumeProgressFraction,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
     }
 }
 
 @Composable
 private fun LegacyTabletStreamsLayout(
+    metadataInfoContent: (@Composable () -> Unit)? = null,
+    description: String?,
     isEpisode: Boolean,
     title: String,
     logo: String?,
@@ -317,6 +381,7 @@ private fun LegacyTabletStreamsLayout(
     appendInstantServiceToDefaultName: Boolean,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
+    resumeControls: @Composable (Modifier) -> Unit,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
     onStreamLongPress: (StreamItem) -> Unit,
     onStreamSecondaryClick: (StreamItem, Offset) -> Unit,
@@ -351,7 +416,8 @@ private fun LegacyTabletStreamsLayout(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .hazeSource(state = hazeState),
+                .navigationGlassSource()
+                .then(if (LocalFrostedGlassEnabled.current) Modifier.hazeSource(state = hazeState) else Modifier),
         ) {
             if (tabletBackdrop != null) {
                 AsyncImage(
@@ -402,6 +468,7 @@ private fun LegacyTabletStreamsLayout(
             ) {
                 if (isEpisode && seasonNumber != null && episodeNumber != null) {
                     TabletEpisodeInfoPanel(
+                        description = description,
                         logo = logo,
                         seasonNumber = seasonNumber,
                         episodeNumber = episodeNumber,
@@ -410,6 +477,7 @@ private fun LegacyTabletStreamsLayout(
                     )
                 } else {
                     TabletMovieInfoPanel(
+                        description = description,
                         title = title,
                         logo = logo,
                     )
@@ -430,50 +498,65 @@ private fun LegacyTabletStreamsLayout(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .then(
+                            if (LocalFrostedGlassEnabled.current) {
+                                Modifier.frostedGlassShadow(RoundedCornerShape(24.dp), 12.dp)
+                            } else Modifier,
+                        )
                         .clip(RoundedCornerShape(24.dp))
-                        .hazeEffect(state = hazeState) {
-                            inputScale = HazeInputScale.Fixed(0.66f)
-                            blurRadius = 56.dp
-                        }
-                        .background(Color.Black.copy(alpha = 0.36f)),
+                        .then(if (LocalFrostedGlassEnabled.current) Modifier.frostedGlassBorder(RoundedCornerShape(24.dp)) else Modifier)
+                        .then(
+                            if (LocalFrostedGlassEnabled.current) {
+                                Modifier.hazeEffect(state = hazeState) {
+                                    inputScale = FrostedGlassTokens.PanelInputScale
+                                    blurRadius = FrostedGlassTokens.PanelBlurRadius
+                                    noiseFactor = FrostedGlassTokens.NoiseFactor
+                                    tints = emptyList()
+                                    fallbackTint = HazeTint(FrostedGlassTokens.FallbackColor)
+                                }
+                            } else Modifier,
+                        )
+                        .background(if (LocalSurfaceStyle.current == SurfaceStyle.DarkGlass) DarkGlassSurfaceColor else if (LocalFrostedGlassEnabled.current) (if (hazeState.areas.isNotEmpty()) FrostedGlassTokens.PanelTintColor else FrostedGlassTokens.FallbackColor) else MaterialTheme.nuvio.colors.surfacePopover.copy(alpha = 1f)),
                 ) {
-                    CompositionLocalProvider(LocalOnBackdrop provides true) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
+                    DarkGlassPanelContent {
+                        CompositionLocalProvider(
+                            LocalStreamResultsGlass provides true,
+                            LocalOnBackdrop provides true,
                         ) {
-                            if ((resumePositionMs != null && resumePositionMs > 0L) || (resumeProgressFraction != null && resumeProgressFraction > 0f)) {
-                                ResumeBanner(
-                                    positionMs = resumePositionMs,
-                                    progressFraction = resumeProgressFraction,
-                                    modifier = Modifier.padding(bottom = 8.dp),
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                            ) {
+                                resumeControls(Modifier.padding(bottom = 8.dp))
+
+                                metadataInfoContent?.invoke()
+                                ProviderFilterRow(
+
+                                    desktopDragMomentumEnabled = true,
+                                    groups = uiState.groups,
+                                    selectedFilter = uiState.selectedFilter,
+                                    onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
+                                    onRefresh = onRefresh,
+                                )
+
+                                ActiveScrapersStatusBlock(
+                                    groups = uiState.groups,
+                                    modifier = Modifier.padding(bottom = 4.dp),
+                                )
+
+                                StreamList(
+                                    uiState = uiState,
+                                    debridEnabled = debridEnabled,
+                                    appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
+                                    onStreamSelected = onStreamSelected,
+                                    onStreamLongPress = onStreamLongPress,
+                                    onStreamSecondaryClick = onStreamSecondaryClick,
+                                    resumePositionMs = resumePositionMs,
+                                    resumeProgressFraction = resumeProgressFraction,
+                                    modifier = Modifier.weight(1f),
                                 )
                             }
-
-                            ProviderFilterRow(
-                                groups = uiState.groups,
-                                selectedFilter = uiState.selectedFilter,
-                                onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
-                                onRefresh = onRefresh,
-                            )
-
-                            ActiveScrapersStatusBlock(
-                                groups = uiState.groups,
-                                modifier = Modifier.padding(bottom = 4.dp),
-                            )
-
-                            StreamList(
-                                uiState = uiState,
-                                debridEnabled = debridEnabled,
-                                appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
-                                onStreamSelected = onStreamSelected,
-                                onStreamLongPress = onStreamLongPress,
-                                onStreamSecondaryClick = onStreamSecondaryClick,
-                                resumePositionMs = resumePositionMs,
-                                resumeProgressFraction = resumeProgressFraction,
-                                modifier = Modifier.weight(1f),
-                            )
                         }
                     }
                 }
@@ -484,6 +567,7 @@ private fun LegacyTabletStreamsLayout(
 
 @Composable
 private fun TabletMovieInfoPanel(
+    description: String? = null,
     title: String,
     logo: String?,
     modifier: Modifier = Modifier,
@@ -492,54 +576,60 @@ private fun TabletMovieInfoPanel(
     val logoUrl = logo?.takeIf { it.isNotBlank() }
 
     Column(
-        modifier = modifier.fillMaxWidth(0.8f),
+        modifier = modifier.fillMaxWidth(0.8f)
+            .then(if (isDesktop) Modifier else Modifier.clip(RoundedCornerShape(20.dp)).background(Color.Black.copy(alpha = 0.68f)))
+            .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        if (logoUrl != null && !logoLoadError) {
-            AsyncImage(
-                model = logoUrl,
-                contentDescription = title,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp),
-                contentScale = ContentScale.Fit,
-                onError = { logoLoadError = true },
-            )
-        } else if (title.isNotBlank()) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-0.5).sp,
-                    shadow = Shadow(
-                        color = Color.Black.copy(alpha = 0.8f),
-                        offset = Offset(0f, 2f),
-                        blurRadius = 4f,
+        DarkGlassPanelContent {
+            if (logoUrl != null && !logoLoadError) {
+                AsyncImage(
+                    model = logoUrl,
+                    contentDescription = title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp),
+                    contentScale = ContentScale.Fit,
+                    onError = { logoLoadError = true },
+                )
+            } else if (title.isNotBlank()) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.5).sp,
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.8f),
+                            offset = Offset(0f, 2f),
+                            blurRadius = 4f,
+                        ),
                     ),
-                ),
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-        } else {
-            Text(
-                text = stringResource(Res.string.streams_no_metadata),
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 16.sp,
-                    fontStyle = FontStyle.Italic,
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Text(
+                    text = stringResource(Res.string.streams_no_metadata),
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp,
+                        fontStyle = FontStyle.Italic,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            StreamSynopsis(description)
         }
     }
 }
 
 @Composable
 private fun TabletEpisodeInfoPanel(
+    description: String? = null,
     logo: String?,
     seasonNumber: Int,
     episodeNumber: Int,
@@ -556,58 +646,78 @@ private fun TabletEpisodeInfoPanel(
     )
 
     Column(
-        modifier = modifier.fillMaxWidth(0.8f),
+        modifier = modifier.fillMaxWidth(0.8f)
+            .then(if (isDesktop) Modifier else Modifier.clip(RoundedCornerShape(20.dp)).background(Color.Black.copy(alpha = 0.68f)))
+            .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        if (logoUrl != null && !logoLoadError) {
-            AsyncImage(
-                model = logoUrl,
-                contentDescription = showTitle,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp),
-                contentScale = ContentScale.Fit,
-                onError = { logoLoadError = true },
-            )
-        } else {
+        DarkGlassPanelContent {
+            if (logoUrl != null && !logoLoadError) {
+                AsyncImage(
+                    model = logoUrl,
+                    contentDescription = showTitle,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp),
+                    contentScale = ContentScale.Fit,
+                    onError = { logoLoadError = true },
+                )
+            } else {
+                Text(
+                    text = showTitle,
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.5).sp,
+                        shadow = textShadow,
+                    ),
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = showTitle,
-                style = MaterialTheme.typography.displayMedium.copy(
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-0.5).sp,
+                text = stringResource(
+                    Res.string.streams_episode_title_with_name,
+                    seasonNumber,
+                    episodeNumber,
+                    localizedEpisodeTitle(episodeTitle, episodeNumber)
+                        ?: episodeTitle?.takeIf { it.isNotBlank() }
+                        ?: stringResource(Res.string.streams_episode_fallback_title),
+                ),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
                     shadow = textShadow,
                 ),
-                color = MaterialTheme.colorScheme.onBackground,
+                color = Color.White.copy(alpha = 0.95f),
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            StreamSynopsis(description)
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = stringResource(
-                Res.string.streams_episode_title_with_name,
-                seasonNumber,
-                episodeNumber,
-                localizedEpisodeTitle(episodeTitle, episodeNumber)
-                    ?: episodeTitle?.takeIf { it.isNotBlank() }
-                    ?: stringResource(Res.string.streams_episode_fallback_title),
-            ),
-            style = MaterialTheme.typography.bodyLarge.copy(
-                fontSize = 16.sp,
-                lineHeight = 24.sp,
-                fontWeight = FontWeight.SemiBold,
-                shadow = textShadow,
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.95f),
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
+}
+
+@Composable
+internal fun StreamSynopsis(description: String?) {
+    val synopsis = description?.trim()?.takeIf { it.isNotEmpty() } ?: return
+    Text(
+        text = synopsis,
+        style = MaterialTheme.typography.bodyMedium,
+        color = Color.White.copy(alpha = 0.9f),
+        textAlign = TextAlign.Center,
+        maxLines = 5,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 12.dp),
+    )
 }
 
 @Composable
@@ -646,7 +756,7 @@ private fun ActiveScrapersStatusBlock(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                        .then(if (LocalStreamResultsGlass.current) Modifier.streamResultsSurface().streamResultsBorder(RoundedCornerShape(6.dp)) else Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)))
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
                     Text(

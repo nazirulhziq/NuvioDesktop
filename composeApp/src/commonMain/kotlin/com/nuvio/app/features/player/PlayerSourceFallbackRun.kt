@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player
 
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.isDesktop
 
 /** The sources auto source selection tried before the one that plays, and how many further ones. */
 internal data class PlayerSourceFallbackTried(val keys: Set<String>, val attempts: Int) {
@@ -57,18 +58,13 @@ internal suspend fun <T : Any, F : Any> resolveWithSourceFallback(
     }
 }
 
-/**
- * Starts the fallback over for a source that replaced the playing one in place, such as the next
- * episode. Only a source auto source selection picked falls back, [autoSelection] then holds the
- * sources tried before it, and the count belongs to the episode the sources were tried for.
- */
+/** Starts a new episode retry budget, carrying over the attempts made during source selection. */
 internal fun PlayerScreenRuntime.restartSourceFallback(
     sourceUrl: String,
     autoSelection: PlayerSourceFallbackTried?,
 ) {
-    sourceFallbackJob?.cancel()
-    autoSelectedSourceUrl = sourceUrl.takeIf { autoSelection != null && it.isNotBlank() }
-    sourceFallbackAttempts = autoSelection?.attempts ?: 0
-    sourceFallbackTriedKeys.clear()
-    autoSelection?.let { tried -> sourceFallbackTriedKeys += tried.keys }
+    resetSourceFallback(
+        url = sourceUrl.takeIf { it.isNotBlank() && (isDesktop || autoSelection != null) },
+        tried = autoSelection,
+    )
 }

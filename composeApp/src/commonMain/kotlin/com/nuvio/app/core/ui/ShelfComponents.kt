@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -7,11 +8,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import com.nuvio.app.core.ui.collectIsRemoteHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,36 +23,60 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.stopScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.composed
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.modifier.modifierLocalConsumer
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +86,8 @@ import androidx.compose.ui.zIndex
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.home_view_all
+import nuvio.composeapp.generated.resources.home_scroll_left
+import nuvio.composeapp.generated.resources.home_scroll_right
 import nuvio.composeapp.generated.resources.poster_logo_content_description
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
@@ -70,13 +99,7 @@ enum class NuvioPosterShape {
     Landscape,
 }
 
-enum class NuvioViewAllPillSize {
-    Default,
-    Compact,
-}
-
-/** Stable per-row group key so spatial Up/Down can jump between shelves predictably. */
-private var nextShelfGroupId = 1L
+private val ShelfHeaderControlSize = NuvioTokens.Space.s40
 
 @Composable
 fun <T> NuvioShelfSection(
@@ -86,10 +109,11 @@ fun <T> NuvioShelfSection(
     rowModifier: Modifier = Modifier,
     headerHorizontalPadding: Dp = 0.dp,
     rowContentPadding: PaddingValues = PaddingValues(0.dp),
+    useGutterLayout: Boolean = false,
     itemSpacing: Dp = 10.dp,
     onViewAllClick: (() -> Unit)? = null,
     onTitleClick: (() -> Unit)? = null,
-    viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
+    showRowNavigationControls: Boolean = false,
     key: ((T) -> Any)? = null,
     animatePlacement: Boolean = false,
     state: LazyListState = rememberLazyListState(),
@@ -99,57 +123,305 @@ fun <T> NuvioShelfSection(
     val duplicateSafeEntries = remember(entries, key) {
         key?.let { entries.withDuplicateSafeLazyKeys(it) }
     }
-    val shelfGroupKey = remember { "shelf_${nextShelfGroupId++}" }
+    BindPosterShelf(state)
+    val shelfController = rememberPosterShelfController(
+        state,
+        duplicateSafeEntries?.map { it.lazyKey } ?: entries.mapIndexed { index, entry -> key?.invoke(entry) ?: index },
+        precedingPosterVisible = true,
+    )
 
     ScreenActivityEffect(state) { active ->
         if (!active) state.stopScroll()
     }
-    com.nuvio.app.controller.ProvideControllerRowLazyListState(state) {
-        androidx.compose.runtime.CompositionLocalProvider(
-            com.nuvio.app.controller.LocalControllerGroupKey provides shelfGroupKey,
-        ) {
-            Column(
-                modifier = modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap + NuvioTokens.Space.s2),
+    val density = LocalDensity.current
+    val scrollStepPx = remember(density) { with(density) { 80.dp.toPx() } }
+    val hoverViewport = remember { PosterRowHoverViewport() }
+    val glowEnabled = isDesktop && rememberPosterCardStyleUiState().glowEnabled
+    val glowOutset = if (glowEnabled) PosterGlowOutset else 0.dp
+    val rowHoverInset = maxOf(DesktopPosterRowHoverInset, glowOutset)
+    val horizontalOverflow = if (useGutterLayout) rowHoverInset else glowOutset
+    val rowOverflow = glowOutset
+    val direction = LocalLayoutDirection.current
+    hoverViewport.inset = horizontalOverflow
+
+    val effectiveRowModifier = if (useGutterLayout) {
+        rowModifier
+            .padding(horizontal = headerHorizontalPadding)
+            .nuvioShelfHoverOverdraw(rowOverflow, horizontalOverflow)
+            .onGloballyPositioned {
+                hoverViewport.left = it.positionInRoot().x
+                hoverViewport.width = it.size.width
+            }
+            .nuvioPosterRowGutterClip(horizontalOverflow = maxOf(10.dp, glowOutset))
+            .nuvioPosterRowEdgeFade(state, horizontalInset = rowHoverInset)
+            .nuvioPosterRowMouseWheelScroll(state = state, scrollStepPx = scrollStepPx)
+            .nuvioDesktopDragScroll(state)
+    } else {
+        rowModifier.nuvioShelfHoverOverdraw(rowOverflow, horizontalOverflow)
+            .onGloballyPositioned {
+                hoverViewport.left = it.positionInRoot().x
+                hoverViewport.width = it.size.width
+            }
+            .nuvioPosterRowEdgeFade(state, horizontalInset = horizontalOverflow)
+            .nuvioDesktopDragScroll(state)
+    }
+    val effectiveRowContentPadding = if (useGutterLayout) {
+        PaddingValues(horizontal = rowHoverInset, vertical = rowOverflow)
+    } else {
+        PaddingValues(
+            start = rowContentPadding.calculateStartPadding(direction) + horizontalOverflow,
+            end = rowContentPadding.calculateEndPadding(direction) + horizontalOverflow,
+            top = rowContentPadding.calculateTopPadding() + rowOverflow,
+            bottom = rowContentPadding.calculateBottomPadding() + rowOverflow,
+        )
+    }
+
+    val arrowScroll = rememberSoftArrowScroll(state)
+    val verticalBar = LocalVerticalBarPadding.current
+    BindArrowScrollViewport(
+        arrowScroll,
+        horizontalOverflow + ShelfPosterViewportSafetyInset + verticalBar.calculateStartPadding(direction),
+        horizontalOverflow + ShelfPosterViewportSafetyInset + verticalBar.calculateEndPadding(direction),
+    )
+    val sectionModifier = if (useGutterLayout) {
+        Modifier
+            .fillMaxWidth()
+            .then(modifier)
+            // Measure the wheel region inside caller padding so the sidebar
+            // inset does not shift the left gutter into the consumed center.
+            .nuvioCenterScrollConsumer(headerHorizontalPadding, enabled = true, state = state)
+    } else {
+        modifier.fillMaxWidth()
+    }
+
+    Column(
+        modifier = sectionModifier,
+        verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap + NuvioTokens.Space.s2),
+    ) {
+        if (title.isNotBlank()) {
+            NuvioShelfSectionHeader(
+                title = title,
+                modifier = Modifier.padding(horizontal = headerHorizontalPadding),
+                onViewAllClick = onViewAllClick,
+                onTitleClick = onTitleClick,
+                showRowNavigationControls = showRowNavigationControls,
+                state = state,
+                arrowScroll = arrowScroll,
+            )
+        }
+        PosterShelfScrollOwner(shelfController) {
+            LazyRow(
+                state = state,
+                flingBehavior = rememberNuvioFlingBehavior(),
+                modifier = Modifier.remoteNavigationGroup()
+                    .nuvioHorizontalScrollBleed(LocalVerticalBarPadding.current)
+                    .then(effectiveRowModifier),
+                contentPadding = effectiveRowContentPadding.withVerticalBar(),
+                horizontalArrangement = Arrangement.spacedBy(itemSpacing),
             ) {
-                if (title.isNotBlank()) {
-                    NuvioShelfSectionHeader(
-                        title = title,
-                        modifier = Modifier.padding(horizontal = headerHorizontalPadding),
-                        onViewAllClick = onViewAllClick,
-                        onTitleClick = onTitleClick,
-                        viewAllPillSize = viewAllPillSize,
-                    )
-                }
-                LazyRow(
-                    state = state,
-                    modifier = rowModifier
-                        .nuvioHorizontalScrollBleed(LocalVerticalBarPadding.current)
-                        .nuvioDesktopDragScroll(state),
-                    contentPadding = rowContentPadding.withVerticalBar(),
-                    horizontalArrangement = Arrangement.spacedBy(itemSpacing),
-                ) {
-                    if (duplicateSafeEntries != null) {
-                        itemsIndexed(
-                            items = duplicateSafeEntries,
-                            key = { _, entry -> entry.lazyKey },
-                            contentType = { _, _ -> "poster" },
-                        ) { _, keyedEntry ->
-                            if (animatePlacement) {
-                                Box(modifier = Modifier.animateItem()) { itemContent(keyedEntry.value) }
-                            } else {
-                                itemContent(keyedEntry.value)
+                if (duplicateSafeEntries != null) {
+                    itemsIndexed(
+                        items = duplicateSafeEntries,
+                        key = { _, entry -> entry.lazyKey },
+                        contentType = { _, _ -> "poster" },
+                    ) { index, keyedEntry ->
+                        PosterRowItem(
+                            viewport = if (useGutterLayout) hoverViewport else null,
+                            modifier = if (animatePlacement) Modifier.animateItem(fadeOutSpec = null) else Modifier,
+                        ) {
+                            CompositionLocalProvider(LocalPosterShelfItem provides shelfController?.let { PosterShelfItem(it, keyedEntry.lazyKey, index) }) {
+                                RemotePosterItem(key?.invoke(keyedEntry.value), index) { itemContent(keyedEntry.value) }
                             }
                         }
+                    }
+                } else {
+                    itemsIndexed(
+                        items = entries,
+                        contentType = { _, _ -> "poster" },
+                    ) { index, entry ->
+                        PosterRowItem(
+                            viewport = if (useGutterLayout) hoverViewport else null,
+                            modifier = if (animatePlacement) Modifier.animateItem(fadeOutSpec = null) else Modifier,
+                        ) {
+                            CompositionLocalProvider(LocalPosterShelfItem provides shelfController?.let { PosterShelfItem(it, key?.invoke(entry) ?: index, index) }) {
+                                RemotePosterItem(key?.invoke(entry), index) { itemContent(entry) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal val DesktopPosterRowHoverInset = 16.dp
+private val ShelfPosterViewportSafetyInset = 2.dp
+
+internal class PosterRowHoverViewport {
+    var inset: Dp = DesktopPosterRowHoverInset
+    var left by mutableFloatStateOf(0f)
+    var width by mutableIntStateOf(0)
+}
+
+private class PosterRowItemHover {
+    var scale: () -> Float = { 1f }
+}
+
+private val LocalPosterRowItemHover = staticCompositionLocalOf<PosterRowItemHover?> { null }
+
+@Composable
+internal fun PosterRowItem(
+    viewport: PosterRowHoverViewport?,
+    modifier: Modifier,
+    content: @Composable () -> Unit,
+) {
+    val hover = remember { PosterRowItemHover() }
+    val coordinates = remember { PosterRowHoverViewport() }
+    val glowLayer = remember { PosterGlowLayer() }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsRemoteHoveredAsState()
+    val raised by remember(hovered, hover, glowLayer) {
+        derivedStateOf { hovered || hover.scale() > 1f || glowLayer.shadow != null }
+    }
+    CompositionLocalProvider(LocalPosterRowItemHover provides hover, LocalPosterGlowLayer provides glowLayer) {
+        Box(
+            modifier
+                .zIndex(if (raised) 1f else 0f)
+                .hoverable(interactionSource)
+                .onGloballyPositioned {
+                    origin = it.positionInRoot()
+                    coordinates.left = origin.x
+                },
+        ) {
+            PosterGlowBackdrop(glowLayer) { origin }
+            Box(Modifier.drawWithContent {
+                    if (viewport == null || viewport.width == 0) {
+                        drawContent()
                     } else {
-                        itemsIndexed(
-                            items = entries,
-                            contentType = { _, _ -> "poster" },
-                        ) { _, entry ->
-                            if (animatePlacement) {
-                                Box(modifier = Modifier.animateItem()) { itemContent(entry) }
-                            } else {
-                                itemContent(entry)
+                        val rowLeft = viewport.left - coordinates.left
+                        val inset = viewport.inset.toPx()
+                        val expansion = size.width * (hover.scale() - 1f).coerceAtLeast(0f) / 2f
+                        // Only the existing hover scale can enter the gutter.
+                        // The glow is drawn separately, outside this content clip.
+                        clipRect(
+                            left = rowLeft + inset - expansion,
+                            right = rowLeft + viewport.width - inset + expansion,
+                            top = -48.dp.toPx(),
+                            bottom = size.height + 48.dp.toPx(),
+                        ) { this@drawWithContent.drawContent() }
+                    }
+            }) { content() }
+        }
+    }
+}
+
+internal fun Modifier.nuvioPosterRowGutterClip(
+    verticalOverflow: Dp = 48.dp,
+    horizontalOverflow: Dp = 10.dp,
+): Modifier = drawWithContent {
+    val extraY = verticalOverflow.toPx()
+    val extraX = horizontalOverflow.toPx()
+    clipRect(
+        left = -extraX,
+        top = -extraY,
+        right = size.width + extraX,
+        bottom = size.height + extraY,
+    ) {
+        this@drawWithContent.drawContent()
+    }
+}
+
+/** Reports rail-owned wheel events to an optional enclosing page switcher. */
+internal class HorizontalWheelEvents {
+    var handled = false
+}
+
+internal val LocalHorizontalWheelEvents = staticCompositionLocalOf<HorizontalWheelEvents?> { null }
+
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun Modifier.nuvioPosterRowMouseWheelScroll(
+    state: LazyListState,
+    scrollStepPx: Float,
+    enabled: Boolean = true,
+): Modifier {
+    if (!isDesktop || !enabled) return this
+
+    return composed {
+        val horizontalEvents = LocalHorizontalWheelEvents.current
+        val scope = rememberCoroutineScope()
+        val wheel = remember(state, scope) { SoftWheelScroll(state, scope) }
+        val route = remember { SoftWheelRoute() }
+        val active = LocalScreenActive.current
+        DisposableEffect(wheel, active) {
+            if (!active) wheel.cancel()
+            onDispose { wheel.cancel() }
+        }
+        if (!active) return@composed this
+        modifierLocalConsumer { route.parent = ModifierLocalSoftWheelRoute.current }
+            .onPointerEvent(PointerEventType.Press) { wheel.cancel() }
+            .onPointerEvent(PointerEventType.Scroll) { event ->
+                val canScrollHorizontally = state.canScrollBackward || state.canScrollForward
+                if (!canScrollHorizontally) return@onPointerEvent
+
+                val visibleItems = state.layoutInfo.visibleItemsInfo
+                if (visibleItems.isEmpty()) return@onPointerEvent
+
+                val minX = visibleItems.minOf { it.offset }
+                val maxX = visibleItems.maxOf { it.offset + it.size }
+                val isOverContent = event.changes.any { change ->
+                    val x = change.position.x
+                    x in minX.toFloat()..maxX.toFloat()
+                }
+                if (!isOverContent) return@onPointerEvent
+
+                val totalDelta = event.changes.fold(0f) { acc, change ->
+                    acc + change.scrollDelta.y + change.scrollDelta.x
+                }
+                if (totalDelta != 0f) {
+                    route.claim(event)
+                    horizontalEvents?.handled = true
+                    wheel.scrollBy(totalDelta * scrollStepPx)
+                    event.changes.forEach { it.consume() }
+                }
+            }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun Modifier.nuvioCenterScrollConsumer(
+    headerHorizontalPadding: Dp,
+    enabled: Boolean = true,
+    state: LazyListState? = null,
+): Modifier {
+    if (!isDesktop || !enabled) return this
+
+    return composed {
+        val horizontalEvents = LocalHorizontalWheelEvents.current
+        val route = remember { SoftWheelRoute() }
+        modifierLocalConsumer { route.parent = ModifierLocalSoftWheelRoute.current }
+            .pointerInput(enabled, headerHorizontalPadding, horizontalEvents, state) {
+            val headerPaddingPx = headerHorizontalPadding.toPx()
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Main)
+                    if (event.type == PointerEventType.Scroll) {
+                        if (state != null && !state.canScrollBackward && !state.canScrollForward) {
+                            continue
+                        }
+                        val width = size.width.toFloat()
+                        val visibleItems = state?.layoutInfo?.visibleItemsInfo
+                        val maxContentX = if (!visibleItems.isNullOrEmpty()) {
+                            visibleItems.maxOf { it.offset + it.size }.toFloat()
+                        } else null
+
+                        event.changes.forEach { change ->
+                            val x = change.position.x
+                            val inContent = if (maxContentX != null) x <= maxContentX else true
+                            if (x >= headerPaddingPx && x <= width - headerPaddingPx && inContent) {
+                                route.claim(event)
+                                horizontalEvents?.handled = true
+                                change.consume()
                             }
                         }
                     }
@@ -161,85 +433,19 @@ fun <T> NuvioShelfSection(
 
 internal fun Modifier.nuvioDesktopDragScroll(
     state: LazyListState,
-): Modifier {
-    if (!isDesktop) return this
-
-    return pointerInput(state) {
-        awaitEachGesture {
-            val down = awaitFirstDown(pass = PointerEventPass.Initial)
-            var totalDx = 0f
-            var totalDy = 0f
-            var dragging = false
-
-            while (true) {
-                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) break
-
-                val delta = change.position - change.previousPosition
-                totalDx += delta.x
-                totalDy += delta.y
-
-                if (!dragging) {
-                    val horizontalDrag =
-                        abs(totalDx) > viewConfiguration.touchSlop && abs(totalDx) > abs(totalDy)
-                    val verticalDrag =
-                        abs(totalDy) > viewConfiguration.touchSlop && abs(totalDy) > abs(totalDx)
-
-                    when {
-                        verticalDrag -> break
-                        horizontalDrag -> dragging = true
-                        else -> continue
-                    }
-                }
-
-                state.dispatchRawDelta(-delta.x)
-                change.consume()
-            }
-        }
-    }
-}
+    momentumEnabled: Boolean = true,
+    enabled: Boolean = true,
+): Modifier = nuvioDesktopDragScroll(
+    state, androidx.compose.foundation.gestures.Orientation.Horizontal, momentumEnabled = momentumEnabled, enabled = enabled,
+)
 
 internal fun Modifier.nuvioDesktopDragScroll(
     state: ScrollState,
-): Modifier {
-    if (!isDesktop) return this
-
-    return pointerInput(state) {
-        awaitEachGesture {
-            val down = awaitFirstDown(pass = PointerEventPass.Initial)
-            var totalDx = 0f
-            var totalDy = 0f
-            var dragging = false
-
-            while (true) {
-                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) break
-
-                val delta = change.position - change.previousPosition
-                totalDx += delta.x
-                totalDy += delta.y
-
-                if (!dragging) {
-                    val horizontalDrag =
-                        abs(totalDx) > viewConfiguration.touchSlop && abs(totalDx) > abs(totalDy)
-                    val verticalDrag =
-                        abs(totalDy) > viewConfiguration.touchSlop && abs(totalDy) > abs(totalDx)
-
-                    when {
-                        verticalDrag -> break
-                        horizontalDrag -> dragging = true
-                        else -> continue
-                    }
-                }
-
-                state.dispatchRawDelta(-delta.x)
-                change.consume()
-            }
-        }
-    }
-}
+    momentumEnabled: Boolean = true,
+    enabled: Boolean = true,
+): Modifier = nuvioDesktopDragScroll(
+    state, androidx.compose.foundation.gestures.Orientation.Horizontal, momentumEnabled = momentumEnabled, enabled = enabled,
+)
 
 @Composable
 fun NuvioPosterCard(
@@ -254,6 +460,7 @@ fun NuvioPosterCard(
     bottomLeftLogoUrl: String? = null,
     bottomLeftText: String? = null,
     isWatched: Boolean = false,
+    fillMaxWidth: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
@@ -262,23 +469,29 @@ fun NuvioPosterCard(
     val effectiveBasePosterWidthDp = basePosterWidthDp ?: posterCardStyle.widthDp
     val cardWidth = shape.cardWidth(basePosterWidthDp = effectiveBasePosterWidthDp)
     val cardShape = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
+    val glowArtworkKey = "$imageUrl\n$fallbackImageUrl"
+    val glow = if (isDesktop && posterCardStyle.glowEnabled && imageUrl != null) {
+        rememberPosterGlowState(glowArtworkKey)
+    } else null
     val catalogLogoOverlaySize = catalogLogoOverlaySize(
         basePosterWidthDp = effectiveBasePosterWidthDp,
         shape = shape,
     )
     val shouldShowTitleBelow = showTitleBelow && !posterCardStyle.hideLabelsEnabled
+    val shouldShowDetailLine = !detailLine.isNullOrBlank() && !posterCardStyle.hideYearEnabled
 
     Column(
         modifier = Modifier
             .desktopPosterHoverScale()
             .then(modifier)
-            .width(cardWidth),
+            .then(if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.width(cardWidth)),
         verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(shape.aspectRatio)
+                .posterGlow(glow, glowArtworkKey, cardShape)
                 .clip(cardShape)
                 .background(tokens.colors.surface)
                 .nuvioCardDepth(
@@ -310,11 +523,12 @@ fun NuvioPosterCard(
                     }
                 }
                 NuvioAsyncImage(
-                    model = imageModel,
+                    model = rememberArtworkRequest(imageModel, if (shape == NuvioPosterShape.Landscape) ArtworkRole.Backdrop else ArtworkRole.Poster),
                     contentDescription = title,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
                     desktopAnimation = posterCardStyle.animatedArtworkMode.toDesktopAnimation(),
+                    onSuccess = { result -> glow?.painter = result.painter },
                 )
             } else {
                 Text(
@@ -382,7 +596,7 @@ fun NuvioPosterCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (!detailLine.isNullOrBlank()) {
+            if (shouldShowDetailLine) {
                 Text(
                     text = detailLine,
                     style = MaterialTheme.typography.labelSmall,
@@ -405,7 +619,9 @@ private fun NuvioShelfSectionHeader(
     modifier: Modifier = Modifier,
     onViewAllClick: (() -> Unit)? = null,
     onTitleClick: (() -> Unit)? = null,
-    viewAllPillSize: NuvioViewAllPillSize = NuvioViewAllPillSize.Default,
+    showRowNavigationControls: Boolean = false,
+    state: LazyListState,
+    arrowScroll: SoftArrowScroll,
 ) {
     val tokens = MaterialTheme.nuvio
     Column(
@@ -416,30 +632,93 @@ private fun NuvioShelfSectionHeader(
             horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                modifier = Modifier
-                    .weight(1f)
-                    .then(if (onTitleClick != null) {
-                        Modifier.nuvioFocusBorder(RoundedCornerShape(NuvioTokens.Radius.md))
-                            .clickable(onClick = onTitleClick)
-                    } else Modifier),
-                style = MaterialTheme.typography.titleLarge,
-                color = tokens.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Box(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    modifier = Modifier
+                        .then(if (onTitleClick != null) {
+                            (if (LocalPosterNavigationRow.current != null) Modifier.excludeFromRemoteNavigation()
+                            else Modifier.remoteNavigationTarget()).clickable(onClick = onTitleClick)
+                        } else Modifier),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = tokens.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (showRowNavigationControls) {
+                ShelfRowNavigationButton(
+                    state = state,
+                    arrowScroll = arrowScroll,
+                    direction = ShelfScrollDirection.Backward,
+                )
+                ShelfRowNavigationButton(
+                    state = state,
+                    arrowScroll = arrowScroll,
+                    direction = ShelfScrollDirection.Forward,
+                )
+            }
             val viewAllPlaceholderModifier = if (onViewAllClick == null) {
-                Modifier
+                if (showRowNavigationControls) Modifier.size(0.dp)
+                else Modifier
                     .alpha(0f)
                     .clearAndSetSemantics { }
             } else {
                 Modifier
             }
+            RemotePosterItem(null, Int.MAX_VALUE, PosterTargetRole.EndAction) {
             NuvioViewAllPill(
                 onClick = onViewAllClick,
-                size = viewAllPillSize,
                 modifier = viewAllPlaceholderModifier,
+            )
+            }
+        }
+    }
+}
+
+private enum class ShelfScrollDirection { Backward, Forward }
+
+@Composable
+internal fun rowHeaderControlContentColor(): Color = frostedGlassSecondaryContentColor(
+    fallback = MaterialTheme.nuvio.colors.textMuted,
+    frostedColor = Color.White.copy(alpha = 0.90f),
+)
+
+@Composable
+private fun ShelfRowNavigationButton(
+    state: LazyListState,
+    arrowScroll: SoftArrowScroll,
+    direction: ShelfScrollDirection,
+) {
+    val enabled = when (direction) {
+        ShelfScrollDirection.Backward -> state.canScrollBackward
+        ShelfScrollDirection.Forward -> state.canScrollForward
+    }
+    val contentDescription = stringResource(
+        if (direction == ShelfScrollDirection.Backward) Res.string.home_scroll_left
+        else Res.string.home_scroll_right,
+    )
+
+    // Prevent Material minimum sizing from enlarging the glass background.
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides NuvioTokens.Space.none) {
+        IconButton(
+            onClick = {
+                arrowScroll.scrollPage(forward = direction == ShelfScrollDirection.Forward)
+            },
+            enabled = enabled,
+            modifier = Modifier
+                .size(ShelfHeaderControlSize)
+                .navigationGlass(shape = CircleShape, backgroundOnly = true)
+                .focusProperties { canFocus = false },
+        ) {
+            Icon(
+                imageVector = if (direction == ShelfScrollDirection.Backward) {
+                    Icons.AutoMirrored.Rounded.KeyboardArrowLeft
+                } else {
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight
+                },
+                contentDescription = contentDescription,
+                tint = rowHeaderControlContentColor(),
             )
         }
     }
@@ -448,29 +727,29 @@ private fun NuvioShelfSectionHeader(
 @Composable
 private fun NuvioViewAllPill(
     onClick: (() -> Unit)?,
-    size: NuvioViewAllPillSize,
     modifier: Modifier = Modifier,
 ) {
-    val tokens = MaterialTheme.nuvio
-    val actionSize = if (size == NuvioViewAllPillSize.Compact) NuvioTokens.Space.s32 else NuvioTokens.Space.s40
-    val iconSize = if (size == NuvioViewAllPillSize.Compact) NuvioTokens.Icon.sm else tokens.icons.md
     val viewAllText = stringResource(Res.string.home_view_all)
+    val pillShape = RoundedCornerShape(NuvioTokens.Radius.full)
 
-    val pillShape = RoundedCornerShape(NuvioTokens.Radius.xl)
     Box(
         modifier = modifier
-            .size(actionSize)
-            .background(color = tokens.colors.surface, shape = pillShape)
+            .height(ShelfHeaderControlSize)
+            .widthIn(min = ShelfHeaderControlSize)
+            // Draw the matching focus outline outside the glass clip.
+            .then(if (onClick != null) Modifier.remoteNavigationTarget(shape = pillShape) else Modifier)
             .then(if (onClick != null) {
-                Modifier.nuvioFocusBorder(pillShape).clickable(onClick = onClick)
-            } else Modifier),
+                Modifier.navigationGlass(shape = pillShape, backgroundOnly = true)
+            } else Modifier)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = NuvioTokens.Space.s10),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-            contentDescription = viewAllText,
-            tint = tokens.colors.textMuted,
-            modifier = Modifier.size(iconSize),
+        Text(
+            text = viewAllText,
+            style = MaterialTheme.typography.labelLarge,
+            color = rowHeaderControlContentColor(),
+            maxLines = 1,
         )
     }
 }
@@ -487,14 +766,15 @@ internal fun desktopCatalogShelfPosterBaseWidthDp(
         basePosterWidthDp
     }
 
-internal fun Modifier.nuvioShelfHoverOverdraw(inset: Dp): Modifier {
-    if (inset == 0.dp) return this
+internal fun Modifier.nuvioShelfHoverOverdraw(inset: Dp, horizontal: Dp = inset): Modifier {
+    if (inset == 0.dp && horizontal == 0.dp) return this
 
     // Expand the measured viewport, then place it negatively so edge items keep
-    // their visual alignment while desktop hover scale can draw into the gutter.
+    // their visual alignment while hover scale and glow draw into the gutter.
     return layout { measurable, constraints ->
         val insetPx = inset.roundToPx()
-        val horizontalInset = insetPx * 2
+        val horizontalPx = horizontal.roundToPx()
+        val horizontalInset = horizontalPx * 2
         val verticalInset = insetPx * 2
         val expandedMaxWidth = if (constraints.hasBoundedWidth) {
             constraints.maxWidth + horizontalInset
@@ -524,12 +804,12 @@ internal fun Modifier.nuvioShelfHoverOverdraw(inset: Dp): Modifier {
             .coerceIn(constraints.minHeight, constraints.maxHeight)
 
         layout(width, height) {
-            placeable.placeRelative(-insetPx, -insetPx)
+            placeable.placeRelative(-horizontalPx, -insetPx)
         }
     }
 }
 
-private val NuvioPosterShape.aspectRatio: Float
+internal val NuvioPosterShape.aspectRatio: Float
     get() = when (this) {
         NuvioPosterShape.Poster -> 0.675f
         NuvioPosterShape.Square -> 1f
@@ -575,23 +855,35 @@ internal fun Modifier.desktopPosterHoverScale(
 ): Modifier {
     if (!enabled || !isDesktop) return this
 
-    val hovered by interactionSource.collectIsHoveredAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (hovered) DesktopPosterHoverScale else 1f,
+    val hovered by interactionSource.collectIsRemoteHoveredAsState()
+    val keyboardNavigation = isRemoteKeyboardNavigationActive
+    var focused by remember { mutableStateOf(false) }
+    // Keyboard focus mirrors the cursor raise; the focus contour uses the same gate.
+    val raised = hovered || (focused && keyboardNavigation)
+    val motion = rememberNavigationMotionProfile()
+    val animatedScale = animateFloatAsState(
+        targetValue = if (raised) DesktopPosterHoverScale else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow,
+            stiffness = motion.scrollStiffness,
         ),
         label = "desktop_poster_hover_scale",
     )
-
-    val isScaling = hovered || scale != 1f
+    val isScaling by remember(raised, animatedScale) {
+        derivedStateOf { raised || animatedScale.value != 1f }
+    }
+    // Read animation state in the parent's draw scope so its clip is invalidated
+    // together with the scaled child layer on every animation frame.
+    LocalPosterRowItemHover.current?.scale = { animatedScale.value }
 
     return this
+        // Must stay outside the focus target so descendant focus reports as hasFocus.
+        .onFocusChanged { focused = it.hasFocus }
         .then(
             if (isScaling) {
                 Modifier
                     .graphicsLayer {
+                        val scale = animatedScale.value
                         scaleX = scale
                         scaleY = scale
                     }

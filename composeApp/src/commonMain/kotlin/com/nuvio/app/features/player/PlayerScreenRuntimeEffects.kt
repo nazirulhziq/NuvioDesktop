@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.features.anime.AnimeFillerSettingsRepository
 import com.nuvio.app.core.i18n.localizedSeasonEpisodeCode
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
@@ -19,8 +20,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import com.nuvio.app.features.details.ImdbEpisodeRatingsRepository
 import com.nuvio.app.features.addons.AddonPlayerAction
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.p2p.P2pStreamRequest
 import com.nuvio.app.features.p2p.P2pStreamingEngine
@@ -53,6 +58,9 @@ import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.nuvio.app.features.player.seekpreview.SeekrContentMapping
+import com.nuvio.app.features.player.seekpreview.SeekrLookupClient
+import com.nuvio.app.features.player.seekpreview.SeekrPreviewTrack
 import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
@@ -94,12 +102,17 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         }
     }
 
-    LaunchedEffect(parentMetaType, parentMetaId) {
+    LaunchedEffect(profileId, parentMetaType, parentMetaId) {
+        if (parentMetaType == com.nuvio.app.features.cloud.CloudLibraryContentType) return@LaunchedEffect
+        val requestedContent = classificationContentKey
         playerMeta = MetaDetailsRepository.peek(parentMetaType, parentMetaId)
+        playerMetaContentKey = requestedContent
         playerMetaVideos = playerMeta?.videos.orEmpty()
-        if (playerMetaVideos.isEmpty()) {
+        if (playerMetaVideos.isEmpty() || !detectContentClassification().isConfirmed) {
             MetaDetailsRepository.fetch(parentMetaType, parentMetaId)?.let { meta ->
+                if (!acceptsClassificationMetadata(requestedContent, classificationContentKey)) return@LaunchedEffect
                 playerMeta = meta
+                playerMetaContentKey = requestedContent
                 playerMetaVideos = meta.videos
             }
         }
@@ -109,8 +122,51 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         val currentMeta = metaUiState.meta ?: return@LaunchedEffect
         if (currentMeta.type == parentMetaType && currentMeta.id == parentMetaId) {
             playerMeta = currentMeta
+            playerMetaContentKey = classificationContentKey
             playerMetaVideos = currentMeta.videos
         }
+    }
+
+    LaunchedEffect(
+        classificationContentKey, activePlaybackIdentity, activeVideoId, classificationMeta, p2pResolvedSourceUrl,
+        activeStream, activeSourceFilename, activeTorrentFilename,
+        activeStreamTitle, activeStreamSubtitle, activeClassificationHint, playerSettingsUiState.streamReuseLastLinkEnabled,
+    ) {
+        refreshContentClassification()
+    }
+
+    LaunchedEffect(
+        isSeries,
+        parentMetaType,
+        parentMetaId,
+        playerMeta?.id,
+        playerMeta?.imdbId,
+        playerMetaVideos,
+        metaScreenSettingsUiState.episodeRatingsVisibility,
+    ) {
+        if (!isSeries || !metaScreenSettingsUiState.episodeRatingsVisibility.showRatings || parentMetaId.isBlank()) {
+            episodeImdbRatings = emptyMap()
+            return@LaunchedEffect
+        }
+        val targetMeta = playerMeta ?: MetaDetailsRepository.peek(parentMetaType, parentMetaId)
+        val imdbId = extractImdbId(parentMetaId)
+            ?: extractImdbId(targetMeta?.imdbId)
+            ?: extractImdbId(targetMeta?.id)
+            ?: playerMetaVideos.firstNotNullOfOrNull { extractImdbId(it.id) }
+        val tmdbId = extractTmdbId(parentMetaId)
+            ?: extractTmdbId(targetMeta?.id)
+            ?: TmdbService.ensureTmdbId(targetMeta?.id ?: parentMetaId, parentMetaType, fallbackImdbId = imdbId)?.toIntOrNull()
+            ?: TmdbService.ensureTmdbId(imdbId ?: parentMetaId, parentMetaType, fallbackImdbId = targetMeta?.imdbId)?.toIntOrNull()
+
+        if (imdbId == null && tmdbId == null) {
+            episodeImdbRatings = emptyMap()
+            return@LaunchedEffect
+        }
+        episodeImdbRatings = ImdbEpisodeRatingsRepository.getEpisodeRatings(
+            imdbId = imdbId,
+            tmdbId = tmdbId,
+            seasonNumbers = playerMetaVideos.mapNotNull { it.season }.distinct(),
+        )
     }
 
     LaunchedEffect(currentStreamBingeGroup, currentStreamFilename, currentStreamInfoHash, parentMetaId) {
@@ -129,6 +185,10 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         cancelNextEpisodeAutoPlay()
         isScrubbingTimeline = false
         scrubbingPositionMs = null
+        seekPreviewTrack = null
+        seekPreviewInteraction.clear()
+        pausedForTimelineScrub = false
+        resumingAfterTimelineScrubForPresence = false
         liveGestureFeedback = null
         renderedGestureFeedback = null
         lockedOverlayVisible = false
@@ -169,10 +229,77 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         // falling back to the next source. It has an effect only where that fallback applies.
         val startupTimeoutSeconds = playerSettingsUiState.streamAutoPlayFallbackStartupTimeoutSeconds
         delay(startupTimeoutSeconds * 1_000L)
-        if (!initialLoadCompleted && errorMessage == null) {
+        if (!initialLoadCompleted && errorMessage == null && credentialRefreshJob?.isActive != true) {
             tryFallbackToNextSourceAfterError(
                 getString(Res.string.player_error_source_startup_timeout, startupTimeoutSeconds),
             )
+        }
+    }
+
+    val seekPreviewEnabled = playerSettingsUiState.seekPreviewEnabled
+    val seekrApiKey = playerSettingsUiState.seekrApiKey
+    val currentDurationMs = playbackSnapshot.durationMs
+
+    LaunchedEffect(
+        seekPreviewEnabled,
+        seekrApiKey,
+        parentMetaId,
+        parentMetaType,
+        activeVideoId,
+        activeSeasonNumber,
+        activeEpisodeNumber,
+        playerMeta?.id,
+        playerMeta?.imdbId,
+        currentDurationMs > 0L,
+    ) {
+        if (!seekPreviewEnabled) {
+            val oldTrack = seekPreviewTrack
+            seekPreviewTrack = null
+            oldTrack?.clear()
+            return@LaunchedEffect
+        }
+
+        val targetMeta = playerMeta ?: MetaDetailsRepository.peek(parentMetaType, parentMetaId)
+        val resolvedImdbId = extractImdbId(parentMetaId)
+            ?: extractImdbId(targetMeta?.imdbId)
+            ?: extractImdbId(targetMeta?.id)
+            ?: playerMetaVideos.firstNotNullOfOrNull { extractImdbId(it.id) }
+        val resolvedTmdbId = extractTmdbId(parentMetaId)
+            ?: extractTmdbId(targetMeta?.id)
+            ?: TmdbService.ensureTmdbId(targetMeta?.id ?: parentMetaId, parentMetaType, fallbackImdbId = resolvedImdbId)?.toIntOrNull()
+            ?: TmdbService.ensureTmdbId(resolvedImdbId ?: parentMetaId, parentMetaType, fallbackImdbId = targetMeta?.imdbId)?.toIntOrNull()
+
+        val content = SeekrContentMapping.from(
+            parentMetaId = parentMetaId,
+            videoId = activeVideoId,
+            contentType = contentType ?: parentMetaType,
+            seasonNumber = activeSeasonNumber,
+            episodeNumber = activeEpisodeNumber,
+            explicitImdbId = resolvedImdbId,
+            explicitTmdbId = resolvedTmdbId,
+        )
+
+        if (content == null) {
+            val oldTrack = seekPreviewTrack
+            seekPreviewTrack = null
+            oldTrack?.clear()
+            return@LaunchedEffect
+        }
+
+        val trackResult = SeekrLookupClient.loadTrackResult(
+            content = content,
+            durationMs = currentDurationMs,
+            apiKey = seekrApiKey,
+        )
+
+        if (trackResult != null && trackResult.cues.isNotEmpty()) {
+            val oldTrack = seekPreviewTrack
+            seekPreviewTrack = SeekrPreviewTrack(cues = trackResult.cues, vttUrl = trackResult.vttUrl)
+            oldTrack?.clear()
+        } else {
+            val oldTrack = seekPreviewTrack
+            seekPreviewTrack = null
+            oldTrack?.clear()
         }
     }
 
@@ -223,12 +350,12 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            errorMessage = getString(
-                Res.string.player_error_failed_start_torrent,
-                error.message ?: genericUnknownLabel,
-            )
-            controlsVisible = !playerControlsLocked
-            initialLoadCompleted = true
+            val message = getString(Res.string.player_error_failed_start_torrent, error.message ?: genericUnknownLabel)
+            if (!tryFallbackToNextSourceAfterError(message)) {
+                initialLoadCompleted = true
+                errorMessage = message
+                controlsVisible = !playerControlsLocked
+            }
         }
     }
 
@@ -239,9 +366,12 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             playerController = null
             playerControllerSourceUrl = null
             playbackSnapshot = PlayerPlaybackSnapshot()
-            initialLoadCompleted = true
-            errorMessage = getString(Res.string.player_error_torrent, state.message)
-            controlsVisible = !playerControlsLocked
+            val message = getString(Res.string.player_error_torrent, state.message)
+            if (!tryFallbackToNextSourceAfterError(message)) {
+                initialLoadCompleted = true
+                errorMessage = message
+                controlsVisible = !playerControlsLocked
+            }
         }
     }
 
@@ -261,7 +391,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         subtitleAutoSyncState = SubtitleAutoSyncUiState()
     }
 
-    LaunchedEffect(playerController, subtitleStyle, playerSettingsUiState.useLibass) {
+    LaunchedEffect(playerController, activeSourceUrl, subtitleStyle, playerSettingsUiState.useLibass) {
         playerController?.applySubtitleStyle(subtitleStyle, playerSettingsUiState.useLibass)
     }
 
@@ -332,6 +462,14 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         if (autoFetchedAddonSubtitlesForKey == effectiveFetchKey) return@LaunchedEffect
         // Offline: leave the key unset so the fetch can run once connectivity returns.
         if (isNetworkOffline()) return@LaunchedEffect
+        if (needsVideoHashComputation()) {
+            // The hash reads the file's size, head and tail. Doing that while the player opens the
+            // same file competes for debrid/CDN connection slots and makes a torrent engine fetch
+            // tail pieces first, which delays startup. Wait for the first load, bounded.
+            withTimeoutOrNull(VIDEO_HASH_START_WAIT_MS) {
+                snapshotFlow { initialLoadCompleted }.first { it }
+            }
+        }
         autoFetchedAddonSubtitlesForKey = effectiveFetchKey
         fetchAddonSubtitlesForActiveItem()
     }
@@ -353,8 +491,12 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         }
     }
 
-    LaunchedEffect(playbackSnapshot.isLoading, playerController, playerControllerSourceUrl, activeSourceUrl) {
-        if (!playbackSnapshot.isLoading) loadChaptersIfNeeded()
+    LaunchedEffect(playerController, playerControllerSourceUrl, activeSourceUrl, playerSettingsUiState.androidExoChaptersEnabled) {
+        clearChapters()
+    }
+
+    LaunchedEffect(playbackSnapshot.isLoading, playerController, playerControllerSourceUrl, activeSourceUrl, playerSettingsUiState.androidExoChaptersEnabled) {
+        if (playerSettingsUiState.androidExoChaptersEnabled && !playbackSnapshot.isLoading) loadChaptersIfNeeded()
     }
 
     LaunchedEffect(
@@ -363,6 +505,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         preferredAudioSelectionApplied,
         preferredSubtitleSelectionApplied,
         trackPreferenceRestoreApplied,
+        activePlaybackKey,
         addonSubtitles,
         isLoadingAddonSubtitles,
     ) {
@@ -475,9 +618,27 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
                 // re-reads its launch from the store).
                 PlayerLaunchStore.markExited(launchId)
             }
+            if (isSeries && (activeSeasonNumber != null || activeEpisodeNumber != null)) {
+                val currentPositionMs = playbackSnapshot.positionMs.takeIf {
+                    it > 0L && initialSeekApplied && playbackSnapshotKey == activePlaybackKey
+                } ?: activeInitialPositionMs
+                syncStreamLaunch(
+                    seasonNumber = activeSeasonNumber,
+                    episodeNumber = activeEpisodeNumber,
+                    episodeTitle = activeEpisodeTitle,
+                    episodeThumbnail = activeEpisodeThumbnail,
+                    pauseDescription = activePauseDescription,
+                    videoId = activeVideoId,
+                    resumePositionMs = currentPositionMs,
+                    resumeProgressFraction = activeInitialProgressFraction,
+                )
+            }
             playerController?.clearNowPlayingInfo()
             P2pStreamingEngine.shutdown()
             cancelNextEpisodePreload()
+            val currentSeekTrack = seekPreviewTrack
+            seekPreviewTrack = null
+            scope.launch { currentSeekTrack?.clear() }
             PlayerStreamsRepository.clearAll()
         }
     }
@@ -507,6 +668,7 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
         folded,
         controlsVisible,
         controlsActivityTick,
+        activePlaybackKey,
         isScrubbingTimeline,
         snapshotSignals.isPlaying,
         snapshotSignals.isLoading,
@@ -514,6 +676,7 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
         errorMessage,
     ) {
         if (
+            isDesktop ||
             !controlsVisible ||
             isScrubbingTimeline ||
             !playbackSnapshot.isPlaying ||
@@ -535,13 +698,15 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
 
     LaunchedEffect(
         playerSettingsUiState.pauseOverlayEnabled,
+        activePlaybackKey,
         snapshotSignals.isPlaying,
+        snapshotSignals.isEnded,
         snapshotSignals.isLoading,
         snapshotSignals.durationMs,
         errorMessage,
     ) {
         pausedOverlayVisible = false
-        if (!playerSettingsUiState.pauseOverlayEnabled || playbackSnapshot.isPlaying || playbackSnapshot.isLoading || playbackSnapshot.durationMs <= 0L || errorMessage != null) {
+        if (!playerSettingsUiState.pauseOverlayEnabled || playbackSnapshot.isPlaying || playbackSnapshot.isEnded || playbackSnapshot.durationMs <= 0L || errorMessage != null) {
             return@LaunchedEffect
         }
         delay(5000)
@@ -825,22 +990,41 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         }
     }
 
+    val isFillerEnabled by remember {
+        AnimeFillerSettingsRepository.ensureLoaded()
+        AnimeFillerSettingsRepository.enabled
+    }.collectAsStateWithLifecycle()
+    val hideFillerEpisodes by remember {
+        AnimeFillerSettingsRepository.ensureLoaded()
+        AnimeFillerSettingsRepository.hideFillers
+    }.collectAsStateWithLifecycle()
+    val shouldHideFillers = isFillerEnabled && hideFillerEpisodes
+
     LaunchedEffect(
         playerMetaVideos,
         shuffleSettings,
         profileId,
         parentMetaId,
+        activeVideoId,
         activeSeasonNumber,
         activeEpisodeNumber,
         watchProgressUiState.entries,
         watchedUiState.watchedKeys,
+        shouldHideFillers,
+        isFillerEnabled,
     ) {
         if (!isSeries || playerMetaVideos.isEmpty()) {
             nextEpisodeInfo = null
             return@LaunchedEffect
         }
-        val curSeason = activeSeasonNumber ?: return@LaunchedEffect
-        val curEpisode = activeEpisodeNumber ?: return@LaunchedEffect
+        val currentVideo = playerMetaVideos.firstOrNull { it.id == activeVideoId }
+            ?: playerMetaVideos.firstOrNull { it.season == activeSeasonNumber && it.episode == activeEpisodeNumber }
+        val curSeason = activeSeasonNumber ?: currentVideo?.season ?: 1
+        val curEpisode = activeEpisodeNumber ?: currentVideo?.episode
+        if (curEpisode == null) {
+            nextEpisodeInfo = null
+            return@LaunchedEffect
+        }
         val nextVideo = if (shuffleSettings.enabled) {
             EpisodeShuffleRepository.shuffle.select(
                 profileId, parentMetaId, playerMetaVideos, shuffleSettings.includeWatched,
@@ -854,11 +1038,13 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                 videos = playerMetaVideos,
                 currentSeason = curSeason,
                 currentEpisode = curEpisode,
+                hideFillers = shouldHideFillers,
+                currentVideoId = activeVideoId,
             )
         }
-        val nextSeason = nextVideo?.season
+        val nextSeason = nextVideo?.season ?: curSeason
         val nextEpisode = nextVideo?.episode
-        nextEpisodeInfo = if (nextVideo != null && nextSeason != null && nextEpisode != null) {
+        nextEpisodeInfo = if (nextVideo != null && nextEpisode != null) {
             val playbackVideoId = buildPlaybackVideoId(
                 parentMetaId = parentMetaId,
                 seasonNumber = nextSeason,
@@ -889,6 +1075,8 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                 unairedMessage = if (!PlayerNextEpisodeRules.hasEpisodeAired(nextVideo.released)) {
                     "$airsPrefix ${nextVideo.released ?: tbaLabel}"
                 } else null,
+                isFiller = isFillerEnabled && nextVideo.isFiller,
+                isMixed = isFillerEnabled && nextVideo.isMixed,
             )
         } else null
     }
@@ -1099,11 +1287,11 @@ private fun PlayerScreenRuntime.retryServerSourceAfterError(message: String?): B
     credentialRefreshJob = scope.launch {
         val playback = ServerPlayback.fallback(failedUrl)
         if (playback == null) {
-            errorMessage = message
-            controlsVisible = !playerControlsLocked
+            showErrorUnlessSourceFallback(message)
             return@launch
         }
         externalSubtitles = playback.subtitles
+        if (failedUrl == sourceFallbackUrl) sourceFallbackUrl = playback.url
         activeSourceUrl = playback.url
         activeSourceHeaders = playback.headers
         activeInitialPositionMs = savedPositionMs

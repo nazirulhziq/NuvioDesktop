@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioScreen
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.features.cloud.PremiumizeCloudLibraryPosterUrl
 import com.nuvio.app.features.cloud.TorboxCloudLibraryPosterUrl
@@ -75,10 +78,12 @@ fun LicensesAttributionsSettingsScreen(
     onBack: () -> Unit,
 ) {
     NuvioScreen(
+        sidebarContentInset = LocalDesktopSidebarContentInset.current,
         modifier = Modifier.fillMaxSize(),
     ) {
         stickyHeader {
             NuvioScreenHeader(
+                showBackWithDesktopSidebar = true,
                 title = stringResource(Res.string.compose_settings_page_licenses_attributions),
                 onBack = onBack,
             )
@@ -254,7 +259,7 @@ private fun LinkedPlainRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpen)
+            .remoteNavigationTarget().clickable(onClick = onOpen)
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(if (isTablet) 18.dp else 14.dp),

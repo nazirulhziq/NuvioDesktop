@@ -31,8 +31,11 @@ internal class NativePlayerHost : Canvas() {
     }
 
     init {
+        isFocusable = true
+        focusTraversalKeysEnabled = false
         background = Color.BLACK
         ignoreRepaint = false
+        dropTarget = com.nuvio.app.features.player.SubtitleImportPlatform.createDropTarget()
         addMouseMotionListener(object : MouseMotionAdapter() {
             override fun mouseMoved(event: MouseEvent) {
                 noteCursorActivity()

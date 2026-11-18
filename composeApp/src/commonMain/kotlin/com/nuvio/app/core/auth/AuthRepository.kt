@@ -61,12 +61,12 @@ object AuthRepository {
                 _error.value = getString(Res.string.auth_notice_signed_out)
             }
             SupabaseProvider.client.auth.sessionStatus.collect { status ->
-                if (AuthStorage.loadAnonymousUserId() != null) return@collect
                 when (status) {
                     is SessionStatus.Authenticated -> {
+                        AuthStorage.clearAnonymousUserId()
                         val user = status.session.user
                         val userId = user?.id.orEmpty()
-                        if (!validateRemoteSession(userId)) return@collect
+                        if (userId.isBlank() || !validateRemoteSession(userId)) return@collect
                         AuthStorage.saveFlag(KEY_HAD_ACCOUNT_SESSION, true)
                         AuthStorage.saveFlag(KEY_SIGNED_OUT_NOTICE, false)
                         _state.value = AuthState.Authenticated(
@@ -78,7 +78,7 @@ object AuthRepository {
                     is SessionStatus.NotAuthenticated -> {
                         if (AuthStorage.loadFlag(KEY_HAD_ACCOUNT_SESSION)) {
                             resetAfterLostSession()
-                        } else {
+                        } else if (AuthStorage.loadAnonymousUserId() == null) {
                             _state.value = AuthState.Unauthenticated
                         }
                     }
@@ -127,9 +127,21 @@ object AuthRepository {
 
     suspend fun signUpWithEmail(email: String, password: String): Result<Unit> = runCatching {
         _error.value = null
+        val trimmedEmail = email.trim()
         SupabaseProvider.client.auth.signUpWith(Email) {
-            this.email = email
+            this.email = trimmedEmail
             this.password = password
+        }
+        val user = SupabaseProvider.client.auth.currentSessionOrNull()?.user
+        if (user != null) {
+            AuthStorage.clearAnonymousUserId()
+            val userId = user.id
+            validatedRemoteUserId = userId
+            _state.value = AuthState.Authenticated(
+                userId = userId,
+                email = user.email ?: trimmedEmail,
+                isAnonymous = false,
+            )
         }
         Unit
     }.onFailure { e ->
@@ -140,9 +152,21 @@ object AuthRepository {
 
     suspend fun signInWithEmail(email: String, password: String): Result<Unit> = runCatching {
         _error.value = null
+        val trimmedEmail = email.trim()
         SupabaseProvider.client.auth.signInWith(Email) {
-            this.email = email
+            this.email = trimmedEmail
             this.password = password
+        }
+        val user = SupabaseProvider.client.auth.currentSessionOrNull()?.user
+        val userId = user?.id.orEmpty()
+        if (user != null && userId.isNotBlank()) {
+            AuthStorage.clearAnonymousUserId()
+            validatedRemoteUserId = userId
+            _state.value = AuthState.Authenticated(
+                userId = userId,
+                email = user.email ?: trimmedEmail,
+                isAnonymous = false,
+            )
         }
     }.onFailure { e ->
         log.e(e) { "Email sign-in failed" }
@@ -281,11 +305,8 @@ object AuthRepository {
 
     private fun Throwable.safeAuthErrorDescription(): String? =
         findCause<AuthRestException>()
-            ?.errorDescription
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+            ?.let { it.errorDescription?.trim()?.takeIf { s -> s.isNotEmpty() } ?: it.message?.trim()?.takeIf { s -> s.isNotEmpty() } }
             ?: findCause<RestException>()
-                ?.description
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
+                ?.let { it.description?.trim()?.takeIf { s -> s.isNotEmpty() } ?: it.message?.trim()?.takeIf { s -> s.isNotEmpty() } }
+            ?: message?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("io.github.jan") && !it.startsWith("io.ktor") }
 }

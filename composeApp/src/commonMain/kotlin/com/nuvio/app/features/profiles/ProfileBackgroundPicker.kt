@@ -1,5 +1,7 @@
 package com.nuvio.app.features.profiles
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,7 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -129,7 +131,7 @@ private fun ProfileBackgroundItem(
     Column(
         modifier = Modifier
             .width(144.dp)
-            .clickable(onClick = onClick),
+            .remoteNavigationTarget().clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

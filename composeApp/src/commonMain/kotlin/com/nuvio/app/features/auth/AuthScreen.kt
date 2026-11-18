@@ -1,5 +1,7 @@
 package com.nuvio.app.features.auth
 
+import com.nuvio.app.core.ui.remoteTextInputGuard
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -33,7 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Lock
@@ -204,13 +206,14 @@ fun AuthScreen(
     var showOfficialServerDialog by rememberSaveable { mutableStateOf(false) }
 
     fun submitAuth() {
-        if (email.isBlank() || password.length < 6 || isLoading) return
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isBlank() || password.length < 6 || isLoading) return
         DeviceLinkAuthRepository.cancel()
         isLoading = true
         focusManager.clearFocus(force = true)
         scope.launch {
-            if (isSignUp) AuthRepository.signUpWithEmail(email, password)
-            else AuthRepository.signInWithEmail(email, password)
+            if (isSignUp) AuthRepository.signUpWithEmail(trimmedEmail, password)
+            else AuthRepository.signInWithEmail(trimmedEmail, password)
             isLoading = false
         }
     }
@@ -436,7 +439,7 @@ private fun AuthMobileLayout(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .nuvioVerticalScroll(rememberScrollState())
             .padding(
                 start = 30.dp,
                 top = statusBarTop + 48.dp,
@@ -909,6 +912,7 @@ private fun AuthTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier
+                .remoteTextInputGuard()
                 .weight(1f)
                 .fillMaxHeight(),
             singleLine = true,

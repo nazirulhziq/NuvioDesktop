@@ -640,6 +640,34 @@ void presentOverlaySurface(Player *player, cairo_surface_t *surf) {
 // single window (XWayland won't alpha-blend sibling windows; mpv does the compose
 // that Core Animation / DWM do on macOS / Windows). Only runs while the chrome is
 // visible (plus a short fade-out grace) so normal watching pays nothing.
+bool drawOverlaySurface(Player *player) {
+    if (!player->webview || !player->gtkWindow || !player->overlayXid) return false;
+    GtkWidget *view = GTK_WIDGET(player->webview);
+    GdkWindow *ovGw = gtk_widget_get_window(player->gtkWindow);
+    if (!ovGw || !gtk_widget_get_realized(view)) return false;
+    XWindowAttributes wa;
+    if (!XGetWindowAttributes(GDK_WINDOW_XDISPLAY(ovGw), player->overlayXid, &wa) ||
+        wa.width <= 0 || wa.height <= 0) {
+        return false;
+    }
+    int scale = gdk_window_get_scale_factor(ovGw);
+    if (scale < 1) scale = 1;
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(view, &alloc);
+    if (alloc.width * scale != wa.width || alloc.height * scale != wa.height) return true;
+    cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, wa.width, wa.height);
+    if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surf);
+        return false;
+    }
+    cairo_surface_set_device_scale(surf, scale, scale);
+    cairo_t *cr = cairo_create(surf);
+    gtk_widget_draw(view, cr);
+    cairo_destroy(cr);
+    presentOverlaySurface(player, surf);
+    return true;
+}
+
 void compositeOverlay(Player *player) {
     if (!player->overlayXid || !player->mpv || !player->gtkWindow) return;
     GdkWindow *gw = gtk_widget_get_window(player->gtkWindow);
@@ -728,7 +756,7 @@ void compositeOverlay(Player *player) {
             player->snapCooldownTicks--;
         } else if (player->snapSkip > 0) {
             player->snapSkip--;
-        } else {
+        } else if (!drawOverlaySurface(player)) {
             player->snapInFlight = true;
             player->snapWaitTicks = 0;
             if (!player->snapCancel) player->snapCancel = g_cancellable_new();
@@ -981,9 +1009,9 @@ void notifyWarmupDone(bool ok) {
 WebKitWebContext *sharedControlsContext() {
     static WebKitWebContext *ctx = nullptr;
     if (!ctx) {
-        gchar *cacheDir = g_build_filename(g_get_user_cache_dir(), "nuvio",
+        gchar *cacheDir = g_build_filename(g_get_user_cache_dir(), "nuviocodeinexo",
                                            "webkit-cache", nullptr);
-        gchar *dataDir = g_build_filename(g_get_user_cache_dir(), "nuvio",
+        gchar *dataDir = g_build_filename(g_get_user_cache_dir(), "nuviocodeinexo",
                                           "webkit-data", nullptr);
         WebKitWebsiteDataManager *dm = webkit_website_data_manager_new(
             "base-cache-directory", cacheDir,
@@ -1599,9 +1627,10 @@ JNIEXPORT jboolean JNICALL NP(initGtkEarly)(JNIEnv *, jobject) {
 
 JNIEXPORT jlong JNICALL NP(create)(
     JNIEnv *env, jobject /*thiz*/, jlong hostViewPtr, jstring sourceUrl,
+    jstring /*audioUrl*/,
     jobjectArray headerLines, jboolean playWhenReady, jlong initialPositionMs,
     jstring controlsPageUrl, jint decoderPriority,
-    jboolean /*nvidiaRtxSuperResolutionEnabled*/, jboolean /*nvidiaRtxHdrEnabled*/, jobject eventSink) {
+    jboolean /*nvidiaRtxSuperResolutionEnabled*/, jobject eventSink) {
 
     // libmpv requires LC_NUMERIC=C (e.g. non-"C" locales with comma
     // decimals make mpv_create fail); the JVM uses java.util.Locale, so
@@ -1626,14 +1655,27 @@ JNIEXPORT jlong JNICALL NP(create)(
 
     // Forward addon/debrid HTTP headers verbatim.
     std::string headerFields;
+    std::string userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
     if (headerLines != nullptr) {
         jsize count = env->GetArrayLength(headerLines);
         std::vector<std::string> headers;
         headers.reserve(count);
         for (jsize i = 0; i < count; ++i) {
             auto line = static_cast<jstring>(env->GetObjectArrayElement(headerLines, i));
-            headers.push_back(jstringToUtf8(env, line));
+            std::string headerStr = jstringToUtf8(env, line);
             if (line) env->DeleteLocalRef(line);
+            if (headerStr.size() >= 11) {
+                std::string prefix = headerStr.substr(0, 11);
+                std::transform(prefix.begin(), prefix.end(), prefix.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+                if (prefix == "user-agent:") {
+                    size_t valStart = headerStr.find_first_not_of(" \t", 11);
+                    if (valStart != std::string::npos) {
+                        userAgent = headerStr.substr(valStart);
+                    }
+                    continue;
+                }
+            }
+            headers.push_back(headerStr);
         }
         if (!headers.empty()) headerFields = joinHeaderFields(headers);
     }
@@ -1668,6 +1710,7 @@ JNIEXPORT jlong JNICALL NP(create)(
         // X11 embedding composites correctly inside the Nuvio window.
         mpv_set_option_string(m, "gpu-context", gpuCtx);
         mpv_set_option_string(m, "force-seekable", "yes");
+        mpv_set_option_string(m, "hr-seek", "default");
 
         // Decoder config mirrors the macOS bridge for parity (mac: hwdec=auto +
         // gpu-hwdec-interop=auto + decoderPriority handling). gpu-hwdec-interop=auto
@@ -1694,6 +1737,16 @@ JNIEXPORT jlong JNICALL NP(create)(
         mpv_set_option_string(m, "vd-lavc-threads", "0");
         mpv_set_option_string(m, "target-colorspace-hint", "yes");
         mpv_set_option_string(m, "target-colorspace-hint-mode", "source");
+
+        mpv_set_option_string(m, "cache", "yes");
+        mpv_set_option_string(m, "demuxer-seekable-cache", "yes");
+        mpv_set_option_string(m, "cache-pause-initial", "no");
+        mpv_set_option_string(m, "demuxer-lavf-buffersize", "262144");
+        mpv_set_option_string(m, "stream-buffer-size", "524288");
+        mpv_set_option_string(m, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5,multiple_requests=1");
+        mpv_set_option_string(m, "demuxer-max-bytes", "1073741824");
+        mpv_set_option_string(m, "demuxer-readahead-secs", "36000");
+        mpv_set_option_string(m, "user-agent", userAgent.c_str());
 
         if (!headerFields.empty()) {
             mpv_set_option_string(m, "http-header-fields", headerFields.c_str());
@@ -1825,19 +1878,21 @@ JNIEXPORT void JNICALL NP(setPaused)(JNIEnv *, jobject, jlong handle, jboolean p
 JNIEXPORT void JNICALL NP(seekTo)(JNIEnv *, jobject, jlong handle, jlong positionMs) {
     Player *p = asPlayer(handle);
     if (!p) return;
+    long long currentPosMs = (long long)std::llround(mpvGetDouble(p->mpv, "time-pos", 0.0) * 1000.0);
+    long long deltaMs = std::abs(positionMs - currentPosMs);
+    const char *mode = (deltaMs <= 3000) ? "absolute+exact" : "absolute+keyframes";
     std::string target = std::to_string(positionMs / 1000.0);
-    const char *cmd[] = {"seek", target.c_str(), "absolute", nullptr};
+    const char *cmd[] = {"seek", target.c_str(), mode, nullptr};
     mpv_command(p->mpv, cmd);
     p->ended.store(false);
 }
 
-// Exact: mpv keeps relative seeks on keyframes by default, which can overshoot by
-// up to one GOP (often ~10 s).
 JNIEXPORT void JNICALL NP(seekBy)(JNIEnv *, jobject, jlong handle, jlong offsetMs) {
     Player *p = asPlayer(handle);
     if (!p) return;
     std::string delta = std::to_string(offsetMs / 1000.0);
-    const char *cmd[] = {"seek", delta.c_str(), "relative+exact", nullptr};
+    const char *mode = (std::abs(offsetMs) <= 3000) ? "relative+exact" : "relative+keyframes";
+    const char *cmd[] = {"seek", delta.c_str(), mode, nullptr};
     mpv_command(p->mpv, cmd);
     p->ended.store(false);
 }
@@ -1983,11 +2038,74 @@ JNIEXPORT void JNICALL NP(selectSubtitleTrack)(JNIEnv *, jobject, jlong handle, 
     else mpv_set_property(p->mpv, "sid", MPV_FORMAT_INT64, &id);
 }
 
+JNIEXPORT void JNICALL NP(setGlslShaders)(JNIEnv *env, jobject, jlong handle, jstring shaders) {
+    Player *p = asPlayer(handle);
+    if (!p) return;
+    std::string s = jstringToUtf8(env, shaders);
+    mpv_set_property_string(p->mpv, "glsl-shaders", s.c_str());
+}
+
+JNIEXPORT void JNICALL NP(setAudioFilter)(JNIEnv *env, jobject, jlong handle, jstring filter) {
+    Player *p = asPlayer(handle);
+    if (!p) return;
+    std::string s = jstringToUtf8(env, filter);
+    mpv_set_property_string(p->mpv, "af", s.c_str());
+}
+
+JNIEXPORT void JNICALL NP(setVideoFilter)(JNIEnv *env, jobject, jlong handle, jstring filter) {
+    Player *p = asPlayer(handle);
+    if (!p) return;
+    std::string s = jstringToUtf8(env, filter);
+    if (s.empty()) {
+        const char *cmd[] = {"vf", "clr", nullptr};
+        mpv_command(p->mpv, cmd);
+    } else {
+        const char *cmd[] = {"vf", "set", s.c_str(), nullptr};
+        mpv_command(p->mpv, cmd);
+    }
+}
+
+JNIEXPORT jboolean JNICALL NP(isSvpAvailable)(JNIEnv *, jobject) {
+    void *h = dlopen("libvsscript.so", RTLD_LAZY | RTLD_NOLOAD);
+    if (!h) h = dlopen("libvsscript.so", RTLD_LAZY);
+    if (!h) h = dlopen("libvapoursynth-script.so", RTLD_LAZY);
+    if (h) { dlclose(h); return JNI_TRUE; }
+    return JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL NP(setSvpFilter)(JNIEnv *env, jobject, jlong handle, jboolean enabled, jstring vpyPath) {
+    Player *p = asPlayer(handle);
+    if (!p) return JNI_FALSE;
+    if (enabled) {
+        std::string path = jstringToUtf8(env, vpyPath);
+        if (!path.empty()) {
+            mpv_set_property_string(p->mpv, "hwdec", "auto-copy");
+            mpv_set_property_string(p->mpv, "demuxer-max-bytes", "1024MiB");
+            std::string filter = "@SVP:vapoursynth=\"" + path + "\":buffered-frames=8:concurrent-frames=16";
+            const char *cmd[] = {"vf", "set", filter.c_str(), nullptr};
+            mpv_command(p->mpv, cmd);
+            return JNI_TRUE;
+        }
+    }
+    mpv_set_property_string(p->mpv, "hwdec", "auto");
+    const char *cmd[] = {"vf", "clr", nullptr};
+    mpv_command(p->mpv, cmd);
+    return JNI_TRUE;
+}
+
 JNIEXPORT void JNICALL NP(addSubtitleUrl)(JNIEnv *env, jobject, jlong handle, jstring url) {
     Player *p = asPlayer(handle);
     if (!p) return;
     std::string sub = jstringToUtf8(env, url);
     const char *cmd[] = {"sub-add", sub.c_str(), "select", nullptr};
+    mpv_command(p->mpv, cmd);
+}
+
+JNIEXPORT void JNICALL NP(addAudioUrl)(JNIEnv *env, jobject, jlong handle, jstring url) {
+    Player *p = asPlayer(handle);
+    if (!p) return;
+    std::string audio = jstringToUtf8(env, url);
+    const char *cmd[] = {"audio-add", audio.c_str(), "select", nullptr};
     mpv_command(p->mpv, cmd);
 }
 
@@ -2024,14 +2142,24 @@ JNIEXPORT void JNICALL NP(applySubtitleStyle)(
     jboolean useLibass, jboolean stripSdh) {
     Player *p = asPlayer(handle);
     if (!p) return;
-    mpv_set_property_string(p->mpv, "sub-ass-override", "no");
+    mpv_set_property_string(p->mpv, "sub-ass-override", useLibass == JNI_TRUE ? "scale" : "force");
+    const char *styleOverridesCommand[] = {
+        "change-list", "sub-ass-style-overrides",
+        useLibass == JNI_TRUE ? "clr" : "set",
+        useLibass == JNI_TRUE ? "" : (bold == JNI_TRUE ? "Bold=1" : "Bold=0"), nullptr
+    };
+    mpv_command(p->mpv, styleOverridesCommand);
+    const double fontScale = useLibass == JNI_TRUE ? std::clamp<double>(fontSize, 18.0, 96.0) / 54.0 : 1.0;
+    mpvSetDouble(p->mpv, "sub-scale", fontScale);
     mpv_set_property_string(p->mpv, "sub-color", jstringToUtf8(env, textColor).c_str());
-    mpv_set_property_string(p->mpv, "sub-border-color", jstringToUtf8(env, outlineColor).c_str());
     std::string background = jstringToUtf8(env, backgroundColor);
     if (background.empty()) background = "#00000000";
     mpv_set_property_string(p->mpv, "sub-back-color", background.c_str());
-    mpv_set_property_string(p->mpv, "sub-border-style",
-                            background.rfind("#00", 0) == 0 ? "outline-and-shadow" : "background-box");
+    const bool hasBackground = background.rfind("#00", 0) != 0;
+    mpv_set_property_string(p->mpv, "sub-border-style", hasBackground ? "background-box" : "outline-and-shadow");
+    mpv_set_property_string(p->mpv, "sub-shadow-offset", hasBackground ? "4" : "0");
+    mpv_set_property_string(p->mpv, "sub-blur", "0");
+    mpv_set_property_string(p->mpv, "sub-border-color", jstringToUtf8(env, outlineColor).c_str());
     std::string border = std::to_string(outlineSize);
     mpv_set_property_string(p->mpv, "sub-border-size", border.c_str());
     mpv_set_property_string(p->mpv, "sub-bold", bold == JNI_TRUE ? "yes" : "no");

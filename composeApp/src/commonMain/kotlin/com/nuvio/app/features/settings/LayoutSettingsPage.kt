@@ -11,7 +11,7 @@ import com.nuvio.app.core.ui.labelRes
 import com.nuvio.app.isIos
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -260,6 +260,8 @@ internal fun LazyListScope.layoutSettingsContent(
             }
         }
     }
+    if (com.nuvio.app.supportsPosterNavigationMotion) item { NavigationFeelSettingsRow(isTablet) }
+    codeineXOSettingsContent(isTablet = isTablet, section = SettingsPage.Layout)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -280,7 +282,7 @@ private fun DesktopNavigationLayoutBottomSheet(
         },
         sheetState = sheetState,
     ) {
-        LazyColumn(
+        NuvioLazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
@@ -350,7 +352,7 @@ private fun NavBarStyleBottomSheet(
         },
         sheetState = sheetState,
     ) {
-        LazyColumn(
+        NuvioLazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),

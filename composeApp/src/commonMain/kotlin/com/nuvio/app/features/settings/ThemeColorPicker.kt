@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -72,7 +74,7 @@ internal fun ThemeColorPicker(
                     Modifier
                         .size(NuvioTokens.Space.s48)
                         .clip(CircleShape)
-                        .selectable(color == swatch, role = Role.RadioButton, onClick = { onColorChanged(swatch) })
+                        .remoteNavigationTarget(shape = CircleShape).selectable(color == swatch, role = Role.RadioButton, onClick = { onColorChanged(swatch) })
                         .semantics { contentDescription = formatHexColor(swatch) }
                         .padding(NuvioTokens.Space.s6)
                         .border(
@@ -129,8 +131,8 @@ private fun ColorChannelSlider(
         Slider(
             value = value,
             onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = title }.remoteNavigationTarget(adjustable = true),
             valueRange = valueRange,
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = title },
             trackBrush = brush,
         )
     }

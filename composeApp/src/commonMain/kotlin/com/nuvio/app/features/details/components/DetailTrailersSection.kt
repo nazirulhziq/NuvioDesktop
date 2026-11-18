@@ -1,5 +1,8 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +45,6 @@ import com.nuvio.app.core.ui.Menu
 import com.nuvio.app.core.ui.MenuItem
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.backdropControlColor
-import com.nuvio.app.core.ui.nuvioFocusBorder
 import com.nuvio.app.core.ui.nuvioCardDepth
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
 import com.nuvio.app.core.ui.nuvioHorizontalScrollBleed
@@ -113,7 +115,7 @@ fun DetailTrailersSection(
                         tonalElevation = 0.dp,
                         modifier = Modifier
                             .clip(RoundedCornerShape(sizing.selectorRadius))
-                            .clickable { menuExpanded = true },
+                            .remoteNavigationTarget(shape = RoundedCornerShape(sizing.selectorRadius)).clickable { menuExpanded = true },
                     ) {
                         Row(
                             modifier = Modifier.padding(
@@ -166,10 +168,10 @@ fun DetailTrailersSection(
             val rowState = rememberLazyListState()
             LazyRow(
                 state = rowState,
-                modifier = Modifier
+                modifier = Modifier.remoteNavigationGroup(rememberRow = true).then(Modifier
                     .nuvioHorizontalScrollBleed(horizontalScrollPadding)
                     .fillMaxWidth()
-                    .nuvioDesktopDragScroll(rowState),
+                    .nuvioDesktopDragScroll(rowState)),
                 contentPadding = PaddingValues(horizontal = horizontalScrollPadding),
                 horizontalArrangement = Arrangement.spacedBy(sizing.cardSpacing),
             ) {
@@ -212,8 +214,7 @@ private fun TrailerCard(
                     shape = RoundedCornerShape(cornerRadius),
                     surface = NuvioCardDepthSurface.Trailers,
                 )
-                .nuvioFocusBorder(RoundedCornerShape(cornerRadius))
-                .clickable(onClick = onClick),
+                .remoteNavigationTarget(shape = RoundedCornerShape(cornerRadius)).clickable(onClick = onClick),
         ) {
             AsyncImage(
                 model = "https://img.youtube.com/vi/${trailer.key}/hqdefault.jpg",

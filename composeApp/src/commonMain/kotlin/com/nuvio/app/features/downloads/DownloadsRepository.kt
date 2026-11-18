@@ -2,6 +2,9 @@ package com.nuvio.app.features.downloads
 
 import com.nuvio.app.features.player.SubtitleRequestExtras
 import com.nuvio.app.features.player.addonSubtitleRequests
+import com.nuvio.app.features.player.MediaClassifier
+import com.nuvio.app.features.player.classificationFilename
+import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.streams.StreamItem
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +38,19 @@ object DownloadsRepository {
 
     fun onProfileChanged() {
         loadFromDisk()
+        DownloadLocation.recoveryRequired = false
+        DownloadLocation.refresh()
+        DownloadLocation.resumeRecovered()
+    }
+
+    internal fun pauseForLocationChange() {
+        _uiState.value.activeItems.filter { it.status == DownloadStatus.Downloading }
+            .map { it.id }.forEach(::pauseDownload)
+    }
+
+    internal fun applyLocationChange(items: List<DownloadItem>) {
+        publish(items)
+        persist()
     }
 
     fun markCompletedSeen() {
@@ -51,6 +67,7 @@ object DownloadsRepository {
     }
 
     fun findPlayableDownloadByVideoId(videoId: String?): DownloadItem? {
+        if (DownloadLocation.operationsBlocked) return null
         ensureLoaded()
         val normalizedVideoId = videoId?.trim().orEmpty()
         if (normalizedVideoId.isBlank()) return null
@@ -59,12 +76,19 @@ object DownloadsRepository {
         }
     }
 
+    internal fun updatePlaybackClassification(localFileUri: String, hint: com.nuvio.app.features.player.MediaClassificationHint) {
+        val validated = com.nuvio.app.features.player.MediaClassification.fromHint(hint)?.toHint() ?: return
+        val item = _uiState.value.items.firstOrNull { it.localFileUri == localFileUri } ?: return
+        if (item.classificationHint != validated) mutateItem(item.id) { it.copy(classificationHint = validated) }
+    }
+
     fun findPlayableDownload(
         parentMetaId: String,
         seasonNumber: Int? = null,
         episodeNumber: Int? = null,
         videoId: String? = null,
     ): DownloadItem? {
+        if (DownloadLocation.operationsBlocked) return null
         ensureLoaded()
         val items = _uiState.value.items
         val normalizedParentMetaId = parentMetaId.trim()
@@ -89,6 +113,7 @@ object DownloadsRepository {
     }
 
     fun playableLocalFileUri(item: DownloadItem): String? {
+        if (DownloadLocation.operationsBlocked) return null
         ensureLoaded()
         if (item.status != DownloadStatus.Completed) return null
         val resolvedUri = DownloadsPlatformDownloader.resolveLocalFileUri(
@@ -127,6 +152,7 @@ object DownloadsRepository {
         episodeThumbnail: String?,
         stream: StreamItem,
     ): DownloadEnqueueResult {
+        if (DownloadLocation.operationsBlocked) return DownloadEnqueueResult.LocationChanging
         ensureLoaded()
 
         val sourceUrl = stream.playableDirectUrl
@@ -196,6 +222,13 @@ object DownloadsRepository {
             sourceSubtitles = stream.externalSubtitles,
             localFileUri = null,
             fileName = fileName,
+            originalFilename = stream.classificationFilename,
+            classificationHint = MediaClassifier.detectPlayback(
+                meta = MetaDetailsRepository.peek(parentMetaType, parentMetaId),
+                fallbackItemType = parentMetaType,
+                fallbackItemId = parentMetaId,
+                stream = stream,
+            ).toHint(),
             status = DownloadStatus.Downloading,
             downloadedBytes = 0L,
             totalBytes = null,
@@ -240,6 +273,7 @@ object DownloadsRepository {
     }
 
     fun resumeDownload(downloadId: String) {
+        if (DownloadLocation.operationsBlocked) return
         ensureLoaded()
         val item = _uiState.value.items.firstOrNull { it.id == downloadId } ?: return
         if (item.status != DownloadStatus.Paused && item.status != DownloadStatus.Failed) return
@@ -271,6 +305,7 @@ object DownloadsRepository {
     }
 
     fun cancelDownload(downloadId: String) {
+        if (DownloadLocation.operationsBlocked) return
         ensureLoaded()
         val item = _uiState.value.items.firstOrNull { it.id == downloadId } ?: return
 
@@ -311,6 +346,7 @@ object DownloadsRepository {
         }
         normalized.filter { it.status == DownloadStatus.Downloading && it.id !in activeHandles }
             .forEach(::startDownload)
+        DownloadLocation.resumeRecovered()
     }
 
     private fun startDownload(item: DownloadItem, attempt: Int = 1) {
@@ -463,7 +499,7 @@ private data class StoredDownloadsPayload(
     val items: List<DownloadItem> = emptyList(),
 )
 
-private object DownloadsCodec {
+internal object DownloadsCodec {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true

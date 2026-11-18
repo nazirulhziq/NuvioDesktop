@@ -2,6 +2,7 @@ package com.nuvio.app.features.streams
 
 import com.nuvio.app.features.addons.AddonManifest
 import com.nuvio.app.features.addons.ManagedAddon
+import com.nuvio.app.features.addons.ADDON_STREAM_CACHE_TTL_MS
 import com.nuvio.app.features.plugins.PluginRepositoryItem
 import com.nuvio.app.features.plugins.PluginRuntimeResult
 import com.nuvio.app.features.plugins.PluginScraper
@@ -27,12 +28,27 @@ internal data class PluginProviderGroup(
 )
 
 internal sealed interface StreamLoadCompletion {
-    data class Addon(val group: AddonStreamGroup) : StreamLoadCompletion
+    val sourceKey: String
+    val cacheExpiresAtMs: Long
+
+    data class Addon(
+        val group: AddonStreamGroup,
+        override val cacheExpiresAtMs: Long = epochMs() + ADDON_STREAM_CACHE_TTL_MS,
+    ) : StreamLoadCompletion {
+        override val sourceKey: String get() = group.addonId
+    }
     data class PluginScraper(
         val addonId: String,
         val streams: List<StreamItem>,
         val error: String?,
+        override val sourceKey: String,
+        override val cacheExpiresAtMs: Long = epochMs() + ADDON_STREAM_CACHE_TTL_MS,
     ) : StreamLoadCompletion
+}
+
+internal fun StreamLoadCompletion.isReusable(nowMs: Long): Boolean = cacheExpiresAtMs > nowMs && when (this) {
+    is StreamLoadCompletion.Addon -> group.streams.isNotEmpty() && group.error == null
+    is StreamLoadCompletion.PluginScraper -> streams.isNotEmpty() && error == null
 }
 
 internal fun List<PluginScraper>.toPluginProviderGroups(
@@ -116,13 +132,19 @@ internal fun PluginRuntimeResult.toStreamItem(
         addonName = addonName,
         addonId = addonId,
         streamType = normalizeStreamType(type),
-        behaviorHints = if (requestHeaders.isEmpty()) {
-            StreamBehaviorHints()
-        } else {
-            StreamBehaviorHints(
-                notWebReady = true,
-                proxyHeaders = StreamProxyHeaders(request = requestHeaders),
-            )
+        behaviorHints = run {
+            val parsedVideoSize = parseStreamSize(size)
+                ?: parseStreamSize(title)
+                ?: parseStreamSize(name)
+            if (requestHeaders.isEmpty()) {
+                StreamBehaviorHints(videoSize = parsedVideoSize)
+            } else {
+                StreamBehaviorHints(
+                    notWebReady = true,
+                    videoSize = parsedVideoSize,
+                    proxyHeaders = StreamProxyHeaders(request = requestHeaders),
+                )
+            }
         },
         externalSubtitles = subtitles?.map {
             StreamSubtitle(

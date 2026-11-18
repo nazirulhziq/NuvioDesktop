@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.AuraSettings
 import com.nuvio.app.core.ui.AppTheme
 import com.nuvio.app.core.ui.CustomThemeColors
 import com.nuvio.app.core.ui.NativeTabBridge
@@ -28,6 +29,13 @@ object ThemeSettingsRepository {
     private val _customThemeColors = MutableStateFlow(CustomThemeColors.solid(CustomThemeColors.Default.second))
     val customThemeColors: StateFlow<CustomThemeColors> = _customThemeColors.asStateFlow()
 
+    private val _surfaceStyle = MutableStateFlow(SurfaceStyle.Default)
+    val surfaceStyle: StateFlow<SurfaceStyle> = _surfaceStyle.asStateFlow()
+
+    // Preserve the pre-existing player appearance independently of page surface style.
+    private val _frostedGlassEnabled = MutableStateFlow(true)
+    val frostedGlassEnabled: StateFlow<Boolean> = _frostedGlassEnabled.asStateFlow()
+
     private val _amoledEnabled = MutableStateFlow(false)
     val amoledEnabled: StateFlow<Boolean> = _amoledEnabled.asStateFlow()
 
@@ -46,6 +54,35 @@ object ThemeSettingsRepository {
     private val _navBarGlowEnabled = MutableStateFlow(true)
     val navBarGlowEnabled: StateFlow<Boolean> = _navBarGlowEnabled.asStateFlow()
 
+    private val _auraBackgroundEnabled = MutableStateFlow(true)
+    val auraBackgroundEnabled: StateFlow<Boolean> = _auraBackgroundEnabled.asStateFlow()
+
+    private val _auraSettings = MutableStateFlow(AuraSettings())
+    val auraSettings: StateFlow<AuraSettings> = _auraSettings.asStateFlow()
+
+    private val _appScale = MutableStateFlow(100)
+    val appScale: StateFlow<Int> = _appScale.asStateFlow()
+
+    fun setAppScale(scale: Int) {
+        ensureLoaded()
+        val clamped = scale.coerceIn(50, 150)
+        if (_appScale.value == clamped) return
+        _appScale.value = clamped
+        ThemeSettingsStorage.saveAppScale(clamped)
+    }
+
+    fun stepAppScale(delta: Int) {
+        ensureLoaded()
+        setAppScale(_appScale.value + delta)
+    }
+
+    fun setAuraSettings(settings: AuraSettings) {
+        ensureLoaded()
+        if (_auraSettings.value == settings) return
+        _auraSettings.value = settings
+        ThemeSettingsStorage.saveAuraSettings(settings.encode())
+    }
+
     private var hasLoaded = false
     private var observesMembership = false
 
@@ -62,9 +99,12 @@ object ThemeSettingsRepository {
     fun clearLocalState() {
         hasLoaded = false
         _selectedThemePreference.value = null
+        _appScale.value = 100
         _selectedTheme.value = AppTheme.WHITE
         _customThemePreference.value = CustomThemeColors.Default
         _customThemeColors.value = CustomThemeColors.solid(CustomThemeColors.Default.second)
+        _frostedGlassEnabled.value = true
+        _surfaceStyle.value = SurfaceStyle.Default
         _amoledEnabled.value = false
         _liquidGlassNativeTabBarEnabled.value = false
         _desktopNavigationLayout.value = DesktopNavigationLayout.Default
@@ -73,6 +113,8 @@ object ThemeSettingsRepository {
         _selectedAppLanguage.value = AppLanguage.DEVICE
         _navBarGlowEnabled.value = true
         _navBarStyle.value = NavBarStyle.ADAPTIVE
+        _auraBackgroundEnabled.value = true
+        _auraSettings.value = AuraSettings()
     }
 
     private fun loadFromDisk() {
@@ -90,6 +132,9 @@ object ThemeSettingsRepository {
         _selectedThemePreference.value = theme
         _customThemePreference.value = CustomThemeColors.decode(ThemeSettingsStorage.loadCustomThemeColors())
         applyEffectiveTheme()
+        val legacyFrostedEnabled = ThemeSettingsStorage.loadFrostedGlassEnabled()
+        _frostedGlassEnabled.value = legacyFrostedEnabled ?: true
+        _surfaceStyle.value = SurfaceStyle.fromStored(ThemeSettingsStorage.loadSurfaceStyle(), legacyFrostedEnabled)
         _amoledEnabled.value = ThemeSettingsStorage.loadAmoledEnabled() ?: false
         val liquidGlassEnabled = ThemeSettingsStorage.loadLiquidGlassNativeTabBarEnabled() ?: false
         _liquidGlassNativeTabBarEnabled.value = liquidGlassEnabled
@@ -102,6 +147,9 @@ object ThemeSettingsRepository {
         _selectedAppLanguage.value = appLanguage
         _navBarGlowEnabled.value = ThemeSettingsStorage.loadNavBarGlowEnabled() ?: true
         _navBarStyle.value = NavBarStyle.fromKey(ThemeSettingsStorage.loadNavBarStyle())
+        _auraBackgroundEnabled.value = ThemeSettingsStorage.loadAuraBackgroundEnabled() ?: true
+        _auraSettings.value = AuraSettings.decode(ThemeSettingsStorage.loadAuraSettings())
+        _appScale.value = ThemeSettingsStorage.loadAppScale()?.coerceIn(50, 150) ?: 100
     }
 
     fun setTheme(theme: AppTheme) {
@@ -123,6 +171,20 @@ object ThemeSettingsRepository {
         _customThemePreference.value = selectedColors
         _selectedThemePreference.value = AppTheme.CUSTOM
         applyEffectiveTheme()
+    }
+
+    fun setSurfaceStyle(style: SurfaceStyle) {
+        ensureLoaded()
+        if (_surfaceStyle.value == style) return
+        _surfaceStyle.value = style
+        ThemeSettingsStorage.saveSurfaceStyle(style.key)
+    }
+
+    fun setFrostedGlassEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (_frostedGlassEnabled.value == enabled) return
+        _frostedGlassEnabled.value = enabled
+        ThemeSettingsStorage.saveFrostedGlassEnabled(enabled)
     }
 
     fun setAmoled(enabled: Boolean) {
@@ -167,6 +229,13 @@ object ThemeSettingsRepository {
         if (_navBarGlowEnabled.value == enabled) return
         _navBarGlowEnabled.value = enabled
         ThemeSettingsStorage.saveNavBarGlowEnabled(enabled)
+    }
+
+    fun setAuraBackgroundEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (_auraBackgroundEnabled.value == enabled) return
+        _auraBackgroundEnabled.value = enabled
+        ThemeSettingsStorage.saveAuraBackgroundEnabled(enabled)
     }
 
     private fun observeMembership() {

@@ -36,11 +36,13 @@ fun AnimatedArtworkMode.toDesktopAnimation(): NuvioDesktopAnimation = when (this
 
 @Serializable
 private data class StoredPosterCardStylePreferences(
+    val glowEnabled: Boolean = true,
     val widthDp: Int = DefaultPosterCardWidthDp,
     val heightDp: Int = DefaultPosterCardHeightDp,
     val cornerRadiusDp: Int = DefaultPosterCardCornerRadiusDp,
     val catalogLandscapeModeEnabled: Boolean = false,
     val hideLabelsEnabled: Boolean = false,
+    val hideYearEnabled: Boolean = false,
     val hoverPreviewEnabled: Boolean = true,
     val hoverPreviewOpenDelayMillis: Int = DefaultHoverPreviewOpenDelayMillis,
     val hoverPreviewTrailerEnabled: Boolean = false,
@@ -51,11 +53,13 @@ private data class StoredPosterCardStylePreferences(
 )
 
 data class PosterCardStyleUiState(
+    val glowEnabled: Boolean = true,
     val widthDp: Int = DefaultPosterCardWidthDp,
     val heightDp: Int = DefaultPosterCardHeightDp,
     val cornerRadiusDp: Int = DefaultPosterCardCornerRadiusDp,
     val catalogLandscapeModeEnabled: Boolean = false,
     val hideLabelsEnabled: Boolean = false,
+    val hideYearEnabled: Boolean = false,
     val hoverPreviewEnabled: Boolean = true,
     val hoverPreviewOpenDelayMillis: Int = DefaultHoverPreviewOpenDelayMillis,
     val hoverPreviewTrailerEnabled: Boolean = false,
@@ -120,6 +124,20 @@ object PosterCardStyleRepository {
         ensureLoaded()
         if (_uiState.value.hideLabelsEnabled == enabled) return
         _uiState.value = _uiState.value.copy(hideLabelsEnabled = enabled)
+        persist()
+    }
+
+    fun setHideYearEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (_uiState.value.hideYearEnabled == enabled) return
+        _uiState.value = _uiState.value.copy(hideYearEnabled = enabled)
+        persist()
+    }
+
+    fun setGlowEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (_uiState.value.glowEnabled == enabled) return
+        _uiState.value = _uiState.value.copy(glowEnabled = enabled)
         persist()
     }
 
@@ -209,11 +227,13 @@ object PosterCardStyleRepository {
             val heightDp = stored.heightDp.takeIf { it > 0 } ?: ((widthDp * 3) / 2)
             val cornerRadiusDp = stored.cornerRadiusDp.coerceAtLeast(0)
             PosterCardStyleUiState(
+                glowEnabled = stored.glowEnabled,
                 widthDp = widthDp,
                 heightDp = heightDp,
                 cornerRadiusDp = cornerRadiusDp,
                 catalogLandscapeModeEnabled = stored.catalogLandscapeModeEnabled,
                 hideLabelsEnabled = stored.hideLabelsEnabled,
+                hideYearEnabled = stored.hideYearEnabled,
                 hoverPreviewEnabled = stored.hoverPreviewEnabled,
                 hoverPreviewOpenDelayMillis = normalizeHoverPreviewOpenDelayMillis(
                     stored.hoverPreviewOpenDelayMillis,
@@ -237,11 +257,13 @@ object PosterCardStyleRepository {
         PosterCardStyleStorage.savePayload(
             json.encodeToString(
                 StoredPosterCardStylePreferences(
+                    glowEnabled = _uiState.value.glowEnabled,
                     widthDp = _uiState.value.widthDp,
                     heightDp = _uiState.value.heightDp,
                     cornerRadiusDp = _uiState.value.cornerRadiusDp,
                     catalogLandscapeModeEnabled = _uiState.value.catalogLandscapeModeEnabled,
                     hideLabelsEnabled = _uiState.value.hideLabelsEnabled,
+                    hideYearEnabled = _uiState.value.hideYearEnabled,
                     hoverPreviewEnabled = _uiState.value.hoverPreviewEnabled,
                     hoverPreviewOpenDelayMillis = _uiState.value.hoverPreviewOpenDelayMillis,
                     hoverPreviewTrailerEnabled = _uiState.value.hoverPreviewTrailerEnabled,

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.AppBasicAlertDialog
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,14 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import com.nuvio.app.core.ui.SettingsAwareSurface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -29,9 +30,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioModalBottomSheet
+import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.core.ui.platformTouchScroll
 import com.nuvio.app.core.ui.SurfaceEdge
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -128,11 +129,13 @@ private fun <T> TrackingPickerDialog(
     onDismiss: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    BasicAlertDialog(onDismissRequest = onDismiss, modifier = Modifier.platformTouchScroll()) {
-        Surface(
+    PlatformBackHandler(enabled = true, onBack = onDismiss)
+    AppBasicAlertDialog(onDismissRequest = onDismiss) {
+        SettingsAwareSurface(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = tokens.components.dialogMaxWidth),
+            panel = true,
             shape = tokens.shapes.dialog,
             color = tokens.colors.surfaceDialog,
             border = BorderStroke(tokens.borders.thin, SurfaceEdge),
@@ -197,7 +200,7 @@ private fun <T> TrackingPickerContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 520.dp)
-                .verticalScroll(rememberScrollState()),
+                .nuvioVerticalScroll(rememberScrollState()),
         ) {
             options.forEachIndexed { index, option ->
                 if (index > 0) {

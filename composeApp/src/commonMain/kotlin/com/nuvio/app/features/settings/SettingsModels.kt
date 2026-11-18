@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.QueuePlayNext
 import androidx.compose.material.icons.filled.RoundedCorner
@@ -41,6 +42,8 @@ import nuvio.composeapp.generated.resources.compose_settings_page_account
 import nuvio.composeapp.generated.resources.compose_settings_page_addons
 import nuvio.composeapp.generated.resources.compose_settings_page_advanced
 import nuvio.composeapp.generated.resources.compose_settings_page_appearance
+import nuvio.composeapp.generated.resources.compose_settings_page_codeine_xo
+import nuvio.composeapp.generated.resources.compose_settings_page_remote
 import nuvio.composeapp.generated.resources.compose_settings_page_content_discovery
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
@@ -100,6 +103,16 @@ internal enum class SettingsPage(
     Account(
         titleRes = Res.string.compose_settings_page_account,
         category = SettingsCategory.You,
+        parentPage = Root,
+    ),
+    CodeineXO(
+        titleRes = Res.string.compose_settings_page_codeine_xo,
+        category = SettingsCategory.System,
+        parentPage = Root,
+    ),
+    Remote(
+        titleRes = Res.string.compose_settings_page_remote,
+        category = SettingsCategory.System,
         parentPage = Root,
     ),
     SupportersContributors(
@@ -283,6 +296,8 @@ internal fun settingsCategoryForName(name: String): SettingsCategory = when (nam
 
 internal val SettingsPage.icon: ImageVector
     get() = when (this) {
+        SettingsPage.CodeineXO -> Icons.Default.Build
+        SettingsPage.Remote -> Icons.Default.PhoneAndroid
         SettingsPage.Root -> Icons.Rounded.Settings
         SettingsPage.Account -> Icons.Default.Person
         SettingsPage.SupportersContributors -> Icons.Default.Favorite

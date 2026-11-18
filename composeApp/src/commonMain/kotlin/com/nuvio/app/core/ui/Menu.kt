@@ -1,5 +1,8 @@
 package com.nuvio.app.core.ui
 
+
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,17 +43,20 @@ fun Menu(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val scrollState = rememberScrollState()
+    PlatformBackHandler(enabled = expanded, onBack = onDismissRequest)
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        modifier = modifier.platformTouchScroll().widthIn(min = MenuMinWidth),
+        modifier = modifier.widthIn(min = MenuMinWidth).nuvioDesktopDragScroll(scrollState, Orientation.Vertical),
+        scrollState = scrollState,
         offset = offset,
         shape = MenuShape,
         containerColor = tokens.colors.surfacePopover,
         tonalElevation = tokens.elevation.flat,
         shadowElevation = tokens.elevation.overlay,
         border = BorderStroke(tokens.borders.thin, SurfaceEdge),
-        content = content,
+        content = { AppOverlayInput { content() } },
     )
 }
 
@@ -69,7 +75,7 @@ fun MenuItem(
             .padding(horizontal = NuvioTokens.Space.s8)
             .clip(tokens.shapes.compactCard)
             .background(if (selected) tokens.colors.accent.copy(alpha = tokens.opacity.hover) else Color.Transparent)
-            .clickable(enabled = enabled, onClick = onClick)
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).clickable(enabled = enabled, onClick = onClick)
             .padding(NuvioTokens.Space.s12),
         horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
         verticalAlignment = Alignment.CenterVertically,

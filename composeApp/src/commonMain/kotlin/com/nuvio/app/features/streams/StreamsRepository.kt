@@ -10,6 +10,8 @@ import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
+import com.nuvio.app.features.plugins.PluginIdDiagnostics
+import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.servers.ServerStreams
@@ -87,6 +89,7 @@ object StreamsRepository {
         if (
             !forceRefresh &&
             activeRequestKey == requestKey &&
+            activeJob?.isActive == true &&
             (currentState.groups.isNotEmpty() || currentState.emptyStateReason != null || currentState.isAnyLoading)
         ) {
             log.d { "Skipping stream reload for unchanged request type=$type id=$videoId" }
@@ -95,6 +98,7 @@ object StreamsRepository {
 
         activeRequestKey = requestKey
         activeJob?.cancel()
+        PluginIdDiagnostics.clearRequest(PluginIdDiagnostics.key(pluginContentId(videoId, season, episode), type, season, episode))
         _uiState.value = StreamsUiState(requestToken = requestToken)
 
         PlayerSettingsRepository.ensureLoaded()

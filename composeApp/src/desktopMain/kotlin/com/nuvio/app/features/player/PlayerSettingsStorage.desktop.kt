@@ -16,10 +16,29 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-internal actual object PlayerSettingsStorage {
+internal actual object PlayerSettingsStorage : PlaybackBufferPresetStorage {
+    private const val playbackBufferPresetKey = DesktopPlaybackBufferPresetStorage.KEY
+    private val playbackBufferStorage by lazy { DesktopPlaybackBufferPresetStorage(store) }
+    override fun loadPlaybackBufferPreset(): String? = playbackBufferStorage.loadPlaybackBufferPreset()
+    override fun savePlaybackBufferPreset(preset: String) = playbackBufferStorage.savePlaybackBufferPreset(preset)
     private const val pendingExternalPlaybackKey = "pending_external_playback"
     private const val playbackBrightnessKey = "playback_brightness"
     private const val useLegacyPlayerLayoutKey = "use_legacy_player_layout"
+    private const val playerUiModeKey = "player_ui_mode"
+    private const val showSeekbarWhileSeekingKey = "show_seekbar_while_seeking"
+    private const val showClockInPlayerKey = "show_clock_in_player"
+    private const val seekPreviewEnabledKey = "seek_preview_enabled"
+    private const val seekPreviewWhileDraggingKey = "seek_preview_while_dragging"
+    private const val seekPreviewWhileHoveringKey = "seek_preview_while_hovering"
+    private const val seekPreviewWhileKeyboardSeekingKey = "seek_preview_while_keyboard_seeking"
+    private const val seekPreviewThumbnailCountKey = "seek_preview_thumbnail_count"
+    private const val seekrApiKeyKey = "seekr_api_key"
+    private const val showRemainingTimeKey = "show_remaining_time"
+    private const val eyeFilterEnabledKey = "eye_filter_enabled"
+    private const val eyeFilterColorKey = "eye_filter_color"
+    private const val eyeFilterOpacityKey = "eye_filter_opacity"
+    private const val grainFilterEnabledKey = "grain_filter_enabled"
+    private const val playerUiScaleKey = "player_ui_scale"
     private const val autoSkipMovieCreditsKey = "auto_skip_movie_credits"
     private const val preloadNextEpisodeSourcesKey = "preload_next_episode_sources"
     private const val exoNativeMemoryEnabledKey = "exo_native_memory_enabled"
@@ -56,6 +75,8 @@ internal actual object PlayerSettingsStorage {
     private const val subtitleOutlineColorKey = "subtitle_outline_color"
     private const val subtitleOutlineEnabledKey = "subtitle_outline_enabled"
     private const val subtitleOutlineWidthKey = "subtitle_outline_width"
+    private const val subtitleOutlineEffectKey = "subtitle_outline_effect"
+    private const val subtitleFontKey = "subtitle_font"
     private const val subtitleBoldKey = "subtitle_bold"
     private const val subtitleFontSizeSpKey = "subtitle_font_size_sp"
     private const val subtitleBottomOffsetKey = "subtitle_bottom_offset"
@@ -124,113 +145,13 @@ internal actual object PlayerSettingsStorage {
     private const val iosSaturationKey = "ios_saturation"
     private const val iosGammaKey = "ios_gamma"
     private const val nvidiaRtxSuperResolutionEnabledKey = "nvidia_rtx_super_resolution_enabled"
-    private const val nvidiaRtxHdrEnabledKey = "nvidia_rtx_hdr_enabled"
-    private val syncKeys = listOf(
-        showLoadingOverlayKey,
-        showPlayerLoadingStatusKey,
-        pauseOverlayEnabledKey,
-        showParentalGuideKey,
-        resizeModeKey,
-        holdToSpeedEnabledKey,
-        holdToSpeedValueKey,
-        nvidiaRtxSuperResolutionEnabledKey,
-        nvidiaRtxHdrEnabledKey,
-        touchGesturesEnabledKey,
-        externalPlayerEnabledKey,
-        externalPlayerForwardSubtitlesKey,
-        externalPlayerSendSkipSegmentsKey,
-        externalPlayerIdKey,
-        preferredAudioLanguageKey,
-        secondaryPreferredAudioLanguageKey,
-        preferredSubtitleLanguageKey,
-        secondaryPreferredSubtitleLanguageKey,
-        subtitleTextColorKey,
-        subtitleAppearanceKey,
-        subtitleBackgroundColorKey,
-        subtitleOutlineColorKey,
-        subtitleOutlineEnabledKey,
-        subtitleOutlineWidthKey,
-        subtitleBoldKey,
-        subtitleFontSizeSpKey,
-        subtitleBottomOffsetKey,
-        subtitleStripSdhKey,
-        subtitleUseForcedSubtitlesKey,
-        subtitleShowOnlyPreferredLanguagesKey,
-        addonSubtitleStartupModeKey,
-        streamReuseLastLinkEnabledKey,
-        streamReuseLastLinkCacheHoursKey,
-        androidPlaybackEngineKey,
-        autoSwitchPlaybackEngineOnErrorKey,
-        androidLibmpvVideoOutputKey,
-        androidLibmpvHardwareDecodingEnabledKey,
-        androidLibmpvYuv420pEnabledKey,
-        androidExoChaptersEnabledKey,
-        chapterTitleEnabledKey,
-        rememberAudioDelayPerDeviceKey,
-        persistAudioAmplificationKey,
-        audioAmplificationDbKey,
-        downmixEnabledKey,
-        audioOutputChannelsKey,
-        maintainOriginalAudioOnDownmixKey,
-        centerMixLevelDbKey,
-        decoderPriorityKey,
-        mapDV7ToHevcKey,
-        tunnelingEnabledKey,
-        streamAutoPlayModeKey,
-        streamAutoPlaySourceKey,
-        streamAutoPlaySelectedAddonsKey,
-        streamAutoPlaySelectedPluginsKey,
-        streamAutoPlayRegexKey,
-        streamAutoPlayTimeoutSecondsKey,
-        streamAutoPlayFallbackOnFailureKey,
-        streamAutoPlayFallbackMaxSourcesKey,
-        streamAutoPlayFallbackStartupTimeoutSecondsKey,
-        skipIntroEnabledKey,
-        autoSkipSegmentTypesKey,
-        preloadNextEpisodeSourcesKey,
-        exoNativeMemoryEnabledKey,
-        vodCacheEnabledKey,
-        vodCacheSizeModeKey,
-        vodCacheSizeMbKey,
-        bufferEngineEnabledKey,
-        minBufferMsKey,
-        maxBufferMsKey,
-        bufferForPlaybackMsKey,
-        bufferForPlaybackAfterRebufferMsKey,
-        backBufferDurationMsKey,
-        targetBufferSizeMbKey,
-        autoSkipMovieCreditsKey,
-        autoSkipPostCreditsKey,
-        animeSkipEnabledKey,
-        animeSkipClientIdKey,
-        streamAutoPlayNextEpisodeEnabledKey,
-        streamAutoPlayNextEpisodeFallbackEnabledKey,
-        streamAutoPlayPreferBingeGroupKey,
-        streamAutoPlayReuseBingeGroupKey,
-        nextEpisodeThresholdModeKey,
-        nextEpisodeThresholdPercentKey,
-        nextEpisodeThresholdMinutesBeforeEndKey,
-        useLibassKey,
-        libassRenderTypeKey,
-        libassRenderScaleKey,
-        libassRenderModeKey,
-        iosVideoOutputPresetKey,
-        iosToneMappingModeKey,
-        iosTargetPrimariesKey,
-        iosTargetTransferKey,
-        iosHardwareDecoderModeKey,
-        iosAudioOutputModeKey,
-        iosExtendedDynamicRangeEnabledKey,
-        iosTargetColorspaceHintEnabledKey,
-        iosHdrComputePeakEnabledKey,
-        iosDebandEnabledKey,
-        iosInterpolationEnabledKey,
-        iosBrightnessKey,
-        iosContrastKey,
-        iosSaturationKey,
-        iosGammaKey,
-    )
+    private const val animeUpscalerEnabledKey = "anime_upscaler_enabled"
+    private const val animeUpscalerOptionKey = "anime_upscaler_option"
+    private const val animeUpscalerModeKey = "anime_upscaler_mode"
+    private const val svpMotionOptionKey = "svp_motion_option"
+    private const val audioNightModeEnabledKey = "audio_night_mode_enabled"
     private val store = DesktopStorage.store("nuvio_player_settings")
+    private val subtitleRendererPreference = DesktopSubtitleRendererPreference(store)
 
     actual fun loadPendingExternalPlayback(): String? = store.getString(pendingExternalPlaybackKey)
     actual fun savePendingExternalPlayback(value: String?) = store.putString(pendingExternalPlaybackKey, value)
@@ -238,6 +159,8 @@ internal actual object PlayerSettingsStorage {
     actual fun savePlaybackBrightness(level: Float) = saveFloat(playbackBrightnessKey, level)
     actual fun loadUseLegacyPlayerLayout(): Boolean? = loadBoolean(useLegacyPlayerLayoutKey)
     actual fun saveUseLegacyPlayerLayout(enabled: Boolean) = saveBoolean(useLegacyPlayerLayoutKey, enabled)
+    actual fun loadPlayerUiMode(): String? = loadString(playerUiModeKey)
+    actual fun savePlayerUiMode(mode: String) = saveString(playerUiModeKey, mode)
     actual fun loadPreloadNextEpisodeSources(): Boolean? = loadBoolean(preloadNextEpisodeSourcesKey)
     actual fun savePreloadNextEpisodeSources(enabled: Boolean) = saveBoolean(preloadNextEpisodeSourcesKey, enabled)
     actual fun loadExoNativeMemoryEnabled(): Boolean? = loadBoolean(exoNativeMemoryEnabledKey)
@@ -311,6 +234,10 @@ internal actual object PlayerSettingsStorage {
     actual fun saveSubtitleOutlineEnabled(enabled: Boolean) = saveBoolean(subtitleOutlineEnabledKey, enabled)
     actual fun loadSubtitleOutlineWidth(): Int? = loadInt(subtitleOutlineWidthKey)
     actual fun saveSubtitleOutlineWidth(width: Int) = saveInt(subtitleOutlineWidthKey, width)
+    actual fun loadSubtitleOutlineEffect(): String? = loadString(subtitleOutlineEffectKey)
+    actual fun saveSubtitleOutlineEffect(effect: String) = saveString(subtitleOutlineEffectKey, effect)
+    actual fun loadSubtitleFont(): String? = loadString(subtitleFontKey)
+    actual fun saveSubtitleFont(font: String) = saveString(subtitleFontKey, font)
     actual fun loadSubtitleBold(): Boolean? = loadBoolean(subtitleBoldKey)
     actual fun saveSubtitleBold(enabled: Boolean) = saveBoolean(subtitleBoldKey, enabled)
     actual fun loadSubtitleFontSizeSp(): Int? = loadInt(subtitleFontSizeSpKey)
@@ -410,8 +337,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveNextEpisodeThresholdPercent(percent: Float) = saveFloat(nextEpisodeThresholdPercentKey, percent)
     actual fun loadNextEpisodeThresholdMinutesBeforeEnd(): Float? = loadFloat(nextEpisodeThresholdMinutesBeforeEndKey)
     actual fun saveNextEpisodeThresholdMinutesBeforeEnd(minutes: Float) = saveFloat(nextEpisodeThresholdMinutesBeforeEndKey, minutes)
-    actual fun loadUseLibass(): Boolean? = loadBoolean(useLibassKey)
-    actual fun saveUseLibass(enabled: Boolean) = saveBoolean(useLibassKey, enabled)
+    actual fun loadUseLibass(): Boolean? = subtitleRendererPreference.load()
+    actual fun saveUseLibass(enabled: Boolean) = subtitleRendererPreference.save(enabled)
     actual fun loadLibassRenderType(): String? = loadString(libassRenderTypeKey)
     actual fun saveLibassRenderType(renderType: String) = saveString(libassRenderTypeKey, renderType)
     actual fun loadLibassRenderScale(): String? = loadString(libassRenderScaleKey)
@@ -451,8 +378,55 @@ internal actual object PlayerSettingsStorage {
 
     actual fun loadNvidiaRtxSuperResolutionEnabled(): Boolean? = loadBoolean(nvidiaRtxSuperResolutionEnabledKey)
     actual fun saveNvidiaRtxSuperResolutionEnabled(enabled: Boolean) = saveBoolean(nvidiaRtxSuperResolutionEnabledKey, enabled)
-    actual fun loadNvidiaRtxHdrEnabled(): Boolean? = loadBoolean(nvidiaRtxHdrEnabledKey)
-    actual fun saveNvidiaRtxHdrEnabled(enabled: Boolean) = saveBoolean(nvidiaRtxHdrEnabledKey, enabled)
+
+    actual fun loadAnimeUpscalerEnabled(): Boolean? = loadBoolean(animeUpscalerEnabledKey)
+    actual fun saveAnimeUpscalerEnabled(enabled: Boolean) = saveBoolean(animeUpscalerEnabledKey, enabled)
+    actual fun loadAnimeUpscalerOption(): String? = loadString(animeUpscalerOptionKey)
+    actual fun saveAnimeUpscalerOption(option: String) = saveString(animeUpscalerOptionKey, option)
+    actual fun loadAnimeUpscalerMode(): String? = loadString(animeUpscalerModeKey)
+    actual fun saveAnimeUpscalerMode(mode: String) = saveString(animeUpscalerModeKey, mode)
+    actual fun loadSvpMotionOption(): String? = loadString(svpMotionOptionKey)
+    actual fun saveSvpMotionOption(option: String) = saveString(svpMotionOptionKey, option)
+
+    actual fun loadAudioNightModeEnabled(): Boolean? = loadBoolean(audioNightModeEnabledKey)
+    actual fun saveAudioNightModeEnabled(enabled: Boolean) = saveBoolean(audioNightModeEnabledKey, enabled)
+
+    actual fun loadShowSeekbarWhileSeeking(): Boolean? = loadBoolean(showSeekbarWhileSeekingKey)
+    actual fun saveShowSeekbarWhileSeeking(enabled: Boolean) = saveBoolean(showSeekbarWhileSeekingKey, enabled)
+
+    actual fun loadShowClockInPlayer(): Boolean? = loadBoolean(showClockInPlayerKey)
+    actual fun saveShowClockInPlayer(enabled: Boolean) = saveBoolean(showClockInPlayerKey, enabled)
+
+    actual fun loadSeekPreviewEnabled(): Boolean? = loadBoolean(seekPreviewEnabledKey)
+    actual fun saveSeekPreviewEnabled(enabled: Boolean) = saveBoolean(seekPreviewEnabledKey, enabled)
+
+    actual fun loadSeekPreviewWhileDragging(): Boolean? = loadBoolean(seekPreviewWhileDraggingKey)
+    actual fun saveSeekPreviewWhileDragging(value: Boolean) = saveBoolean(seekPreviewWhileDraggingKey, value)
+
+    actual fun loadSeekPreviewWhileHovering(): Boolean? = loadBoolean(seekPreviewWhileHoveringKey)
+    actual fun saveSeekPreviewWhileHovering(value: Boolean) = saveBoolean(seekPreviewWhileHoveringKey, value)
+
+    actual fun loadSeekPreviewWhileKeyboardSeeking(): Boolean? = loadBoolean(seekPreviewWhileKeyboardSeekingKey)
+    actual fun saveSeekPreviewWhileKeyboardSeeking(value: Boolean) = saveBoolean(seekPreviewWhileKeyboardSeekingKey, value)
+
+    actual fun loadSeekPreviewThumbnailCount(): Int? = loadInt(seekPreviewThumbnailCountKey)
+    actual fun saveSeekPreviewThumbnailCount(value: Int) = saveInt(seekPreviewThumbnailCountKey, value)
+
+    actual fun loadSeekrApiKey(): String? = loadString(seekrApiKeyKey)
+    actual fun saveSeekrApiKey(apiKey: String) = saveString(seekrApiKeyKey, apiKey)
+
+    actual fun loadShowRemainingTime(): Boolean? = loadBoolean(showRemainingTimeKey)
+    actual fun saveShowRemainingTime(enabled: Boolean) = saveBoolean(showRemainingTimeKey, enabled)
+    actual fun loadEyeFilterEnabled(): Boolean? = loadBoolean(eyeFilterEnabledKey)
+    actual fun saveEyeFilterEnabled(enabled: Boolean) = saveBoolean(eyeFilterEnabledKey, enabled)
+    actual fun loadEyeFilterColor(): String? = loadString(eyeFilterColorKey)
+    actual fun saveEyeFilterColor(color: String) = saveString(eyeFilterColorKey, color)
+    actual fun loadEyeFilterOpacity(): Float? = loadFloat(eyeFilterOpacityKey)
+    actual fun saveEyeFilterOpacity(opacity: Float) = saveFloat(eyeFilterOpacityKey, opacity)
+    actual fun loadGrainFilterEnabled(): Boolean? = loadBoolean(grainFilterEnabledKey)
+    actual fun saveGrainFilterEnabled(enabled: Boolean) = saveBoolean(grainFilterEnabledKey, enabled)
+    actual fun loadPlayerUiScale(): Int? = loadInt(playerUiScaleKey)
+    actual fun savePlayerUiScale(scale: Int) = saveInt(playerUiScaleKey, scale)
 
     private fun scoped(key: String): String = ProfileScopedKey.of(key)
     private fun loadString(key: String): String? = store.getString(scoped(key))
@@ -467,202 +441,272 @@ internal actual object PlayerSettingsStorage {
     private fun loadStringSet(key: String): Set<String>? = store.getStringSet(scoped(key))
     private fun saveStringSet(key: String, values: Set<String>) = store.putStringSet(scoped(key), values)
 
-    actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
-        loadShowLoadingOverlay()?.let { put(showLoadingOverlayKey, encodeSyncBoolean(it)) }
-        loadShowPlayerLoadingStatus()?.let { put(showPlayerLoadingStatusKey, encodeSyncBoolean(it)) }
-        loadPauseOverlayEnabled()?.let { put(pauseOverlayEnabledKey, encodeSyncBoolean(it)) }
-        loadShowParentalGuide()?.let { put(showParentalGuideKey, encodeSyncBoolean(it)) }
-        loadResizeMode()?.let { put(resizeModeKey, encodeSyncString(it)) }
-        loadHoldToSpeedEnabled()?.let { put(holdToSpeedEnabledKey, encodeSyncBoolean(it)) }
-        loadHoldToSpeedValue()?.let { put(holdToSpeedValueKey, encodeSyncFloat(it)) }
-        loadTouchGesturesEnabled()?.let { put(touchGesturesEnabledKey, encodeSyncBoolean(it)) }
-        loadExternalPlayerEnabled()?.let { put(externalPlayerEnabledKey, encodeSyncBoolean(it)) }
-        loadExternalPlayerForwardSubtitles()?.let { put(externalPlayerForwardSubtitlesKey, encodeSyncBoolean(it)) }
-        loadExternalPlayerSendSkipSegments()?.let { put(externalPlayerSendSkipSegmentsKey, encodeSyncBoolean(it)) }
-        loadExternalPlayerId()?.let { put(externalPlayerIdKey, encodeSyncString(it)) }
-        loadPreferredAudioLanguage()?.let { put(preferredAudioLanguageKey, encodeSyncString(it)) }
-        loadSecondaryPreferredAudioLanguage()?.let { put(secondaryPreferredAudioLanguageKey, encodeSyncString(it)) }
-        loadPreferredSubtitleLanguage()?.let { put(preferredSubtitleLanguageKey, encodeSyncString(it)) }
-        loadSecondaryPreferredSubtitleLanguage()?.let { put(secondaryPreferredSubtitleLanguageKey, encodeSyncString(it)) }
-        loadSubtitleTextColor()?.let { put(subtitleTextColorKey, encodeSyncString(it)) }
-        loadSubtitleAppearance()?.let { put(subtitleAppearanceKey, encodeSyncString(it)) }
-        loadSubtitleBackgroundColor()?.let { put(subtitleBackgroundColorKey, encodeSyncString(it)) }
-        loadSubtitleOutlineColor()?.let { put(subtitleOutlineColorKey, encodeSyncString(it)) }
-        loadSubtitleOutlineEnabled()?.let { put(subtitleOutlineEnabledKey, encodeSyncBoolean(it)) }
-        loadSubtitleOutlineWidth()?.let { put(subtitleOutlineWidthKey, encodeSyncInt(it)) }
-        loadSubtitleBold()?.let { put(subtitleBoldKey, encodeSyncBoolean(it)) }
-        loadSubtitleFontSizeSp()?.let { put(subtitleFontSizeSpKey, encodeSyncInt(it)) }
-        loadSubtitleBottomOffset()?.let { put(subtitleBottomOffsetKey, encodeSyncInt(it)) }
-        loadSubtitleStripSdh()?.let { put(subtitleStripSdhKey, encodeSyncBoolean(it)) }
-        loadSubtitleUseForcedSubtitles()?.let { put(subtitleUseForcedSubtitlesKey, encodeSyncBoolean(it)) }
-        loadSubtitleShowOnlyPreferredLanguages()?.let { put(subtitleShowOnlyPreferredLanguagesKey, encodeSyncBoolean(it)) }
-        loadAddonSubtitleStartupMode()?.let { put(addonSubtitleStartupModeKey, encodeSyncString(it)) }
-        loadStreamReuseLastLinkEnabled()?.let { put(streamReuseLastLinkEnabledKey, encodeSyncBoolean(it)) }
-        loadStreamReuseLastLinkCacheHours()?.let { put(streamReuseLastLinkCacheHoursKey, encodeSyncInt(it)) }
-        loadAndroidPlaybackEngine()?.let { put(androidPlaybackEngineKey, encodeSyncString(it)) }
-        loadAutoSwitchPlaybackEngineOnError()?.let { put(autoSwitchPlaybackEngineOnErrorKey, encodeSyncBoolean(it)) }
-        loadAndroidLibmpvVideoOutput()?.let { put(androidLibmpvVideoOutputKey, encodeSyncString(it)) }
-        loadAndroidLibmpvHardwareDecodingEnabled()?.let {
-            put(androidLibmpvHardwareDecodingEnabledKey, encodeSyncBoolean(it))
-        }
-        loadAndroidLibmpvYuv420pEnabled()?.let { put(androidLibmpvYuv420pEnabledKey, encodeSyncBoolean(it)) }
-        loadAndroidExoChaptersEnabled()?.let { put(androidExoChaptersEnabledKey, encodeSyncBoolean(it)) }
-        loadChapterTitleEnabled()?.let { put(chapterTitleEnabledKey, encodeSyncBoolean(it)) }
-        loadRememberAudioDelayPerDevice()?.let { put(rememberAudioDelayPerDeviceKey, encodeSyncBoolean(it)) }
-        loadPersistAudioAmplification()?.let { put(persistAudioAmplificationKey, encodeSyncBoolean(it)) }
-        loadAudioAmplificationDb()?.let { put(audioAmplificationDbKey, encodeSyncInt(it)) }
-        loadDownmixEnabled()?.let { put(downmixEnabledKey, encodeSyncBoolean(it)) }
-        loadAudioOutputChannels()?.let { put(audioOutputChannelsKey, encodeSyncString(it)) }
-        loadMaintainOriginalAudioOnDownmix()?.let { put(maintainOriginalAudioOnDownmixKey, encodeSyncBoolean(it)) }
-        loadCenterMixLevelDb()?.let { put(centerMixLevelDbKey, encodeSyncInt(it)) }
-        loadDecoderPriority()?.let { put(decoderPriorityKey, encodeSyncInt(it)) }
-        loadMapDV7ToHevc()?.let { put(mapDV7ToHevcKey, encodeSyncBoolean(it)) }
-        loadTunnelingEnabled()?.let { put(tunnelingEnabledKey, encodeSyncBoolean(it)) }
-        loadStreamAutoPlayMode()?.let { put(streamAutoPlayModeKey, encodeSyncString(it)) }
-        loadStreamAutoPlaySource()?.let { put(streamAutoPlaySourceKey, encodeSyncString(it)) }
-        loadStreamAutoPlaySelectedAddons()?.let { put(streamAutoPlaySelectedAddonsKey, encodeSyncStringSet(it)) }
-        loadStreamAutoPlaySelectedPlugins()?.let { put(streamAutoPlaySelectedPluginsKey, encodeSyncStringSet(it)) }
-        loadStreamAutoPlayRegex()?.let { put(streamAutoPlayRegexKey, encodeSyncString(it)) }
-        loadStreamAutoPlayTimeoutSeconds()?.let { put(streamAutoPlayTimeoutSecondsKey, encodeSyncInt(it)) }
-        loadStreamAutoPlayFallbackOnFailure()?.let { put(streamAutoPlayFallbackOnFailureKey, encodeSyncBoolean(it)) }
-        loadStreamAutoPlayFallbackMaxSources()?.let { put(streamAutoPlayFallbackMaxSourcesKey, encodeSyncInt(it)) }
-        loadStreamAutoPlayFallbackStartupTimeoutSeconds()?.let { put(streamAutoPlayFallbackStartupTimeoutSecondsKey, encodeSyncInt(it)) }
-        loadSkipIntroEnabled()?.let { put(skipIntroEnabledKey, encodeSyncBoolean(it)) }
-        loadPreloadNextEpisodeSources()?.let { put(preloadNextEpisodeSourcesKey, encodeSyncBoolean(it)) }
-        loadAutoSkipMovieCredits()?.let { put(autoSkipMovieCreditsKey, encodeSyncBoolean(it)) }
-        loadAutoSkipPostCredits()?.let { put(autoSkipPostCreditsKey, encodeSyncBoolean(it)) }
-        loadAutoSkipSegmentTypes()?.let { put(autoSkipSegmentTypesKey, encodeSyncStringSet(it)) }
-        loadAnimeSkipEnabled()?.let { put(animeSkipEnabledKey, encodeSyncBoolean(it)) }
-        loadAnimeSkipClientId()?.let { put(animeSkipClientIdKey, encodeSyncString(it)) }
-        loadStreamAutoPlayNextEpisodeEnabled()?.let { put(streamAutoPlayNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
-        loadStreamAutoPlayNextEpisodeFallbackEnabled()?.let {
-            put(streamAutoPlayNextEpisodeFallbackEnabledKey, encodeSyncBoolean(it))
-        }
-        loadStreamAutoPlayPreferBingeGroup()?.let { put(streamAutoPlayPreferBingeGroupKey, encodeSyncBoolean(it)) }
-        loadStreamAutoPlayReuseBingeGroup()?.let { put(streamAutoPlayReuseBingeGroupKey, encodeSyncBoolean(it)) }
-        loadNextEpisodeThresholdMode()?.let { put(nextEpisodeThresholdModeKey, encodeSyncString(it)) }
-        loadNextEpisodeThresholdPercent()?.let { put(nextEpisodeThresholdPercentKey, encodeSyncFloat(it)) }
-        loadNextEpisodeThresholdMinutesBeforeEnd()?.let { put(nextEpisodeThresholdMinutesBeforeEndKey, encodeSyncFloat(it)) }
-        loadUseLibass()?.let { put(useLibassKey, encodeSyncBoolean(it)) }
-        loadLibassRenderType()?.let { put(libassRenderTypeKey, encodeSyncString(it)) }
-        loadLibassRenderScale()?.let { put(libassRenderScaleKey, encodeSyncString(it)) }
-        loadLibassRenderMode()?.let { put(libassRenderModeKey, encodeSyncString(it)) }
-        loadIosVideoOutputPreset()?.let { put(iosVideoOutputPresetKey, encodeSyncString(it)) }
-        loadIosToneMappingMode()?.let { put(iosToneMappingModeKey, encodeSyncString(it)) }
-        loadIosTargetPrimaries()?.let { put(iosTargetPrimariesKey, encodeSyncString(it)) }
-        loadIosTargetTransfer()?.let { put(iosTargetTransferKey, encodeSyncString(it)) }
-        loadIosHardwareDecoderMode()?.let { put(iosHardwareDecoderModeKey, encodeSyncString(it)) }
-        loadIosAudioOutputMode()?.let { put(iosAudioOutputModeKey, encodeSyncString(it)) }
-        loadIosExtendedDynamicRangeEnabled()?.let { put(iosExtendedDynamicRangeEnabledKey, encodeSyncBoolean(it)) }
-        loadIosTargetColorspaceHintEnabled()?.let { put(iosTargetColorspaceHintEnabledKey, encodeSyncBoolean(it)) }
-        loadIosHdrComputePeakEnabled()?.let { put(iosHdrComputePeakEnabledKey, encodeSyncBoolean(it)) }
-        loadIosDebandEnabled()?.let { put(iosDebandEnabledKey, encodeSyncBoolean(it)) }
-        loadIosInterpolationEnabled()?.let { put(iosInterpolationEnabledKey, encodeSyncBoolean(it)) }
-        loadIosBrightness()?.let { put(iosBrightnessKey, encodeSyncInt(it)) }
-        loadIosContrast()?.let { put(iosContrastKey, encodeSyncInt(it)) }
-        loadIosSaturation()?.let { put(iosSaturationKey, encodeSyncInt(it)) }
-        loadIosGamma()?.let { put(iosGammaKey, encodeSyncInt(it)) }
-        loadNvidiaRtxSuperResolutionEnabled()?.let { put(nvidiaRtxSuperResolutionEnabledKey, encodeSyncBoolean(it)) }
-        loadNvidiaRtxHdrEnabled()?.let { put(nvidiaRtxHdrEnabledKey, encodeSyncBoolean(it)) }
-    }
+    private val syncStorage by lazy { SyncStorage(store) }
+
+    actual fun exportToSyncPayload(): JsonObject = syncStorage.exportToSyncPayload()
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
-        store.removeAll(syncKeys.map(::scoped))
-        payload.decodeSyncBoolean(showLoadingOverlayKey)?.let(::saveShowLoadingOverlay)
-        payload.decodeSyncBoolean(showPlayerLoadingStatusKey)?.let(::saveShowPlayerLoadingStatus)
-        payload.decodeSyncBoolean(pauseOverlayEnabledKey)?.let(::savePauseOverlayEnabled)
-        payload.decodeSyncBoolean(showParentalGuideKey)?.let(::saveShowParentalGuide)
-        payload.decodeSyncString(resizeModeKey)?.let(::saveResizeMode)
-        payload.decodeSyncBoolean(holdToSpeedEnabledKey)?.let(::saveHoldToSpeedEnabled)
-        payload.decodeSyncFloat(holdToSpeedValueKey)?.let(::saveHoldToSpeedValue)
-        payload.decodeSyncBoolean(touchGesturesEnabledKey)?.let(::saveTouchGesturesEnabled)
-        payload.decodeSyncBoolean(externalPlayerEnabledKey)?.let(::saveExternalPlayerEnabled)
-        payload.decodeSyncBoolean(externalPlayerForwardSubtitlesKey)?.let(::saveExternalPlayerForwardSubtitles)
-        payload.decodeSyncBoolean(externalPlayerSendSkipSegmentsKey)?.let(::saveExternalPlayerSendSkipSegments)
-        payload.decodeSyncString(externalPlayerIdKey)?.let(::saveExternalPlayerId)
-        payload.decodeSyncString(preferredAudioLanguageKey)?.let(::savePreferredAudioLanguage)
-        payload.decodeSyncString(secondaryPreferredAudioLanguageKey)?.let(::saveSecondaryPreferredAudioLanguage)
-        payload.decodeSyncString(preferredSubtitleLanguageKey)?.let(::savePreferredSubtitleLanguage)
-        payload.decodeSyncString(secondaryPreferredSubtitleLanguageKey)?.let(::saveSecondaryPreferredSubtitleLanguage)
-        payload.decodeSyncString(subtitleTextColorKey)?.let(::saveSubtitleTextColor)
-        payload.decodeSyncString(subtitleAppearanceKey)?.let(::saveSubtitleAppearance)
-        payload.decodeSyncString(subtitleBackgroundColorKey)?.let(::saveSubtitleBackgroundColor)
-        payload.decodeSyncString(subtitleOutlineColorKey)?.let(::saveSubtitleOutlineColor)
-        payload.decodeSyncBoolean(subtitleOutlineEnabledKey)?.let(::saveSubtitleOutlineEnabled)
-        payload.decodeSyncInt(subtitleOutlineWidthKey)?.let(::saveSubtitleOutlineWidth)
-        payload.decodeSyncBoolean(subtitleBoldKey)?.let(::saveSubtitleBold)
-        payload.decodeSyncInt(subtitleFontSizeSpKey)?.let(::saveSubtitleFontSizeSp)
-        payload.decodeSyncInt(subtitleBottomOffsetKey)?.let(::saveSubtitleBottomOffset)
-        payload.decodeSyncBoolean(subtitleStripSdhKey)?.let(::saveSubtitleStripSdh)
-        payload.decodeSyncBoolean(subtitleUseForcedSubtitlesKey)?.let(::saveSubtitleUseForcedSubtitles)
-        payload.decodeSyncBoolean(subtitleShowOnlyPreferredLanguagesKey)?.let(::saveSubtitleShowOnlyPreferredLanguages)
-        payload.decodeSyncString(addonSubtitleStartupModeKey)?.let(::saveAddonSubtitleStartupMode)
-        payload.decodeSyncBoolean(streamReuseLastLinkEnabledKey)?.let(::saveStreamReuseLastLinkEnabled)
-        payload.decodeSyncInt(streamReuseLastLinkCacheHoursKey)?.let(::saveStreamReuseLastLinkCacheHours)
-        payload.decodeSyncString(androidPlaybackEngineKey)?.let(::saveAndroidPlaybackEngine)
-        payload.decodeSyncBoolean(autoSwitchPlaybackEngineOnErrorKey)?.let(::saveAutoSwitchPlaybackEngineOnError)
-        payload.decodeSyncString(androidLibmpvVideoOutputKey)?.let(::saveAndroidLibmpvVideoOutput)
-        payload.decodeSyncBoolean(androidLibmpvHardwareDecodingEnabledKey)
-            ?.let(::saveAndroidLibmpvHardwareDecodingEnabled)
-        payload.decodeSyncBoolean(androidLibmpvYuv420pEnabledKey)?.let(::saveAndroidLibmpvYuv420pEnabled)
-        payload.decodeSyncBoolean(androidExoChaptersEnabledKey)?.let(::saveAndroidExoChaptersEnabled)
-        payload.decodeSyncBoolean(chapterTitleEnabledKey)?.let(::saveChapterTitleEnabled)
-        payload.decodeSyncBoolean(rememberAudioDelayPerDeviceKey)?.let(::saveRememberAudioDelayPerDevice)
-        payload.decodeSyncBoolean(persistAudioAmplificationKey)?.let(::savePersistAudioAmplification)
-        payload.decodeSyncInt(audioAmplificationDbKey)?.let(::saveAudioAmplificationDb)
-        payload.decodeSyncBoolean(downmixEnabledKey)?.let(::saveDownmixEnabled)
-        payload.decodeSyncString(audioOutputChannelsKey)?.let(::saveAudioOutputChannels)
-        payload.decodeSyncBoolean(maintainOriginalAudioOnDownmixKey)?.let(::saveMaintainOriginalAudioOnDownmix)
-        payload.decodeSyncInt(centerMixLevelDbKey)?.let(::saveCenterMixLevelDb)
-        payload.decodeSyncInt(decoderPriorityKey)?.let(::saveDecoderPriority)
-        payload.decodeSyncBoolean(mapDV7ToHevcKey)?.let(::saveMapDV7ToHevc)
-        payload.decodeSyncBoolean(tunnelingEnabledKey)?.let(::saveTunnelingEnabled)
-        payload.decodeSyncString(streamAutoPlayModeKey)?.let(::saveStreamAutoPlayMode)
-        payload.decodeSyncString(streamAutoPlaySourceKey)?.let(::saveStreamAutoPlaySource)
-        payload.decodeSyncStringSet(streamAutoPlaySelectedAddonsKey)?.let(::saveStreamAutoPlaySelectedAddons)
-        payload.decodeSyncStringSet(streamAutoPlaySelectedPluginsKey)?.let(::saveStreamAutoPlaySelectedPlugins)
-        payload.decodeSyncString(streamAutoPlayRegexKey)?.let(::saveStreamAutoPlayRegex)
-        payload.decodeSyncInt(streamAutoPlayTimeoutSecondsKey)?.let(::saveStreamAutoPlayTimeoutSeconds)
-        payload.decodeSyncBoolean(streamAutoPlayFallbackOnFailureKey)?.let(::saveStreamAutoPlayFallbackOnFailure)
-        payload.decodeSyncInt(streamAutoPlayFallbackMaxSourcesKey)?.let(::saveStreamAutoPlayFallbackMaxSources)
-        payload.decodeSyncInt(streamAutoPlayFallbackStartupTimeoutSecondsKey)?.let(::saveStreamAutoPlayFallbackStartupTimeoutSeconds)
-        payload.decodeSyncBoolean(skipIntroEnabledKey)?.let(::saveSkipIntroEnabled)
-        payload.decodeSyncBoolean(preloadNextEpisodeSourcesKey)?.let(::savePreloadNextEpisodeSources)
-        payload.decodeSyncBoolean(autoSkipMovieCreditsKey)?.let(::saveAutoSkipMovieCredits)
-        payload.decodeSyncBoolean(autoSkipPostCreditsKey)?.let(::saveAutoSkipPostCredits)
-        payload.decodeSyncStringSet(autoSkipSegmentTypesKey)?.let(::saveAutoSkipSegmentTypes)
-        payload.decodeSyncBoolean(animeSkipEnabledKey)?.let(::saveAnimeSkipEnabled)
-        payload.decodeSyncString(animeSkipClientIdKey)?.let(::saveAnimeSkipClientId)
-        payload.decodeSyncString(introDbApiKeyKey)?.let(::saveIntroDbApiKey)
-        payload.decodeSyncBoolean(introSubmitEnabledKey)?.let(::saveIntroSubmitEnabled)
-        payload.decodeSyncBoolean(streamAutoPlayNextEpisodeEnabledKey)?.let(::saveStreamAutoPlayNextEpisodeEnabled)
-        payload.decodeSyncBoolean(streamAutoPlayNextEpisodeFallbackEnabledKey)
-            ?.let(::saveStreamAutoPlayNextEpisodeFallbackEnabled)
-        payload.decodeSyncBoolean(streamAutoPlayPreferBingeGroupKey)?.let(::saveStreamAutoPlayPreferBingeGroup)
-        payload.decodeSyncBoolean(streamAutoPlayReuseBingeGroupKey)?.let(::saveStreamAutoPlayReuseBingeGroup)
-        payload.decodeSyncString(nextEpisodeThresholdModeKey)?.let(::saveNextEpisodeThresholdMode)
-        payload.decodeSyncFloat(nextEpisodeThresholdPercentKey)?.let(::saveNextEpisodeThresholdPercent)
-        payload.decodeSyncFloat(nextEpisodeThresholdMinutesBeforeEndKey)?.let(::saveNextEpisodeThresholdMinutesBeforeEnd)
-        payload.decodeSyncBoolean(useLibassKey)?.let(::saveUseLibass)
-        payload.decodeSyncString(libassRenderTypeKey)?.let(::saveLibassRenderType)
-        payload.decodeSyncString(libassRenderScaleKey)?.let(::saveLibassRenderScale)
-        payload.decodeSyncString(libassRenderModeKey)?.let(::saveLibassRenderMode)
-        payload.decodeSyncString(iosVideoOutputPresetKey)?.let(::saveIosVideoOutputPreset)
-        payload.decodeSyncString(iosToneMappingModeKey)?.let(::saveIosToneMappingMode)
-        payload.decodeSyncString(iosTargetPrimariesKey)?.let(::saveIosTargetPrimaries)
-        payload.decodeSyncString(iosTargetTransferKey)?.let(::saveIosTargetTransfer)
-        payload.decodeSyncString(iosHardwareDecoderModeKey)?.let(::saveIosHardwareDecoderMode)
-        payload.decodeSyncString(iosAudioOutputModeKey)?.let(::saveIosAudioOutputMode)
-        payload.decodeSyncBoolean(iosExtendedDynamicRangeEnabledKey)?.let(::saveIosExtendedDynamicRangeEnabled)
-        payload.decodeSyncBoolean(iosTargetColorspaceHintEnabledKey)?.let(::saveIosTargetColorspaceHintEnabled)
-        payload.decodeSyncBoolean(iosHdrComputePeakEnabledKey)?.let(::saveIosHdrComputePeakEnabled)
-        payload.decodeSyncBoolean(iosDebandEnabledKey)?.let(::saveIosDebandEnabled)
-        payload.decodeSyncBoolean(iosInterpolationEnabledKey)?.let(::saveIosInterpolationEnabled)
-        payload.decodeSyncInt(iosBrightnessKey)?.let(::saveIosBrightness)
-        payload.decodeSyncInt(iosContrastKey)?.let(::saveIosContrast)
-        payload.decodeSyncInt(iosSaturationKey)?.let(::saveIosSaturation)
-        payload.decodeSyncInt(iosGammaKey)?.let(::saveIosGamma)
-        payload.decodeSyncBoolean(nvidiaRtxSuperResolutionEnabledKey)?.let(::saveNvidiaRtxSuperResolutionEnabled)
-        payload.decodeSyncBoolean(nvidiaRtxHdrEnabledKey)?.let(::saveNvidiaRtxHdrEnabled)
+        syncStorage.replaceFromSyncPayload(payload)
     }
+
+    /** Account sync only touches shared keys; local preferences use the same store unchanged. */
+    internal class SyncStorage(
+        private val store: DesktopStorage.Store,
+        private val profileKey: (String) -> String = ProfileScopedKey::of,
+    ) {
+        private fun scoped(key: String): String = profileKey(key)
+
+        // Appearance and renderer preferences stay local to this profile.
+        private val syncKeys = listOf(
+            showLoadingOverlayKey,
+            showPlayerLoadingStatusKey,
+            pauseOverlayEnabledKey,
+            showParentalGuideKey,
+            resizeModeKey,
+            holdToSpeedEnabledKey,
+            holdToSpeedValueKey,
+            touchGesturesEnabledKey,
+            externalPlayerEnabledKey,
+            externalPlayerForwardSubtitlesKey,
+            externalPlayerSendSkipSegmentsKey,
+            externalPlayerIdKey,
+            preferredAudioLanguageKey,
+            secondaryPreferredAudioLanguageKey,
+            preferredSubtitleLanguageKey,
+            secondaryPreferredSubtitleLanguageKey,
+            subtitleStripSdhKey,
+            subtitleUseForcedSubtitlesKey,
+            subtitleShowOnlyPreferredLanguagesKey,
+            addonSubtitleStartupModeKey,
+            streamReuseLastLinkEnabledKey,
+            streamReuseLastLinkCacheHoursKey,
+            androidPlaybackEngineKey,
+            autoSwitchPlaybackEngineOnErrorKey,
+            androidLibmpvVideoOutputKey,
+            androidLibmpvHardwareDecodingEnabledKey,
+            androidLibmpvYuv420pEnabledKey,
+            androidExoChaptersEnabledKey,
+            chapterTitleEnabledKey,
+            downmixEnabledKey,
+            audioOutputChannelsKey,
+            maintainOriginalAudioOnDownmixKey,
+            centerMixLevelDbKey,
+            decoderPriorityKey,
+            mapDV7ToHevcKey,
+            tunnelingEnabledKey,
+            streamAutoPlayModeKey,
+            streamAutoPlaySourceKey,
+            streamAutoPlaySelectedAddonsKey,
+            streamAutoPlaySelectedPluginsKey,
+            streamAutoPlayRegexKey,
+            streamAutoPlayTimeoutSecondsKey,
+            streamAutoPlayFallbackOnFailureKey,
+            streamAutoPlayFallbackMaxSourcesKey,
+            streamAutoPlayFallbackStartupTimeoutSecondsKey,
+            skipIntroEnabledKey,
+            autoSkipSegmentTypesKey,
+            preloadNextEpisodeSourcesKey,
+            exoNativeMemoryEnabledKey,
+            vodCacheEnabledKey,
+            vodCacheSizeModeKey,
+            vodCacheSizeMbKey,
+            bufferEngineEnabledKey,
+            minBufferMsKey,
+            maxBufferMsKey,
+            bufferForPlaybackMsKey,
+            bufferForPlaybackAfterRebufferMsKey,
+            backBufferDurationMsKey,
+            targetBufferSizeMbKey,
+            autoSkipMovieCreditsKey,
+            autoSkipPostCreditsKey,
+            animeSkipEnabledKey,
+            animeSkipClientIdKey,
+            streamAutoPlayNextEpisodeEnabledKey,
+            streamAutoPlayNextEpisodeFallbackEnabledKey,
+            streamAutoPlayPreferBingeGroupKey,
+            streamAutoPlayReuseBingeGroupKey,
+            nextEpisodeThresholdModeKey,
+            nextEpisodeThresholdPercentKey,
+            nextEpisodeThresholdMinutesBeforeEndKey,
+            iosVideoOutputPresetKey,
+            iosToneMappingModeKey,
+            iosTargetPrimariesKey,
+            iosTargetTransferKey,
+            iosHardwareDecoderModeKey,
+            iosAudioOutputModeKey,
+            iosExtendedDynamicRangeEnabledKey,
+            iosTargetColorspaceHintEnabledKey,
+            iosHdrComputePeakEnabledKey,
+            iosDebandEnabledKey,
+            iosInterpolationEnabledKey,
+            iosBrightnessKey,
+            iosContrastKey,
+            iosSaturationKey,
+            iosGammaKey,
+        )
+
+        fun exportToSyncPayload(): JsonObject = buildJsonObject {
+            store.getBoolean(scoped(showLoadingOverlayKey))?.let { put(showLoadingOverlayKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(showPlayerLoadingStatusKey))?.let { put(showPlayerLoadingStatusKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(pauseOverlayEnabledKey))?.let { put(pauseOverlayEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(showParentalGuideKey))?.let { put(showParentalGuideKey, encodeSyncBoolean(it)) }
+            store.getString(scoped(resizeModeKey))?.let { put(resizeModeKey, encodeSyncString(it)) }
+            store.getBoolean(scoped(holdToSpeedEnabledKey))?.let { put(holdToSpeedEnabledKey, encodeSyncBoolean(it)) }
+            store.getFloat(scoped(holdToSpeedValueKey))?.let { put(holdToSpeedValueKey, encodeSyncFloat(it)) }
+            store.getBoolean(scoped(touchGesturesEnabledKey))?.let { put(touchGesturesEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(externalPlayerEnabledKey))?.let { put(externalPlayerEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(externalPlayerForwardSubtitlesKey))?.let { put(externalPlayerForwardSubtitlesKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(externalPlayerSendSkipSegmentsKey))?.let { put(externalPlayerSendSkipSegmentsKey, encodeSyncBoolean(it)) }
+            store.getString(scoped(externalPlayerIdKey))?.let { put(externalPlayerIdKey, encodeSyncString(it)) }
+            store.getString(scoped(preferredAudioLanguageKey))?.let { put(preferredAudioLanguageKey, encodeSyncString(it)) }
+            store.getString(scoped(secondaryPreferredAudioLanguageKey))?.let { put(secondaryPreferredAudioLanguageKey, encodeSyncString(it)) }
+            store.getString(scoped(preferredSubtitleLanguageKey))?.let { put(preferredSubtitleLanguageKey, encodeSyncString(it)) }
+            store.getString(scoped(secondaryPreferredSubtitleLanguageKey))?.let { put(secondaryPreferredSubtitleLanguageKey, encodeSyncString(it)) }
+            store.getBoolean(scoped(subtitleStripSdhKey))?.let { put(subtitleStripSdhKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(subtitleUseForcedSubtitlesKey))?.let { put(subtitleUseForcedSubtitlesKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(subtitleShowOnlyPreferredLanguagesKey))?.let { put(subtitleShowOnlyPreferredLanguagesKey, encodeSyncBoolean(it)) }
+            store.getString(scoped(addonSubtitleStartupModeKey))?.let { put(addonSubtitleStartupModeKey, encodeSyncString(it)) }
+            store.getBoolean(scoped(streamReuseLastLinkEnabledKey))?.let { put(streamReuseLastLinkEnabledKey, encodeSyncBoolean(it)) }
+            store.getInt(scoped(streamReuseLastLinkCacheHoursKey))?.let { put(streamReuseLastLinkCacheHoursKey, encodeSyncInt(it)) }
+            store.getString(scoped(androidPlaybackEngineKey))?.let { put(androidPlaybackEngineKey, encodeSyncString(it)) }
+            store.getString(scoped(androidLibmpvVideoOutputKey))?.let { put(androidLibmpvVideoOutputKey, encodeSyncString(it)) }
+            store.getBoolean(scoped(androidLibmpvHardwareDecodingEnabledKey))?.let { put(androidLibmpvHardwareDecodingEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(androidLibmpvYuv420pEnabledKey))?.let { put(androidLibmpvYuv420pEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(androidExoChaptersEnabledKey))?.let { put(androidExoChaptersEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(chapterTitleEnabledKey))?.let { put(chapterTitleEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(downmixEnabledKey))?.let { put(downmixEnabledKey, encodeSyncBoolean(it)) }
+            store.getString(scoped(audioOutputChannelsKey))?.let { put(audioOutputChannelsKey, encodeSyncString(it)) }
+            store.getBoolean(scoped(maintainOriginalAudioOnDownmixKey))?.let { put(maintainOriginalAudioOnDownmixKey, encodeSyncBoolean(it)) }
+            store.getInt(scoped(centerMixLevelDbKey))?.let { put(centerMixLevelDbKey, encodeSyncInt(it)) }
+            store.getInt(scoped(decoderPriorityKey))?.let { put(decoderPriorityKey, encodeSyncInt(it)) }
+            store.getBoolean(scoped(mapDV7ToHevcKey))?.let { put(mapDV7ToHevcKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(tunnelingEnabledKey))?.let { put(tunnelingEnabledKey, encodeSyncBoolean(it)) }
+            store.getString(scoped(streamAutoPlayModeKey))?.let { put(streamAutoPlayModeKey, encodeSyncString(it)) }
+            store.getString(scoped(streamAutoPlaySourceKey))?.let { put(streamAutoPlaySourceKey, encodeSyncString(it)) }
+            store.getStringSet(scoped(streamAutoPlaySelectedAddonsKey))?.let { put(streamAutoPlaySelectedAddonsKey, encodeSyncStringSet(it)) }
+            store.getStringSet(scoped(streamAutoPlaySelectedPluginsKey))?.let { put(streamAutoPlaySelectedPluginsKey, encodeSyncStringSet(it)) }
+            store.getString(scoped(streamAutoPlayRegexKey))?.let { put(streamAutoPlayRegexKey, encodeSyncString(it)) }
+            store.getInt(scoped(streamAutoPlayTimeoutSecondsKey))?.let { put(streamAutoPlayTimeoutSecondsKey, encodeSyncInt(it)) }
+            store.getBoolean(scoped(streamAutoPlayFallbackOnFailureKey))?.let { put(streamAutoPlayFallbackOnFailureKey, encodeSyncBoolean(it)) }
+            store.getInt(scoped(streamAutoPlayFallbackMaxSourcesKey))?.let { put(streamAutoPlayFallbackMaxSourcesKey, encodeSyncInt(it)) }
+            store.getInt(scoped(streamAutoPlayFallbackStartupTimeoutSecondsKey))?.let { put(streamAutoPlayFallbackStartupTimeoutSecondsKey, encodeSyncInt(it)) }
+            store.getBoolean(scoped(skipIntroEnabledKey))?.let { put(skipIntroEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(preloadNextEpisodeSourcesKey))?.let { put(preloadNextEpisodeSourcesKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(autoSkipMovieCreditsKey))?.let { put(autoSkipMovieCreditsKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(autoSkipPostCreditsKey))?.let { put(autoSkipPostCreditsKey, encodeSyncBoolean(it)) }
+            store.getStringSet(scoped(autoSkipSegmentTypesKey))?.let { put(autoSkipSegmentTypesKey, encodeSyncStringSet(it)) }
+            store.getBoolean(scoped(animeSkipEnabledKey))?.let { put(animeSkipEnabledKey, encodeSyncBoolean(it)) }
+            store.getString(scoped(animeSkipClientIdKey))?.let { put(animeSkipClientIdKey, encodeSyncString(it)) }
+            store.getBoolean(scoped(streamAutoPlayNextEpisodeEnabledKey))?.let { put(streamAutoPlayNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(streamAutoPlayNextEpisodeFallbackEnabledKey))?.let { put(streamAutoPlayNextEpisodeFallbackEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(streamAutoPlayPreferBingeGroupKey))?.let { put(streamAutoPlayPreferBingeGroupKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(streamAutoPlayReuseBingeGroupKey))?.let { put(streamAutoPlayReuseBingeGroupKey, encodeSyncBoolean(it)) }
+            store.getString(scoped(nextEpisodeThresholdModeKey))?.let { put(nextEpisodeThresholdModeKey, encodeSyncString(it)) }
+            store.getFloat(scoped(nextEpisodeThresholdPercentKey))?.let { put(nextEpisodeThresholdPercentKey, encodeSyncFloat(it)) }
+            store.getFloat(scoped(nextEpisodeThresholdMinutesBeforeEndKey))?.let { put(nextEpisodeThresholdMinutesBeforeEndKey, encodeSyncFloat(it)) }
+            store.getString(scoped(iosVideoOutputPresetKey))?.let { put(iosVideoOutputPresetKey, encodeSyncString(it)) }
+            store.getString(scoped(iosToneMappingModeKey))?.let { put(iosToneMappingModeKey, encodeSyncString(it)) }
+            store.getString(scoped(iosTargetPrimariesKey))?.let { put(iosTargetPrimariesKey, encodeSyncString(it)) }
+            store.getString(scoped(iosTargetTransferKey))?.let { put(iosTargetTransferKey, encodeSyncString(it)) }
+            store.getString(scoped(iosHardwareDecoderModeKey))?.let { put(iosHardwareDecoderModeKey, encodeSyncString(it)) }
+            store.getString(scoped(iosAudioOutputModeKey))?.let { put(iosAudioOutputModeKey, encodeSyncString(it)) }
+            store.getBoolean(scoped(iosExtendedDynamicRangeEnabledKey))?.let { put(iosExtendedDynamicRangeEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(iosTargetColorspaceHintEnabledKey))?.let { put(iosTargetColorspaceHintEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(iosHdrComputePeakEnabledKey))?.let { put(iosHdrComputePeakEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(iosDebandEnabledKey))?.let { put(iosDebandEnabledKey, encodeSyncBoolean(it)) }
+            store.getBoolean(scoped(iosInterpolationEnabledKey))?.let { put(iosInterpolationEnabledKey, encodeSyncBoolean(it)) }
+            store.getInt(scoped(iosBrightnessKey))?.let { put(iosBrightnessKey, encodeSyncInt(it)) }
+            store.getInt(scoped(iosContrastKey))?.let { put(iosContrastKey, encodeSyncInt(it)) }
+            store.getInt(scoped(iosSaturationKey))?.let { put(iosSaturationKey, encodeSyncInt(it)) }
+            store.getInt(scoped(iosGammaKey))?.let { put(iosGammaKey, encodeSyncInt(it)) }
+        }
+
+        fun replaceFromSyncPayload(payload: JsonObject) {
+            store.removeAll(syncKeys.map(::scoped))
+            payload.decodeSyncBoolean(showLoadingOverlayKey)?.let { store.putBoolean(scoped(showLoadingOverlayKey), it) }
+            payload.decodeSyncBoolean(showPlayerLoadingStatusKey)?.let { store.putBoolean(scoped(showPlayerLoadingStatusKey), it) }
+            payload.decodeSyncBoolean(pauseOverlayEnabledKey)?.let { store.putBoolean(scoped(pauseOverlayEnabledKey), it) }
+            payload.decodeSyncBoolean(showParentalGuideKey)?.let { store.putBoolean(scoped(showParentalGuideKey), it) }
+            payload.decodeSyncString(resizeModeKey)?.let { store.putString(scoped(resizeModeKey), it) }
+            payload.decodeSyncBoolean(holdToSpeedEnabledKey)?.let { store.putBoolean(scoped(holdToSpeedEnabledKey), it) }
+            payload.decodeSyncFloat(holdToSpeedValueKey)?.let { store.putFloat(scoped(holdToSpeedValueKey), it) }
+            payload.decodeSyncBoolean(touchGesturesEnabledKey)?.let { store.putBoolean(scoped(touchGesturesEnabledKey), it) }
+            payload.decodeSyncBoolean(externalPlayerEnabledKey)?.let { store.putBoolean(scoped(externalPlayerEnabledKey), it) }
+            payload.decodeSyncBoolean(externalPlayerForwardSubtitlesKey)?.let { store.putBoolean(scoped(externalPlayerForwardSubtitlesKey), it) }
+            payload.decodeSyncBoolean(externalPlayerSendSkipSegmentsKey)?.let { store.putBoolean(scoped(externalPlayerSendSkipSegmentsKey), it) }
+            payload.decodeSyncString(externalPlayerIdKey)?.let { store.putString(scoped(externalPlayerIdKey), it.takeIf(String::isNotBlank)) }
+            payload.decodeSyncString(preferredAudioLanguageKey)?.let { store.putString(scoped(preferredAudioLanguageKey), it) }
+            payload.decodeSyncString(secondaryPreferredAudioLanguageKey)?.let { store.putString(scoped(secondaryPreferredAudioLanguageKey), it.takeIf(String::isNotBlank)) }
+            payload.decodeSyncString(preferredSubtitleLanguageKey)?.let { store.putString(scoped(preferredSubtitleLanguageKey), it) }
+            payload.decodeSyncString(secondaryPreferredSubtitleLanguageKey)?.let { store.putString(scoped(secondaryPreferredSubtitleLanguageKey), it.takeIf(String::isNotBlank)) }
+            payload.decodeSyncBoolean(subtitleStripSdhKey)?.let { store.putBoolean(scoped(subtitleStripSdhKey), it) }
+            payload.decodeSyncBoolean(subtitleUseForcedSubtitlesKey)?.let { store.putBoolean(scoped(subtitleUseForcedSubtitlesKey), it) }
+            payload.decodeSyncBoolean(subtitleShowOnlyPreferredLanguagesKey)?.let { store.putBoolean(scoped(subtitleShowOnlyPreferredLanguagesKey), it) }
+            payload.decodeSyncString(addonSubtitleStartupModeKey)?.let { store.putString(scoped(addonSubtitleStartupModeKey), it) }
+            payload.decodeSyncBoolean(streamReuseLastLinkEnabledKey)?.let { store.putBoolean(scoped(streamReuseLastLinkEnabledKey), it) }
+            payload.decodeSyncInt(streamReuseLastLinkCacheHoursKey)?.let { store.putInt(scoped(streamReuseLastLinkCacheHoursKey), it) }
+            payload.decodeSyncString(androidPlaybackEngineKey)?.let { store.putString(scoped(androidPlaybackEngineKey), it) }
+            payload.decodeSyncBoolean(autoSwitchPlaybackEngineOnErrorKey)?.let { store.putBoolean(scoped(autoSwitchPlaybackEngineOnErrorKey), it) }
+            payload.decodeSyncString(androidLibmpvVideoOutputKey)?.let { store.putString(scoped(androidLibmpvVideoOutputKey), it) }
+            payload.decodeSyncBoolean(androidLibmpvHardwareDecodingEnabledKey)?.let { store.putBoolean(scoped(androidLibmpvHardwareDecodingEnabledKey), it) }
+            payload.decodeSyncBoolean(androidLibmpvYuv420pEnabledKey)?.let { store.putBoolean(scoped(androidLibmpvYuv420pEnabledKey), it) }
+            payload.decodeSyncBoolean(androidExoChaptersEnabledKey)?.let { store.putBoolean(scoped(androidExoChaptersEnabledKey), it) }
+            payload.decodeSyncBoolean(chapterTitleEnabledKey)?.let { store.putBoolean(scoped(chapterTitleEnabledKey), it) }
+            payload.decodeSyncBoolean(downmixEnabledKey)?.let { store.putBoolean(scoped(downmixEnabledKey), it) }
+            payload.decodeSyncString(audioOutputChannelsKey)?.let { store.putString(scoped(audioOutputChannelsKey), it) }
+            payload.decodeSyncBoolean(maintainOriginalAudioOnDownmixKey)?.let { store.putBoolean(scoped(maintainOriginalAudioOnDownmixKey), it) }
+            payload.decodeSyncInt(centerMixLevelDbKey)?.let { store.putInt(scoped(centerMixLevelDbKey), it) }
+            payload.decodeSyncInt(decoderPriorityKey)?.let { store.putInt(scoped(decoderPriorityKey), it) }
+            payload.decodeSyncBoolean(mapDV7ToHevcKey)?.let { store.putBoolean(scoped(mapDV7ToHevcKey), it) }
+            payload.decodeSyncBoolean(tunnelingEnabledKey)?.let { store.putBoolean(scoped(tunnelingEnabledKey), it) }
+            payload.decodeSyncString(streamAutoPlayModeKey)?.let { store.putString(scoped(streamAutoPlayModeKey), it) }
+            payload.decodeSyncString(streamAutoPlaySourceKey)?.let { store.putString(scoped(streamAutoPlaySourceKey), it) }
+            payload.decodeSyncStringSet(streamAutoPlaySelectedAddonsKey)?.let { store.putStringSet(scoped(streamAutoPlaySelectedAddonsKey), it) }
+            payload.decodeSyncStringSet(streamAutoPlaySelectedPluginsKey)?.let { store.putStringSet(scoped(streamAutoPlaySelectedPluginsKey), it) }
+            payload.decodeSyncString(streamAutoPlayRegexKey)?.let { store.putString(scoped(streamAutoPlayRegexKey), it) }
+            payload.decodeSyncInt(streamAutoPlayTimeoutSecondsKey)?.let { store.putInt(scoped(streamAutoPlayTimeoutSecondsKey), it) }
+            payload.decodeSyncBoolean(streamAutoPlayFallbackOnFailureKey)?.let { store.putBoolean(scoped(streamAutoPlayFallbackOnFailureKey), it) }
+            payload.decodeSyncInt(streamAutoPlayFallbackMaxSourcesKey)?.let { store.putInt(scoped(streamAutoPlayFallbackMaxSourcesKey), it) }
+            payload.decodeSyncInt(streamAutoPlayFallbackStartupTimeoutSecondsKey)?.let { store.putInt(scoped(streamAutoPlayFallbackStartupTimeoutSecondsKey), it) }
+            payload.decodeSyncBoolean(skipIntroEnabledKey)?.let { store.putBoolean(scoped(skipIntroEnabledKey), it) }
+            payload.decodeSyncBoolean(preloadNextEpisodeSourcesKey)?.let { store.putBoolean(scoped(preloadNextEpisodeSourcesKey), it) }
+            payload.decodeSyncBoolean(autoSkipMovieCreditsKey)?.let { store.putBoolean(scoped(autoSkipMovieCreditsKey), it) }
+            payload.decodeSyncBoolean(autoSkipPostCreditsKey)?.let { store.putBoolean(scoped(autoSkipPostCreditsKey), it) }
+            payload.decodeSyncStringSet(autoSkipSegmentTypesKey)?.let { store.putStringSet(scoped(autoSkipSegmentTypesKey), it) }
+            payload.decodeSyncBoolean(animeSkipEnabledKey)?.let { store.putBoolean(scoped(animeSkipEnabledKey), it) }
+            payload.decodeSyncString(animeSkipClientIdKey)?.let { store.putString(scoped(animeSkipClientIdKey), it) }
+            payload.decodeSyncString(introDbApiKeyKey)?.let { store.putString(scoped(introDbApiKeyKey), it) }
+            payload.decodeSyncBoolean(introSubmitEnabledKey)?.let { store.putBoolean(scoped(introSubmitEnabledKey), it) }
+            payload.decodeSyncBoolean(streamAutoPlayNextEpisodeEnabledKey)?.let { store.putBoolean(scoped(streamAutoPlayNextEpisodeEnabledKey), it) }
+            payload.decodeSyncBoolean(streamAutoPlayNextEpisodeFallbackEnabledKey)?.let { store.putBoolean(scoped(streamAutoPlayNextEpisodeFallbackEnabledKey), it) }
+            payload.decodeSyncBoolean(streamAutoPlayPreferBingeGroupKey)?.let { store.putBoolean(scoped(streamAutoPlayPreferBingeGroupKey), it) }
+            payload.decodeSyncBoolean(streamAutoPlayReuseBingeGroupKey)?.let { store.putBoolean(scoped(streamAutoPlayReuseBingeGroupKey), it) }
+            payload.decodeSyncString(nextEpisodeThresholdModeKey)?.let { store.putString(scoped(nextEpisodeThresholdModeKey), it) }
+            payload.decodeSyncFloat(nextEpisodeThresholdPercentKey)?.let { store.putFloat(scoped(nextEpisodeThresholdPercentKey), it) }
+            payload.decodeSyncFloat(nextEpisodeThresholdMinutesBeforeEndKey)?.let { store.putFloat(scoped(nextEpisodeThresholdMinutesBeforeEndKey), it) }
+            payload.decodeSyncString(iosVideoOutputPresetKey)?.let { store.putString(scoped(iosVideoOutputPresetKey), it) }
+            payload.decodeSyncString(iosToneMappingModeKey)?.let { store.putString(scoped(iosToneMappingModeKey), it) }
+            payload.decodeSyncString(iosTargetPrimariesKey)?.let { store.putString(scoped(iosTargetPrimariesKey), it) }
+            payload.decodeSyncString(iosTargetTransferKey)?.let { store.putString(scoped(iosTargetTransferKey), it) }
+            payload.decodeSyncString(iosHardwareDecoderModeKey)?.let { store.putString(scoped(iosHardwareDecoderModeKey), it) }
+            payload.decodeSyncString(iosAudioOutputModeKey)?.let { store.putString(scoped(iosAudioOutputModeKey), it) }
+            payload.decodeSyncBoolean(iosExtendedDynamicRangeEnabledKey)?.let { store.putBoolean(scoped(iosExtendedDynamicRangeEnabledKey), it) }
+            payload.decodeSyncBoolean(iosTargetColorspaceHintEnabledKey)?.let { store.putBoolean(scoped(iosTargetColorspaceHintEnabledKey), it) }
+            payload.decodeSyncBoolean(iosHdrComputePeakEnabledKey)?.let { store.putBoolean(scoped(iosHdrComputePeakEnabledKey), it) }
+            payload.decodeSyncBoolean(iosDebandEnabledKey)?.let { store.putBoolean(scoped(iosDebandEnabledKey), it) }
+            payload.decodeSyncBoolean(iosInterpolationEnabledKey)?.let { store.putBoolean(scoped(iosInterpolationEnabledKey), it) }
+            payload.decodeSyncInt(iosBrightnessKey)?.let { store.putInt(scoped(iosBrightnessKey), it) }
+            payload.decodeSyncInt(iosContrastKey)?.let { store.putInt(scoped(iosContrastKey), it) }
+            payload.decodeSyncInt(iosSaturationKey)?.let { store.putInt(scoped(iosSaturationKey), it) }
+            payload.decodeSyncInt(iosGammaKey)?.let { store.putInt(scoped(iosGammaKey), it) }
+        }
+    }
+}
+
+internal class DesktopSubtitleRendererPreference(
+    private val store: DesktopStorage.Store,
+    private val profileKey: (String) -> String = ProfileScopedKey::of,
+) {
+    fun load(): Boolean? = store.getBoolean(profileKey("use_libass"))
+    fun save(enabled: Boolean) = store.putBoolean(profileKey("use_libass"), enabled)
 }

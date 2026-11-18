@@ -23,6 +23,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Properties
+import java.security.MessageDigest
 import javax.inject.Inject
 
 abstract class GenerateRuntimeConfigsTask : DefaultTask() {
@@ -122,8 +123,8 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.trakt
                 |
                 |object TraktConfig {
-                |    const val CLIENT_ID = "${props.getProperty("TRAKT_CLIENT_ID", "")}" 
-                |    const val CLIENT_SECRET = "${props.getProperty("TRAKT_CLIENT_SECRET", "")}" 
+                |    const val CLIENT_ID = "${props.getProperty("TRAKT_CLIENT_ID", "")}"
+                |    const val CLIENT_SECRET = "${props.getProperty("TRAKT_CLIENT_SECRET", "")}"
                 |    const val REDIRECT_URI = "${props.getProperty("TRAKT_REDIRECT_URI", "nuvio://auth/trakt")}" 
                 |}
                 """.trimMargin()
@@ -178,7 +179,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.player.skip
                 |
                 |object IntroDbConfig {
-                |    const val URL = "${props.getProperty("INTRODB_API_URL", "")}" 
+                |    const val URL = "${props.getProperty("INTRODB_API_URL", "https://api.introdb.app/")}" 
                 |}
                 """.trimMargin()
             )
@@ -191,8 +192,8 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.details
                 |
                 |object ImdbEpisodeRatingsConfig {
-                |    const val IMDB_RATINGS_API_BASE_URL = "${props.getProperty("IMDB_RATINGS_API_BASE_URL", "")}" 
-                |    const val IMDB_TAPFRAME_API_BASE_URL = "${props.getProperty("IMDB_TAPFRAME_API_BASE_URL", "")}" 
+                |    const val IMDB_RATINGS_API_BASE_URL = "${props.getProperty("IMDB_RATINGS_API_BASE_URL", "https://seriesgraph.com/")}" 
+                |    const val IMDB_TAPFRAME_API_BASE_URL = "${props.getProperty("IMDB_TAPFRAME_API_BASE_URL", "https://imdb.tapframe.space/")}" 
                 |}
                 """.trimMargin()
             )
@@ -205,7 +206,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.debrid
                 |
                 |object PremiumizeConfig {
-                |    const val CLIENT_ID = "${props.getProperty("PREMIUMIZE_CLIENT_ID", "")}"
+                |    const val CLIENT_ID = "${props.getProperty("PREMIUMIZE_CLIENT_ID", "450935904")}"
                 |}
                 """.trimMargin()
             )
@@ -235,7 +236,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |
                 |object CommunityConfig {
                 |    const val CONTRIBUTIONS_URL = "${props.getProperty("CONTRIBUTIONS_URL", "")}" 
-                |    const val SUPPORTERS_WALL_URL = "${props.getProperty("SUPPORTERS_WALL_URL", "https://nuvio.tv/api/supporters/wall")}"
+                |    const val SUPPORTERS_WALL_URL = "${props.getProperty("SUPPORTERS_WALL_URL", "")}"
                 |    const val DONATIONS_BASE_URL = "${props.getProperty("DONATIONS_BASE_URL", "")}" 
                 |    const val DONATIONS_DONATE_URL = "${props.getProperty("DONATIONS_DONATE_URL", "")}" 
                 |}
@@ -391,7 +392,7 @@ fun newestDirectory(root: File): File? =
         ?.maxByOrNull { semanticVersionSortKey(it.name) }
 
 fun jpackageCompatibleVersion(version: String): String {
-    val versionCore = version.substringBefore('-').substringBefore('+').trim()
+    val versionCore = version.trim().removePrefix("v").removePrefix("V").substringBefore('-').substringBefore('+').trim()
     val parts = versionCore.split('.').filter { it.isNotBlank() }
     require(parts.isNotEmpty() && parts.size <= 3) {
         "Desktop package version must use one to three numeric components: $version"
@@ -478,7 +479,9 @@ val desktopReleaseVersionCode = (
     ?.toIntOrNull()
     ?: 1
 val desktopReleasePackageVersion = jpackageCompatibleVersion(desktopReleaseVersionName)
-val windowsMsiUpgradeUuid = "395990ee-9b8a-3548-922c-e7a23a495b8d"
+// Keep the fork's MSI upgrade family separate from the official Nuvio installer.
+// Sharing an UpgradeCode makes Windows Installer uninstall this app as a related product.
+val windowsMsiUpgradeUuid = "a9ef29b7-31f4-4c26-8c2a-f990d3dce9b4"
 val iosDistribution = (
     providers.gradleProperty("nuvio.ios.distribution").orNull
         ?: System.getenv("NUVIO_IOS_DISTRIBUTION")
@@ -843,6 +846,7 @@ val windowsPlayerBridgeCommand = if (missingWindowsPlayerBridgeInputs.isNotEmpty
         "Dwmapi.lib",
         "Shell32.lib",
         "D3d11.lib",
+        "Advapi32.lib",
     ).joinToString(" ")
     val powershellCompileCommand = compileCommand.replace("\"", "__DQ__")
     val powershellCommand = """
@@ -888,6 +892,7 @@ val buildWindowsPlayerBridge = tasks.register<Exec>("buildWindowsPlayerBridge") 
     notCompatibleWithConfigurationCache("Builds a host-local player bridge against WebView2 and libmpv for Windows.")
     enabled = isWindowsHost
     inputs.file(windowsPlayerBridgeSource)
+    inputs.file(layout.projectDirectory.file("src/desktopMain/native/windows/playback_buffer.h"))
     if (windowsWebView2IncludeDir.exists()) {
         inputs.dir(windowsWebView2IncludeDir)
     }
@@ -897,7 +902,6 @@ val buildWindowsPlayerBridge = tasks.register<Exec>("buildWindowsPlayerBridge") 
     outputs.file(windowsPlayerBridgeOutput)
     outputs.file(windowsPlayerBridgeImportLib)
     outputs.file(windowsPlayerBridgePdb)
-    onlyIf { !windowsPlayerBridgeOutput.get().asFile.exists() }
     commandLine(windowsPlayerBridgeCommand)
 }
 
@@ -927,6 +931,64 @@ val generateWindowsPlayerRuntimeIndex = tasks.register<GenerateNativeRuntimeInde
     dependsOn(prepareWindowsPlayerRuntime)
     runtimeDir.set(windowsPlayerRuntimeOutput)
     indexFile.set(windowsPlayerRuntimeOutput.map { it.file("runtime-files.txt") })
+}
+
+abstract class PrepareBundledSvpRuntimeTask : DefaultTask() {
+    @get:InputDirectory
+    abstract val sourceDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun prepare() {
+        val source = sourceDir.get().asFile
+        val manifest = source.resolve("manifest.sha256")
+        val entries = linkedMapOf<String, String>()
+        manifest.readLines().map(String::trim)
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .forEach { line ->
+                val match = Regex("([0-9a-f]{64})  ([A-Za-z0-9_./-]+)").matchEntire(line)
+                    ?: error("Invalid bundled SVP manifest entry")
+                val (hash, name) = match.destructured
+                require(!name.startsWith('/') && name.split('/').none { it.isEmpty() || it == "." || it == ".." })
+                require(entries.put(name, hash) == null) { "Duplicate SVP file: $name" }
+            }
+        require(entries.keys.containsAll(listOf(
+            "VSScript.dll", "vapoursynth.dll", "python312.dll", "python3.dll", "python312.zip",
+            "python312._pth", "portable.vs", "lib/site-packages/vapoursynth.pyd",
+            "vs-plugins/svpflow1_vs.dll", "vs-plugins/svpflow2_vs.dll",
+        ))) { "Incomplete bundled SVP manifest" }
+        entries.forEach { (name, expected) ->
+            val file = source.resolve(name)
+            require(file.isFile) { "Missing bundled SVP file: $name" }
+            val hash = MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+                .joinToString("") { "%02x".format(it) }
+            require(hash == expected) { "Bundled SVP checksum mismatch: $name" }
+        }
+        val output = outputDir.get().asFile
+        if (output.exists()) check(output.deleteRecursively()) { "Cannot refresh bundled SVP resources" }
+        val destination = output.resolve("svp-runtime/windows-x64")
+        entries.keys.forEach { name ->
+            source.resolve(name).copyTo(destination.resolve(name).apply { parentFile.mkdirs() })
+        }
+        manifest.copyTo(destination.resolve("manifest.sha256"))
+    }
+}
+
+val prepareBundledSvpRuntime = tasks.register<PrepareBundledSvpRuntimeTask>("prepareBundledSvpRuntime") {
+    enabled = isWindowsHost
+    sourceDir.set(layout.projectDirectory.dir("src/desktopMain/native/windows/svp-runtime"))
+    outputDir.set(layout.buildDirectory.dir("generated/svp-runtime-resources"))
+}
+
+tasks.withType<ProcessResources>().matching {
+    it.name == "desktopProcessResources" || it.name == "processDesktopMainResources"
+}.configureEach {
+    if (isWindowsHost) {
+        dependsOn(prepareBundledSvpRuntime)
+        from(prepareBundledSvpRuntime.flatMap { it.outputDir })
+    }
 }
 
 abstract class GenerateNativeRuntimeIndexTask : DefaultTask() {
@@ -968,6 +1030,7 @@ val prepareMacosPlayerAppResources = tasks.register<Sync>("prepareMacosPlayerApp
 }
 
 tasks.withType<Jar>().configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     if (isWindowsHost && name == "desktopJar") {
         dependsOn(buildWindowsPlayerBridge, prepareWindowsPlayerRuntime, generateWindowsPlayerRuntimeIndex)
         from(windowsPlayerBridgeOutput) {
@@ -1027,10 +1090,6 @@ if (isWindowsHost) {
 
 tasks.withType<KotlinCompilationTask<*>>().configureEach {
     dependsOn(generateRuntimeConfigs)
-}
-
-tasks.withType<org.gradle.api.tasks.testing.Test>().matching { it.name == "desktopTest" }.configureEach {
-    jvmArgs("--add-opens=java.desktop/java.awt.event=ALL-UNNAMED")
 }
 
 kotlin {
@@ -1194,6 +1253,9 @@ kotlin {
                 }
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.server.cio)
+                implementation(libs.ktor.server.websockets)
+                implementation(libs.zxing.core)
                 implementation("com.squareup.okhttp3:okhttp:4.12.0")
                 implementation(libs.quickjs.kt)
                 implementation(libs.ksoup)
@@ -1283,7 +1345,6 @@ compose.desktop {
             // bridge owns the process's GTK via initGtkEarly (skoruppa's fix).
             "-Djdk.gtk.version=0",
             "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
-            "--add-opens=java.desktop/java.awt.event=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.awt.windows=ALL-UNNAMED",
@@ -1292,12 +1353,14 @@ compose.desktop {
         )
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
-            packageName = "Nuvio Desktop Enhanced"
+            targetFormats(TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
+            packageName = "NuvioCodeineXO"
             packageVersion = desktopReleasePackageVersion
             vendor = "Nuvio Media"
             if (isMacHost) {
                 appResourcesRootDir.set(macosPlayerAppResourcesRoot)
+            } else if (isWindowsHost) {
+                appResourcesRootDir.set(layout.projectDirectory.dir("src/desktopMain/wix"))
             }
             modules(
                 "java.instrument",
@@ -1349,14 +1412,13 @@ compose.desktop {
                 upgradeUuid = windowsMsiUpgradeUuid
                 shortcut = true
                 menu = true
-                menuGroup = "Nuvio"
+                menuGroup = "NuvioCodeineXO"
             }
             linux {
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon-transparent.png"))
                 debMaintainer = "contact@nuvio.tv"
                 shortcut = true
-                packageName = "nuvio-desktop-enhanced"
-                menuGroup = "Nuvio Desktop Enhanced"
+                menuGroup = "Nuvio"
                 appCategory = "AudioVideo"
             }
         }
@@ -1366,12 +1428,6 @@ compose.desktop {
         }
     }
 }
-
-tasks.withType<AbstractJPackageTask>()
-    .matching { it.name.endsWith("Msi") || it.name.endsWith("Exe") }
-    .configureEach {
-        freeArgs.add("--win-shortcut-prompt")
-    }
 
 fun renameMacosDmgOutput(release: Boolean) {
     if (!isMacHost) return
@@ -1415,18 +1471,34 @@ fun publishWindowsMsiOutput(release: Boolean) {
 
     val distributionName = if (release) "main-release" else "main"
     val outputDir = layout.buildDirectory.dir("compose/binaries/$distributionName/msi").get().asFile
-    val finalMsi = outputDir.resolve("Nuvio-Windows-$windowsPlayerBridgeArch-$desktopReleaseVersionName.msi")
-    val defaultMsi = outputDir.resolve("Nuvio-$desktopReleasePackageVersion.msi")
+    val finalMsi = outputDir.resolve("NuvioCodeineXO-$desktopReleaseVersionName.msi")
+    val defaultMsi = outputDir.resolve("NuvioCodeineXO-$desktopReleasePackageVersion.msi")
+    val legacyDefaultMsi = outputDir.resolve("Nuvio-$desktopReleasePackageVersion.msi")
+    val legacyNamedMsi = outputDir.resolve("Nuvio-Windows-$windowsPlayerBridgeArch-$desktopReleaseVersionName.msi")
     val sourceMsi = defaultMsi.takeIf { it.exists() }
+        ?: legacyDefaultMsi.takeIf { it.exists() }
+        ?: legacyNamedMsi.takeIf { it.exists() }
         ?: finalMsi.takeIf { it.exists() }
         ?: error("Expected Windows MSI output in ${outputDir.absolutePath}")
 
     if (sourceMsi.canonicalFile != finalMsi.canonicalFile) {
-        sourceMsi.copyTo(finalMsi, overwrite = true)
+        if (finalMsi.exists()) {
+            finalMsi.delete()
+        }
+        if (!sourceMsi.renameTo(finalMsi)) {
+            sourceMsi.copyTo(finalMsi, overwrite = true)
+            sourceMsi.delete()
+        }
     }
 
     logger.lifecycle("Windows MSI artifact: ${finalMsi.absolutePath}")
     publishWindowsMsiArtifact(finalMsi)
+
+    // Clean up temporary jpackage working directories to save disk space
+    val jpackageTempDir = rootProject.layout.projectDirectory.dir("build/jpackage-temp").asFile
+    if (jpackageTempDir.exists()) {
+        jpackageTempDir.deleteRecursively()
+    }
 }
 
 fun publishWindowsMsiArtifact(msi: File) {
@@ -1437,6 +1509,41 @@ fun publishWindowsMsiArtifact(msi: File) {
         msi.copyTo(publishedMsi, overwrite = true)
     }
     logger.lifecycle("Published Windows MSI artifact: ${publishedMsi.absolutePath}")
+}
+
+fun publishWindowsExeOutput(release: Boolean) {
+    if (!isWindowsHost) return
+
+    val distributionName = if (release) "main-release" else "main"
+    val outputDir = layout.buildDirectory.dir("compose/binaries/$distributionName/exe").get().asFile
+    val finalExe = outputDir.resolve("NuvioCodeineXO-$desktopReleaseVersionName.exe")
+    val defaultExe = outputDir.resolve("NuvioCodeineXO-$desktopReleasePackageVersion.exe")
+    val sourceExe = defaultExe.takeIf { it.exists() }
+        ?: finalExe.takeIf { it.exists() }
+        ?: error("Expected Windows EXE output in ${outputDir.absolutePath}")
+
+    if (sourceExe.canonicalFile != finalExe.canonicalFile) {
+        if (finalExe.exists()) {
+            finalExe.delete()
+        }
+        if (!sourceExe.renameTo(finalExe)) {
+            sourceExe.copyTo(finalExe, overwrite = true)
+            sourceExe.delete()
+        }
+    }
+
+    logger.lifecycle("Windows EXE artifact: ${finalExe.absolutePath}")
+    publishWindowsExeArtifact(finalExe)
+}
+
+fun publishWindowsExeArtifact(exe: File) {
+    val publishedDir = layout.buildDirectory.dir("compose/release-exes").get().asFile
+    publishedDir.mkdirs()
+    val publishedExe = publishedDir.resolve(exe.name)
+    if (exe.canonicalFile != publishedExe.canonicalFile) {
+        exe.copyTo(publishedExe, overwrite = true)
+    }
+    logger.lifecycle("Published Windows EXE artifact: ${publishedExe.absolutePath}")
 }
 
 fun normalizedLinuxArch(value: String): String =
@@ -1483,6 +1590,168 @@ tasks.matching { it.name == "notarizeReleaseDmg" }.configureEach {
     notCompatibleWithConfigurationCache("Compose Desktop notarization settings are not configuration-cache safe.")
     doLast {
         renameMacosDmgOutput(release = true)
+    }
+}
+
+if (isWindowsHost) {
+    val jpackageWrapperDir = rootProject.layout.projectDirectory.dir("build/jpackage-wrapper").asFile
+    val prepareJPackageWrapper = tasks.register("prepareJPackageWrapper") {
+        val sourceFile = layout.projectDirectory.file("src/desktopMain/wix/JPackageWrapper.cs").asFile
+        val outputExe = jpackageWrapperDir.resolve("bin/jpackage.exe")
+        val promptSourceFile = layout.projectDirectory.file("src/desktopMain/wix/UninstallPrompt.cs").asFile
+        val promptOutputExe = layout.projectDirectory.file("src/desktopMain/wix/UninstallPrompt.exe").asFile
+        val shortcutHelperSourceFile = layout.projectDirectory.file("src/desktopMain/wix/DesktopShortcutHelper.cs").asFile
+        val shortcutHelperOutputExe = layout.projectDirectory.file("src/desktopMain/wix/DesktopShortcutHelper.exe").asFile
+        inputs.files(sourceFile, promptSourceFile, shortcutHelperSourceFile)
+        outputs.files(outputExe, promptOutputExe, shortcutHelperOutputExe)
+        doLast {
+            outputExe.parentFile.mkdirs()
+            val cscCandidates = listOf(
+                File("C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe"),
+                File("C:/Windows/Microsoft.NET/Framework/v4.0.30319/csc.exe")
+            )
+            val csc = cscCandidates.firstOrNull(File::exists)
+                ?: error("Cannot find csc.exe to compile jpackage wrapper and WiX helpers.")
+            val procWrapper = ProcessBuilder(csc.absolutePath, "/nologo", "/out:${outputExe.absolutePath}", sourceFile.absolutePath)
+                .inheritIO()
+                .start()
+            val exitCodeWrapper = procWrapper.waitFor()
+            check(exitCodeWrapper == 0) { "csc compilation of jpackage wrapper failed with exit code $exitCodeWrapper" }
+
+            val procPrompt = ProcessBuilder(csc.absolutePath, "/nologo", "/target:winexe", "/out:${promptOutputExe.absolutePath}", promptSourceFile.absolutePath)
+                .inheritIO()
+                .start()
+            val exitCodePrompt = procPrompt.waitFor()
+            check(exitCodePrompt == 0) { "csc compilation of UninstallPrompt failed with exit code $exitCodePrompt" }
+
+            val procShortcutHelper = ProcessBuilder(csc.absolutePath, "/nologo", "/target:winexe", "/out:${shortcutHelperOutputExe.absolutePath}", shortcutHelperSourceFile.absolutePath)
+                .inheritIO()
+                .start()
+            val exitCodeShortcutHelper = procShortcutHelper.waitFor()
+            check(exitCodeShortcutHelper == 0) { "csc compilation of DesktopShortcutHelper failed with exit code $exitCodeShortcutHelper" }
+        }
+    }
+    gradle.taskGraph.whenReady {
+        allTasks.filter { it.name in listOf("packageMsi", "packageReleaseMsi") }.forEach { task ->
+            (task as? org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask)?.javaHome?.set(jpackageWrapperDir.absolutePath)
+        }
+    }
+    tasks.matching { it.name in listOf("packageMsi", "packageReleaseMsi") }.configureEach {
+        dependsOn(prepareJPackageWrapper)
+        inputs.file(layout.projectDirectory.file("src/desktopMain/wix/UninstallPrompt.cs"))
+        inputs.file(layout.projectDirectory.file("src/desktopMain/wix/DesktopShortcutHelper.cs"))
+        inputs.file(layout.projectDirectory.file("src/desktopMain/wix/main.wxs"))
+        doFirst {
+            val task = this as? org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
+            task?.javaHome?.set(jpackageWrapperDir.absolutePath)
+        }
+    }
+
+    fun findIsccCompiler(): File {
+        val onPath = findExecutableOnPath("iscc") ?: findExecutableOnPath("iscc.exe")
+        if (onPath != null) return onPath
+        val candidates = listOf(
+            rootProject.layout.projectDirectory.dir("build/innosetup/ISCC.exe").asFile,
+            File("C:/Program Files (x86)/Inno Setup 6/ISCC.exe"),
+            File("C:/Program Files/Inno Setup 6/ISCC.exe"),
+            File(System.getenv("LOCALAPPDATA") ?: "", "Programs/Inno Setup 6/ISCC.exe"),
+        )
+        candidates.firstOrNull { it.isFile && it.canExecute() }?.let { return it }
+
+        val targetDir = rootProject.layout.projectDirectory.dir("build/innosetup").asFile
+        val targetIscc = targetDir.resolve("ISCC.exe")
+        if (targetIscc.isFile && targetIscc.canExecute()) return targetIscc
+
+        targetDir.mkdirs()
+        val tempInstaller = File(System.getProperty("java.io.tmpdir"), "innosetup-installer.exe")
+        val curlCmd = listOf("curl.exe", "-L", "-o", tempInstaller.absolutePath, "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe")
+        val curlProc = ProcessBuilder(curlCmd).inheritIO().start()
+        val curlExit = curlProc.waitFor()
+        check(curlExit == 0) { "Failed to download Inno Setup compiler with exit code $curlExit" }
+
+        val installCmd = listOf(tempInstaller.absolutePath, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/PORTABLE=1", "/CURRENTUSER", "/DIR=${targetDir.absolutePath}")
+        val installProc = ProcessBuilder(installCmd).inheritIO().start()
+        val installExit = installProc.waitFor()
+        check(installExit == 0 && targetIscc.isFile) { "Failed to unpack Inno Setup compiler with exit code $installExit" }
+
+        return targetIscc
+    }
+
+    val packageReleaseExe = tasks.register("packageReleaseExe") {
+        group = "distribution"
+        description = "Packages the release Windows EXE installer using Inno Setup."
+        dependsOn("createReleaseDistributable")
+        notCompatibleWithConfigurationCache("Windows Inno Setup installer publication uses script file operations.")
+        val installerScript = layout.projectDirectory.file("src/desktopMain/installer/installer.iss").asFile
+        val iconFile = layout.projectDirectory.file("src/desktopMain/resources/icons/nuvio-app-icon-transparent.ico").asFile
+        val distDir = layout.buildDirectory.dir("compose/binaries/main-release/app/NuvioCodeineXO").get().asFile
+        val outputDir = layout.buildDirectory.dir("compose/binaries/main-release/exe").get().asFile
+
+        inputs.file(installerScript)
+        inputs.file(iconFile)
+        inputs.dir(distDir)
+        outputs.dir(outputDir)
+
+        doLast {
+            val iscc = findIsccCompiler()
+            outputDir.mkdirs()
+            val isccArgs = listOf(
+                iscc.absolutePath,
+                "/Q",
+                "/DAppVersion=$desktopReleaseVersionName",
+                "/DAppSourceDir=${distDir.absolutePath}",
+                "/DOutputDir=${outputDir.absolutePath}",
+                "/DOutputBaseFilename=NuvioCodeineXO-$desktopReleaseVersionName",
+                "/DAppIconPath=${iconFile.absolutePath}",
+                installerScript.absolutePath,
+            )
+            val proc = ProcessBuilder(isccArgs).inheritIO().start()
+            val exitCode = proc.waitFor()
+            check(exitCode == 0) { "ISCC compilation failed with exit code $exitCode" }
+            publishWindowsExeOutput(release = true)
+        }
+    }
+
+    val packageExe = tasks.register("packageExe") {
+        group = "distribution"
+        description = "Packages the debug Windows EXE installer using Inno Setup."
+        dependsOn("createDistributable")
+        notCompatibleWithConfigurationCache("Windows Inno Setup installer publication uses script file operations.")
+        val installerScript = layout.projectDirectory.file("src/desktopMain/installer/installer.iss").asFile
+        val iconFile = layout.projectDirectory.file("src/desktopMain/resources/icons/nuvio-app-icon-transparent.ico").asFile
+        val distDir = layout.buildDirectory.dir("compose/binaries/main/app/NuvioCodeineXO").get().asFile
+        val outputDir = layout.buildDirectory.dir("compose/binaries/main/exe").get().asFile
+
+        inputs.file(installerScript)
+        inputs.file(iconFile)
+        inputs.dir(distDir)
+        outputs.dir(outputDir)
+
+        doLast {
+            val iscc = findIsccCompiler()
+            outputDir.mkdirs()
+            val isccArgs = listOf(
+                iscc.absolutePath,
+                "/Q",
+                "/DAppVersion=$desktopReleaseVersionName",
+                "/DAppSourceDir=${distDir.absolutePath}",
+                "/DOutputDir=${outputDir.absolutePath}",
+                "/DOutputBaseFilename=NuvioCodeineXO-$desktopReleaseVersionName",
+                "/DAppIconPath=${iconFile.absolutePath}",
+                installerScript.absolutePath,
+            )
+            val proc = ProcessBuilder(isccArgs).inheritIO().start()
+            val exitCode = proc.waitFor()
+            check(exitCode == 0) { "ISCC compilation failed with exit code $exitCode" }
+            publishWindowsExeOutput(release = false)
+        }
+    }
+
+    tasks.matching { it.name == "packageReleaseDistributionForCurrentOS" }.configureEach {
+        dependsOn(packageReleaseExe)
+    }
+    tasks.matching { it.name == "packageDistributionForCurrentOS" }.configureEach {
+        dependsOn(packageExe)
     }
 }
 

@@ -1,7 +1,7 @@
 package com.nuvio.app.core.ui
 
+
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeState
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_exit_fullscreen
 import nuvio.composeapp.generated.resources.action_fullscreen
@@ -34,6 +35,8 @@ internal expect fun isFullscreenActionActive(): Boolean
 
 internal expect fun toggleFullscreenAction()
 
+internal expect fun exitFullscreenAction()
+
 internal fun fullscreenActionHorizontalInsetForWidth(maxWidthDp: Float): Dp =
     desktopPageHorizontalPaddingForWidth(maxWidthDp)
 
@@ -43,8 +46,9 @@ internal fun FullscreenActionButton(
     enabled: Boolean = true,
     buttonSize: Dp = 40.dp,
     iconSize: Dp = 24.dp,
-    containerColor: Color = Color.Transparent,
     contentColor: Color = MaterialTheme.colorScheme.onBackground,
+    hazeState: HazeState? = LocalNavigationGlassState.current,
+    showBackground: Boolean = true,
 ) {
     if (!isFullscreenActionSupported) return
 
@@ -60,10 +64,8 @@ internal fun FullscreenActionButton(
     Box(
         modifier = modifier
             .size(buttonSize)
-            .nuvioFocusBorder(CircleShape)
-            .clip(CircleShape)
-            .background(containerColor)
-            .clickable(
+            .then(if (showBackground) Modifier.navigationGlass(CircleShape, hazeState = hazeState) else Modifier.clip(CircleShape))
+            .excludeFromRemoteNavigation().clickable(
                 enabled = enabled,
                 role = Role.Button,
                 onClick = ::toggleFullscreenAction,
@@ -82,7 +84,7 @@ internal fun FullscreenActionButton(
 }
 
 @Composable
-private fun PlayerFullscreenIcon(
+internal fun PlayerFullscreenIcon(
     isExit: Boolean,
     tint: Color,
     modifier: Modifier = Modifier,

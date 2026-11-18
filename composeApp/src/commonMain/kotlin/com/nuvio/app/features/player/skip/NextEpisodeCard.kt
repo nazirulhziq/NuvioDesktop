@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player.skip
 
+import com.nuvio.app.core.ui.frostedGlassSecondaryContentColor
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -55,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.PlatformBackHandler
+import com.nuvio.app.features.anime.FillerBadge
+import com.nuvio.app.features.anime.MixedBadge
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_player_episode_title_format
 import nuvio.composeapp.generated.resources.detail_btn_play
@@ -181,12 +185,22 @@ fun NextEpisodeCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text(
-                    text = stringResource(Res.string.player_next_episode),
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = stringResource(Res.string.player_next_episode),
+                        color = frostedGlassSecondaryContentColor(Color.White.copy(alpha = 0.8f)),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    if (nextEpisode.isFiller) {
+                        FillerBadge()
+                    } else if (nextEpisode.isMixed) {
+                        MixedBadge()
+                    }
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = stringResource(
@@ -216,7 +230,7 @@ fun NextEpisodeCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = autoPlayStatus,
-                        color = Color.White.copy(alpha = 0.78f),
+                        color = frostedGlassSecondaryContentColor(Color.White.copy(alpha = 0.78f)),
                         fontSize = 10.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

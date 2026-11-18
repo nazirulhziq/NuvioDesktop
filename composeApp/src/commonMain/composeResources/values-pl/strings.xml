@@ -929,7 +929,7 @@
     <string name="settings_playback_stream_timeout">Limit czasu strumienia</string>
     <string name="settings_playback_stream_timeout_description">Jak długo czekać na strumienie przed automatycznym wyborem.</string>
     <string name="settings_playback_fallback_next_source">Przejdź do kolejnego pasującego źródła przy błędzie</string>
-    <string name="settings_playback_fallback_next_source_description">Jeśli automatycznie wybrane źródło zgłosi błąd lub nie uruchomi się na czas, po cichu spróbuj kolejnych pasujących źródeł.</string>
+    <string name="settings_playback_fallback_next_source_description">Spróbuj kolejnych pasujących źródeł, jeśli odtwarzanie nie rozpocznie się lub trwa to zbyt długo.</string>
     <string name="settings_playback_fallback_max_sources">Źródła do sprawdzenia przy błędzie</string>
     <string name="settings_playback_fallback_startup_timeout">Czas na uruchomienie źródła</string>
     <string name="settings_playback_fallback_next_source_blocked_by_engine_switch">Wyłącz automatyczną zmianę silnika po błędzie odtwarzania, aby tego użyć.</string>
@@ -2419,7 +2419,7 @@
     <string name="settings_playback_exo_chapters">Pokazuj rozdziały</string>
     <string name="settings_playback_exo_chapters_description">Odczytuj rozdziały plików MKV, aby oznaczać je na pasku postępu i wyświetlać w odtwarzaczu.</string>
     <string name="settings_playback_chapter_title">Pokaż tytuł rozdziału</string>
-    <string name="settings_playback_chapter_title_description">Pokazuj nazwę bieżącego rozdziału nad paskiem postępu.</string>
+    <string name="settings_playback_chapter_title_description">Pokazuj nazwę bieżącego rozdziału w elementach sterujących odtwarzacza.</string>
     <string name="settings_tmdb_api_key_label">Klucz API</string>
     <string name="settings_tmdb_api_key_override_description">Użyj własnego klucza API TMDB lub pozostaw puste, aby użyć domyślnego.</string>
     <string name="settings_tmdb_personal_api_key">Osobisty klucz API</string>

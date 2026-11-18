@@ -1,5 +1,32 @@
 package com.nuvio.app
 
+import androidx.compose.material.icons.filled.Casino
+import nuvio.composeapp.generated.resources.picker_title
+
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
+import com.nuvio.app.core.ui.FrostedGlassTokens
+import com.nuvio.app.core.ui.frostedGlassShadow
+import com.nuvio.app.core.ui.frostedGlassBorder
+import com.nuvio.app.core.ui.LocalSurfaceStyle
+import com.nuvio.app.core.ui.DarkGlassSurfaceColor
+import com.nuvio.app.core.ui.DarkGlassPanelContent
+import com.nuvio.app.features.settings.SurfaceStyle
+
+import com.nuvio.app.core.ui.LocalFrostedGlassEnabled
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import com.nuvio.app.core.ui.LocalRemoteNavigation
+import com.nuvio.app.core.ui.LocalRemoteNavigationRole
+import com.nuvio.app.core.ui.RemoteNavigationRole
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -7,14 +34,19 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.rememberScrollState
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import com.nuvio.app.core.ui.collectIsRemoteHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +58,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -34,15 +67,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Settings
+import com.nuvio.app.core.ui.requestAppExitConfirmation
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -54,8 +90,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -70,19 +104,17 @@ import com.nuvio.app.core.ui.NuvioLoadingIndicator
 import com.nuvio.app.core.ui.NuvioNavBarScrollState
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.core.ui.nuvioFocusBorder
-import com.nuvio.app.core.ui.nuvioTrackTopBarFocus
-import com.nuvio.app.controller.ControllerFocusZone
-import com.nuvio.app.controller.controllerFocusable
+import com.nuvio.app.core.ui.navigationGlass
+import com.nuvio.app.core.ui.navigationGlassFeedback
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.CloudLibraryFile
 import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.home.HomeCatalogSection
+import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryScreen
-import com.nuvio.app.features.livetv.LiveTvScreen
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySortOption
 import com.nuvio.app.features.player.PlayerBackReleaseGuard
@@ -106,11 +138,13 @@ import com.nuvio.app.isDesktop
 import com.nuvio.app.navigation.AppRoute
 import com.nuvio.app.navigation.NuvioNavigator
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.action_back
 import nuvio.composeapp.generated.resources.app_brand_name
+import nuvio.composeapp.generated.resources.compose_nav_close_app
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_profile
@@ -124,12 +158,11 @@ import org.jetbrains.compose.resources.stringResource
 
 internal val DesktopSidebarCollapsedWidth = 68.dp
 internal val DesktopSidebarExpandedWidth = 192.dp
+internal val DesktopSidebarOuterInset = NuvioTokens.Space.s12
 private val DesktopSidebarExpandedContentWidth = 156.dp
 private val DesktopSidebarItemHeight = 56.dp
 private val DesktopSidebarIconSlotSize = 38.dp
 private val DesktopSidebarIconSize = NuvioTokens.Icon.lg
-private val DesktopSidebarProfileStackRowHeight = 44.dp
-private val DesktopSidebarProfileStackRowGap = 4.dp
 private val DesktopSidebarProfileStackTopGap = 6.dp
 private val DesktopSidebarProfileStackNavGap = 12.dp
 
@@ -158,7 +191,8 @@ internal data class AppTabState(
     val profileId: Int? = null,
     val searchFocusRequestCount: Int = 0,
     val tabsRouteActiveState: State<Boolean>,
-    val topChromePadding: Dp? = null,
+    /** Resolved per tab, not per selected tab, so the outgoing tab keeps its own inset through the crossfade. */
+    val topChromePadding: (AppScreenTab) -> Dp? = { null },
     val libraryDisintegrationRequest: DisintegrationRequest<String>? = null,
     val continueWatchingDisintegrationRequest: DisintegrationRequest<String>? = null,
     val requestedSettingsPageName: String? = null,
@@ -169,12 +203,9 @@ internal data class AppTabRequests(
     val searchScrollToTopRequests: Flow<Unit>,
     val libraryScrollToTopRequests: Flow<Unit>,
     val settingsRootActionRequests: Flow<Unit>,
-    val liveTvScrollToTopRequests: Flow<Unit> = emptyFlow(),
 )
 
 internal data class AppTabActions(
-    val onLiveTvChannelClick: ((com.nuvio.app.features.livetv.LiveTvChannel) -> Unit)? = null,
-    val onLiveTvVodClick: ((com.nuvio.app.features.livetv.LiveTvVodPlayback) -> Unit)? = null,
     val onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     val onPosterClick: ((MetaPreview) -> Unit)? = null,
     val onPosterLongClick: ((MetaPreview) -> Unit)? = null,
@@ -186,6 +217,8 @@ internal data class AppTabActions(
     val onDownloadsClick: () -> Unit = {},
     val onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     val onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
+    val onContinueWatchingRemove: ((ContinueWatchingItem) -> Unit)? = null,
+    val onContinueWatchingViewAll: ((shuffleVisit: Long) -> Unit)? = null,
     val onSwitchProfile: (() -> Unit)? = null,
     val onSettingsPageClick: ((pageName: String, title: String) -> Unit)? = null,
     val onHomescreenSettingsClick: () -> Unit = {},
@@ -201,7 +234,9 @@ internal data class AppTabActions(
     val onCollectionsSettingsClick: () -> Unit = {},
     val onWatchPartySettingsClick: () -> Unit = {},
     val onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
+    val onCollectionClick: ((Collection) -> Unit)? = null,
     val onRequestedSettingsPageConsumed: () -> Unit = {},
+    val onOnboardingClick: (() -> Unit)? = null,
     val onInitialHomeContentRendered: () -> Unit = {},
 )
 
@@ -237,33 +272,42 @@ internal fun AppTabHost(
     requests: AppTabRequests,
     state: AppTabState,
     actions: AppTabActions,
+    sidebarInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
+    shuffleSelected: Boolean = false,
+    shuffleContent: (@Composable () -> Unit)? = null,
+    paneBackground: (@Composable (tabKey: String) -> Unit)? = null,
 ) {
     RootTabHost(
         selectedTab = selectedTab,
         modifier = modifier,
         active = state.tabsRouteActiveState.value,
         profileId = state.profileId,
+        shuffleSelected = shuffleSelected,
+        shuffleContent = shuffleContent,
+        paneBackground = paneBackground,
     ) { tab ->
-        // The content entry must live on the selected screen, not on the tab host: RootTabHost keeps
-        // previously visited tabs composed but unplaced, and focusing a container whose first child
-        // is an unplaced pane leaves focus on the container itself (no ring, no way out with arrows).
-        val contentModifier = Modifier.fillMaxSize()
+        // Inset per tab, not per selected tab, so the outgoing tab never jumps mid-fade.
+        CompositionLocalProvider(LocalDesktopSidebarContentInset provides if (tab == AppScreenTab.Home) sidebarInset else 0.dp) {
+        Box(Modifier.fillMaxSize().padding(start = if (tab == AppScreenTab.Home) 0.dp else sidebarInset)) {
         when (tab) {
             AppScreenTab.Home -> {
                 key(state.homeContentGeneration) {
                     HomeScreen(
-                        modifier = contentModifier,
-                        topChromePadding = state.topChromePadding,
-                        animateCollectionGifs = state.tabsRouteActiveState.value && selectedTab == AppScreenTab.Home,
+                        modifier = Modifier.fillMaxSize(),
+                        topChromePadding = state.topChromePadding(tab),
+                        animateCollectionGifs = state.tabsRouteActiveState.value && !shuffleSelected && selectedTab == AppScreenTab.Home,
                         scrollToTopRequests = requests.homeScrollToTopRequests,
                         onCatalogClick = actions.onCatalogClick,
                         onPosterClick = actions.onPosterClick,
                         onPosterLongClick = actions.onPosterLongClick,
                         onContinueWatchingClick = actions.onContinueWatchingClick,
                         onContinueWatchingLongPress = actions.onContinueWatchingLongPress,
+                        onContinueWatchingRemove = actions.onContinueWatchingRemove,
+                        onContinueWatchingViewAll = actions.onContinueWatchingViewAll,
                         continueWatchingDisintegrationRequest = state.continueWatchingDisintegrationRequest,
                         onFolderClick = actions.onFolderClick,
+                        onCollectionClick = actions.onCollectionClick,
                         onFirstCatalogRendered = actions.onInitialHomeContentRendered,
                     )
                 }
@@ -271,8 +315,8 @@ internal fun AppTabHost(
 
             AppScreenTab.Search -> {
                 SearchScreen(
-                    modifier = contentModifier,
-                    topChromePadding = state.topChromePadding,
+                    modifier = Modifier.fillMaxSize(),
+                    topChromePadding = state.topChromePadding(tab),
                     listState = state.searchListState,
                     onPosterClick = actions.onPosterClick,
                     onPosterLongClick = actions.onPosterLongClick,
@@ -283,8 +327,8 @@ internal fun AppTabHost(
 
             AppScreenTab.Library -> {
                 LibraryScreen(
-                    modifier = contentModifier,
-                    topChromePadding = state.topChromePadding,
+                    modifier = Modifier.fillMaxSize(),
+                    topChromePadding = state.topChromePadding(tab),
                     scrollToTopRequests = requests.libraryScrollToTopRequests,
                     onPosterClick = actions.onLibraryPosterClick,
                     onPosterLongClick = actions.onLibraryPosterLongClick,
@@ -299,24 +343,15 @@ internal fun AppTabHost(
                 )
             }
 
-            AppScreenTab.LiveTv -> {
-                LiveTvScreen(
-                    modifier = contentModifier,
-                    scrollToTopRequests = requests.liveTvScrollToTopRequests,
-                    onChannelClick = { channel -> actions.onLiveTvChannelClick?.invoke(channel) },
-                    onVodClick = { vod -> actions.onLiveTvVodClick?.invoke(vod) },
-                )
-            }
-
             AppScreenTab.Settings -> {
                 SettingsScreen(
-                    modifier = contentModifier,
-                    topChromePadding = state.topChromePadding,
+                    modifier = Modifier.fillMaxSize(),
+                    topChromePadding = state.topChromePadding(tab),
                     rootActionRequests = requests.settingsRootActionRequests,
                     requestedPageName = state.requestedSettingsPageName,
                     onRequestedPageConsumed = actions.onRequestedSettingsPageConsumed,
-                    rootActionsEnabled = state.tabsRouteActiveState.value,
-                    isSelectedTab = selectedTab == AppScreenTab.Settings,
+                    rootActionsEnabled = state.tabsRouteActiveState.value && !shuffleSelected,
+                    isSelectedTab = !shuffleSelected && selectedTab == AppScreenTab.Settings,
                     onNavigatePage = actions.onSettingsPageClick,
                     onSwitchProfile = actions.onSwitchProfile,
                     onHomescreenClick = actions.onHomescreenSettingsClick,
@@ -330,9 +365,12 @@ internal fun AppTabHost(
                     onCheckForUpdatesClick = actions.onCheckForUpdatesClick,
                     onTestUpdateBannerClick = actions.onTestUpdateBannerClick,
                     onCollectionsClick = actions.onCollectionsSettingsClick,
+                    onOnboardingClick = actions.onOnboardingClick,
                     onWatchPartyClick = actions.onWatchPartySettingsClick,
                 )
             }
+        }
+        }
         }
     }
 }
@@ -349,12 +387,14 @@ internal fun TabletFloatingTopBar(
     hazeState: HazeState? = null,
     scrollState: NuvioNavBarScrollState? = null,
     windowWidth: Dp? = null,
+    /** Keeps the unscrolled transparent look regardless of scroll (persistent hero). */
+    keepTransparentOnScroll: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isHovered by interactionSource.collectIsRemoteHoveredAsState()
     var isProfileSwitcherOpen by remember { mutableStateOf(false) }
 
     val isNarrowWindow = windowWidth != null && windowWidth < 800.dp
@@ -363,15 +403,22 @@ internal fun TabletFloatingTopBar(
     val hasSettingsDrawer = selectedTab == AppScreenTab.Settings && (windowWidth == null || windowWidth >= 960.dp)
     val supportsScrollFrostedHaze = selectedTab == AppScreenTab.Home || hasSettingsDrawer
     val scrollThreshold = if (selectedTab == AppScreenTab.Settings) 70f else 35f
-    val isScrolledAwayFromTop = scrollState != null && scrollState.totalScrollOffset > scrollThreshold
-    val isScrolled = supportsScrollFrostedHaze && isScrolledAwayFromTop
+    val isScrolledAwayFromTop by remember(scrollState, scrollThreshold) {
+        derivedStateOf { scrollState != null && scrollState.totalScrollOffset > scrollThreshold }
+    }
+    val isScrolled = supportsScrollFrostedHaze && isScrolledAwayFromTop && !keepTransparentOnScroll
     val isFrosted = isScrolled || isHovered || isProfileSwitcherOpen
 
+    val glassElevation by animateFloatAsState(
+        targetValue = if (LocalFrostedGlassEnabled.current && isFrosted) 6f else 0f,
+        animationSpec = tween(320),
+        label = "glass_elevation",
+    )
     val surfaceColor by animateColorAsState(
         targetValue = if (isFrosted) {
-            Color(0xFF1C1C1E).copy(alpha = 0.30f)
+            FrostedGlassTokens.TintColor
         } else {
-            Color(0xFF0F0F11).copy(alpha = 0.20f)
+            Color.White.copy(alpha = 0.04f)
         },
         animationSpec = tween(
             durationMillis = 320,
@@ -409,14 +456,6 @@ internal fun TabletFloatingTopBar(
         label = "top_bar_label_fraction",
     )
 
-    val frostedSheenAlpha by animateFloatAsState(
-        targetValue = if (isFrosted) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = 320,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "top_bar_sheen_alpha",
-    )
 
     val pillHeight = when {
         isNarrowWindow -> 34.dp
@@ -484,17 +523,28 @@ internal fun TabletFloatingTopBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .nuvioTrackTopBarFocus()
             .padding(top = statusBarPadding + baseTopPadding, bottom = tokens.spacing.controlGap),
         contentAlignment = Alignment.TopCenter,
     ) {
         val chipShape = tokens.shapes.chip
         val pillModifier = Modifier
-            .clip(chipShape)
             .then(
-                if (isFrosted && hazeState != null) {
+                if (LocalFrostedGlassEnabled.current) {
+                    Modifier.frostedGlassShadow(chipShape, glassElevation.dp)
+                } else {
+                    Modifier
+                },
+            )
+            .clip(chipShape)
+            .then(if (LocalFrostedGlassEnabled.current) Modifier.frostedGlassBorder(chipShape) else Modifier)
+            .then(
+                if (LocalFrostedGlassEnabled.current && isFrosted && hazeState != null) {
                     Modifier.hazeEffect(state = hazeState) {
-                        blurRadius = 14.dp
+                        blurRadius = FrostedGlassTokens.BlurRadius
+                        noiseFactor = FrostedGlassTokens.NoiseFactor
+                        tints = emptyList()
+                        fallbackTint = HazeTint(FrostedGlassTokens.FallbackColor)
+                        inputScale = FrostedGlassTokens.InputScale
                     }
                 } else {
                     Modifier
@@ -503,30 +553,13 @@ internal fun TabletFloatingTopBar(
             .hoverable(interactionSource)
 
         Surface(
-            color = surfaceColor,
+            color = if (LocalSurfaceStyle.current == SurfaceStyle.DarkGlass) DarkGlassSurfaceColor else if (LocalFrostedGlassEnabled.current) (if (isFrosted && hazeState?.areas?.isNotEmpty() != true) FrostedGlassTokens.FallbackColor else surfaceColor) else tokens.colors.surfacePopover.copy(alpha = 1f),
             shape = chipShape,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
             modifier = pillModifier,
         ) {
             Box {
-                if (frostedSheenAlpha > 0.01f) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clip(chipShape)
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.14f * frostedSheenAlpha),
-                                        Color.White.copy(alpha = 0.03f * frostedSheenAlpha),
-                                        Color.Transparent,
-                                    ),
-                                ),
-                            ),
-                    )
-                }
-
                 Row(
                     modifier = Modifier.padding(
                         horizontal = if (isNarrowWindow) 8.dp else if (isLargeWindow) 12.dp else NuvioTokens.Space.s10,
@@ -552,7 +585,7 @@ internal fun TabletFloatingTopBar(
                                 tint = if (selectedTab == AppScreenTab.Home) {
                                     tokens.colors.textPrimary
                                 } else {
-                                    Color.White.copy(alpha = 0.70f)
+                                    if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textSecondary
                                 },
                             )
                         },
@@ -574,7 +607,7 @@ internal fun TabletFloatingTopBar(
                                 tint = if (selectedTab == AppScreenTab.Search) {
                                     tokens.colors.textPrimary
                                 } else {
-                                    Color.White.copy(alpha = 0.70f)
+                                    if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textSecondary
                                 },
                             )
                         },
@@ -596,7 +629,7 @@ internal fun TabletFloatingTopBar(
                                 tint = if (selectedTab == AppScreenTab.Library) {
                                     tokens.colors.textPrimary
                                 } else {
-                                    Color.White.copy(alpha = 0.70f)
+                                    if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textSecondary
                                 },
                             )
                         },
@@ -663,9 +696,9 @@ private fun TabletTopPillItem(
         color = selectedBgColor,
         shape = itemShape,
         tonalElevation = if (selected) tokens.elevation.raised else tokens.elevation.flat,
-        modifier = Modifier
+        modifier = (Modifier
             .height(pillHeight)
-            .clip(itemShape),
+            .clip(itemShape)).remoteNavigationTarget(shape = itemShape),
     ) {
         Row(
             modifier = Modifier
@@ -692,7 +725,7 @@ private fun TabletTopPillItem(
                     color = if (selected) {
                         tokens.colors.textPrimary
                     } else {
-                        Color.White.copy(alpha = 0.75f)
+                        if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textSecondary
                     },
                     maxLines = 1,
                     softWrap = false,
@@ -717,9 +750,7 @@ internal fun AppLoadingContent(
         ) {
             AppBrandWordmark(
                 contentDescription = stringResource(Res.string.app_brand_name),
-                modifier = Modifier
-                    .fillMaxWidth(0.48f)
-                    .height(44.dp),
+                modifier = Modifier.height(48.dp),
             )
             Spacer(modifier = Modifier.height(tokens.spacing.sectionGap))
             NuvioLoadingIndicator()
@@ -747,6 +778,8 @@ internal fun AppLaunchOverlay(
 internal fun DesktopHoverSidebar(
     selectedTab: AppScreenTab,
     onTabSelected: (AppScreenTab) -> Unit,
+    onRandomPickerClick: () -> Unit = {},
+    randomPickerSelected: Boolean = false,
     onProfileSelected: (NuvioProfile) -> Unit,
     onAddProfileRequested: () -> Unit,
     sidebarExpanded: Boolean = false,
@@ -754,6 +787,10 @@ internal fun DesktopHoverSidebar(
     hoverSource: MutableInteractionSource = remember { MutableInteractionSource() },
     profileStackVisible: Boolean = false,
     onProfileStackVisibleChange: (Boolean) -> Unit = {},
+    hazeState: HazeState? = null,
+    onFocusWithinChanged: (Boolean) -> Unit = {},
+    canNavigateBack: Boolean = false,
+    onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -761,7 +798,6 @@ internal fun DesktopHoverSidebar(
     val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
     val avatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
     val activeProfile = profileState.activeProfile
-    val profiles = profileState.profiles
     val activeProfileName = activeProfile?.name ?: stringResource(Res.string.compose_nav_profile)
     val profileTopPadding = statusBarPadding + 18.dp
     fun selectTab(tab: AppScreenTab) {
@@ -769,143 +805,224 @@ internal fun DesktopHoverSidebar(
         onTabSelected(tab)
     }
 
-    Surface(
-        modifier = modifier
-            .width(sidebarWidth)
-            .fillMaxHeight()
-            .hoverable(hoverSource)
-            .zIndex(NuvioTokens.Z.navigation),
-        color = tokens.colors.background,
-        contentColor = tokens.colors.textPrimary,
-    ) {
-        BoxWithConstraints(
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            val profileStackRows = profiles.size + if (profiles.size < MAX_PROFILES) 1 else 0
-            val profileStackHeight = if (profileStackRows > 0) {
-                DesktopSidebarProfileStackRowHeight * profileStackRows +
-                    DesktopSidebarProfileStackRowGap * (profileStackRows - 1)
-            } else {
-                0.dp
-            }
-            val profileStackTop = profileTopPadding + DesktopSidebarItemHeight + DesktopSidebarProfileStackTopGap
-            val minNavTop = if (profileStackVisible) {
-                profileStackTop + profileStackHeight + DesktopSidebarProfileStackNavGap
-            } else {
-                0.dp
-            }
-            val navColumnHeight = DesktopSidebarItemHeight * AppScreenTab.entries.size
-            val centeredNavTop = ((maxHeight - navColumnHeight) / 2).coerceAtLeast(0.dp)
-            val availableNavOffset = (maxHeight - navColumnHeight - centeredNavTop).coerceAtLeast(0.dp)
-            val navColumnOffset = (minNavTop - centeredNavTop)
-                .coerceIn(0.dp, availableNavOffset)
-            val animatedNavColumnOffset by animateDpAsState(
-                targetValue = navColumnOffset,
-                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
-                label = "desktop_sidebar_nav_offset",
-            )
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = profileTopPadding)
-                    .fillMaxWidth()
-                    .height(DesktopSidebarItemHeight)
-                    .padding(horizontal = 6.dp, vertical = 4.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { onProfileStackVisibleChange(!profileStackVisible) },
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                DesktopSidebarProfileTrigger(
-                    profile = activeProfile,
-                    avatars = avatars,
-                    label = activeProfileName,
-                    expanded = sidebarExpanded,
+    val session = LocalRemoteNavigation.current
+    CompositionLocalProvider(LocalRemoteNavigationRole provides RemoteNavigationRole.Sidebar) {
+        Surface(
+            modifier = modifier
+                .padding(DesktopSidebarOuterInset)
+                .width(sidebarWidth)
+                .fillMaxHeight()
+                .navigationGlass(
+                    shape = tokens.shapes.card,
+                    panel = true,
+                    hazeState = hazeState,
+                    stableBackdropFill = true,
                 )
-            }
-
-            if (profileStackVisible) {
-                SidebarProfileSwitcherStack(
-                    onProfileSelected = onProfileSelected,
-                    onAddProfileRequested = onAddProfileRequested,
-                    onDismissRequest = { onProfileStackVisibleChange(false) },
+                .hoverable(hoverSource)
+                .onFocusChanged { onFocusWithinChanged(it.hasFocus) }
+                .onPreviewKeyEvent { event ->
+                    if (canNavigateBack && event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.Escape || event.key == Key.Back)) {
+                        onNavigateBack()
+                        true
+                    } else false
+                }
+                .focusProperties {
+                    onEnter = {
+                        if (requestedFocusDirection == FocusDirection.Down || requestedFocusDirection == FocusDirection.Up) {
+                            cancelFocusChange()
+                        } else if (requestedFocusDirection == FocusDirection.Left && session?.canEnterSidebar() == false) {
+                            cancelFocusChange()
+                        }
+                    }
+                }
+                .focusGroup()
+                .zIndex(NuvioTokens.Z.navigation),
+            color = Color.Transparent,
+            shape = tokens.shapes.card,
+            contentColor = tokens.colors.textPrimary,
+        ) {
+            DarkGlassPanelContent {
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = profileStackTop)
-                        .width(DesktopSidebarExpandedContentWidth)
-                        .zIndex(NuvioTokens.Z.sheet),
-                )
-            }
+                        .fillMaxWidth()
+                        .padding(top = profileTopPadding),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    val profileInteraction = remember { MutableInteractionSource() }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(DesktopSidebarItemHeight)
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                            .navigationGlassFeedback(profileInteraction, tokens.shapes.button, profileStackVisible)
+                            .hoverable(profileInteraction)
+                            .remoteNavigationTarget(shape = tokens.shapes.button).clickable(
+                                interactionSource = profileInteraction,
+                                indication = null,
+                                onClick = { onProfileStackVisibleChange(!profileStackVisible) },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        DesktopSidebarProfileTrigger(
+                            profile = activeProfile,
+                            avatars = avatars,
+                            label = activeProfileName,
+                            expanded = sidebarExpanded,
+                        )
+                    }
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .offset(y = animatedNavColumnOffset)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                DesktopSidebarItem(
-                    id = "sidebar_home",
-                    label = stringResource(Res.string.compose_nav_home),
-                    selected = selectedTab == AppScreenTab.Home,
-                    expanded = sidebarExpanded,
-                    onClick = { selectTab(AppScreenTab.Home) },
-                ) { color ->
-                    Icon(
-                        imageVector = Icons.Filled.Home,
-                        contentDescription = stringResource(Res.string.compose_nav_home),
-                        modifier = Modifier.size(DesktopSidebarIconSize),
-                        tint = color,
-                    )
+                    if (profileStackVisible) {
+                        SidebarProfileSwitcherStack(
+                            onProfileSelected = onProfileSelected,
+                            onAddProfileRequested = onAddProfileRequested,
+                            onDismissRequest = { onProfileStackVisibleChange(false) },
+                            modifier = Modifier
+                                .padding(top = DesktopSidebarProfileStackTopGap, bottom = DesktopSidebarProfileStackNavGap)
+                                .width(DesktopSidebarExpandedContentWidth)
+                                .zIndex(NuvioTokens.Z.sheet),
+                        )
+                    }
+
+                    AnimatedVisibility(
+                        visible = canNavigateBack,
+                        enter = fadeIn(animationSpec = tween(160)) + expandVertically(
+                            animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        ),
+                        exit = fadeOut(animationSpec = tween(120)) + shrinkVertically(
+                            animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        ),
+                    ) {
+                        DesktopSidebarItem(
+                            label = stringResource(Res.string.action_back),
+                            selected = false,
+                            expanded = sidebarExpanded,
+                            isEntryTarget = canNavigateBack,
+                            onClick = onNavigateBack,
+                        ) { color ->
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = stringResource(Res.string.action_back),
+                                modifier = Modifier.size(DesktopSidebarIconSize),
+                                tint = color,
+                            )
+                        }
+                    }
                 }
-                DesktopSidebarItem(
-                    id = "sidebar_search",
-                    label = stringResource(Res.string.compose_nav_search),
-                    selected = selectedTab == AppScreenTab.Search,
-                    expanded = sidebarExpanded,
-                    onClick = { selectTab(AppScreenTab.Search) },
-                ) { color ->
-                    Icon(
-                        painter = painterResource(Res.drawable.sidebar_search),
-                        contentDescription = stringResource(Res.string.compose_nav_search),
-                        modifier = Modifier.size(DesktopSidebarIconSize),
-                        tint = color,
-                    )
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.compose_nav_home),
+                        selected = !randomPickerSelected && selectedTab == AppScreenTab.Home,
+                        expanded = sidebarExpanded,
+                        isEntryTarget = !canNavigateBack && !randomPickerSelected && selectedTab == AppScreenTab.Home,
+                        onClick = { selectTab(AppScreenTab.Home) },
+                    ) { color ->
+                        Icon(
+                            imageVector = Icons.Filled.Home,
+                            contentDescription = stringResource(Res.string.compose_nav_home),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
+                            tint = color,
+                        )
+                    }
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.compose_nav_search),
+                        selected = !randomPickerSelected && selectedTab == AppScreenTab.Search,
+                        expanded = sidebarExpanded,
+                        isEntryTarget = !canNavigateBack && !randomPickerSelected && selectedTab == AppScreenTab.Search,
+                        onClick = { selectTab(AppScreenTab.Search) },
+                    ) { color ->
+                        Icon(
+                            painter = painterResource(Res.drawable.sidebar_search),
+                            contentDescription = stringResource(Res.string.compose_nav_search),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
+                            tint = color,
+                        )
+                    }
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.picker_title),
+                        selected = randomPickerSelected,
+                        expanded = sidebarExpanded,
+                        isEntryTarget = randomPickerSelected && !canNavigateBack,
+                        onClick = {
+                            onProfileStackVisibleChange(false)
+                            if (randomPickerSelected) {
+                                session?.focusContent()
+                            } else {
+                                onRandomPickerClick()
+                            }
+                        },
+                    ) { color ->
+                        Icon(Icons.Filled.Casino, stringResource(Res.string.picker_title), Modifier.size(DesktopSidebarIconSize), tint = color)
+                    }
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.compose_nav_library),
+                        selected = !randomPickerSelected && selectedTab == AppScreenTab.Library,
+                        expanded = sidebarExpanded,
+                        isEntryTarget = !canNavigateBack && !randomPickerSelected && selectedTab == AppScreenTab.Library,
+                        onClick = { selectTab(AppScreenTab.Library) },
+                    ) { color ->
+                        Icon(
+                            painter = painterResource(Res.drawable.sidebar_library),
+                            contentDescription = stringResource(Res.string.compose_nav_library),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
+                            tint = color,
+                        )
+                    }
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.compose_settings_page_root),
+                        selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
+                        expanded = sidebarExpanded,
+                        isEntryTarget = !canNavigateBack && !randomPickerSelected && selectedTab == AppScreenTab.Settings,
+                        onClick = { selectTab(AppScreenTab.Settings) },
+                    ) { color ->
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = stringResource(Res.string.compose_settings_page_root),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
+                            tint = color,
+                        )
+                    }
                 }
-                DesktopSidebarItem(
-                    id = "sidebar_library",
-                    label = stringResource(Res.string.compose_nav_library),
-                    selected = selectedTab == AppScreenTab.Library,
-                    expanded = sidebarExpanded,
-                    onClick = { selectTab(AppScreenTab.Library) },
-                ) { color ->
-                    Icon(
-                        painter = painterResource(Res.drawable.sidebar_library),
-                        contentDescription = stringResource(Res.string.compose_nav_library),
-                        modifier = Modifier.size(DesktopSidebarIconSize),
-                        tint = color,
-                    )
-                }
-                DesktopSidebarItem(
-                    id = "sidebar_settings",
-                    label = stringResource(Res.string.compose_settings_page_root),
-                    selected = selectedTab == AppScreenTab.Settings,
-                    expanded = sidebarExpanded,
-                    onClick = { selectTab(AppScreenTab.Settings) },
-                ) { color ->
-                    Icon(
-                        imageVector = Icons.Rounded.Settings,
-                        contentDescription = stringResource(Res.string.compose_settings_page_root),
-                        modifier = Modifier.size(DesktopSidebarIconSize),
-                        tint = color,
-                    )
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(bottom = 18.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.compose_nav_close_app),
+                        selected = false,
+                        expanded = sidebarExpanded,
+                        onClick = { requestAppExitConfirmation() },
+                    ) { color ->
+                        Icon(
+                            imageVector = Icons.Rounded.PowerSettingsNew,
+                            contentDescription = stringResource(Res.string.compose_nav_close_app),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
+                            tint = color,
+                        )
+                    }
                 }
             }
         }
     }
+}
+}
 }
 
 @Composable
@@ -970,35 +1087,30 @@ private fun DesktopSidebarProfileTrigger(
 
 @Composable
 private fun DesktopSidebarItem(
-    id: String,
     label: String,
     selected: Boolean,
     expanded: Boolean,
     onClick: () -> Unit,
+    isEntryTarget: Boolean = selected,
     icon: @Composable (Color) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     val contentColor = if (selected) tokens.colors.textPrimary else tokens.colors.textMuted
     val iconColor = if (selected) tokens.colors.onAccent else contentColor
+    val interaction = remember { MutableInteractionSource() }
+    val itemShape = tokens.shapes.button
 
     Surface(
         onClick = onClick,
-        modifier = Modifier
+        modifier = (Modifier
             .fillMaxWidth()
             .height(DesktopSidebarItemHeight)
-            .controllerFocusable(
-                id = id,
-                zone = ControllerFocusZone.Navigation,
-                isDefaultFocus = selected,
-                shape = RoundedCornerShape(16.dp),
-                cornerRadius = 16.dp,
-                scaleOnFocus = 1.03f,
-                selectLabel = label,
-                onSelect = onClick,
-            )
-            .padding(horizontal = 6.dp, vertical = 4.dp),
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .navigationGlassFeedback(interaction, itemShape, selected)
+            .hoverable(interaction)).remoteNavigationTarget(shape = itemShape, sidebarEntry = isEntryTarget),
         color = Color.Transparent,
-        shape = RoundedCornerShape(16.dp),
+        shape = itemShape,
+        interactionSource = interaction,
     ) {
         Row(
             modifier = Modifier

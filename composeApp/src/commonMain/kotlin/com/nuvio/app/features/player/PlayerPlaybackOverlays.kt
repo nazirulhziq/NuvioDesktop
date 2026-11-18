@@ -34,7 +34,7 @@ internal fun BoxScope.PlayerPlaybackOverlays(
     title: String,
     onBackWithProgress: () -> Unit,
     openingLoadingMessage: String?,
-    p2pInitialLoadingProgress: Float?,
+    initialLoadingProgress: Float?,
     showP2pRebufferStats: Boolean,
     p2pRebufferMessage: String?,
     p2pRebufferProgress: Float?,
@@ -81,6 +81,7 @@ internal fun BoxScope.PlayerPlaybackOverlays(
 
     AnimatedVisibility(
         visible = showOpeningOverlay,
+        // Desktop never shows this: it uses the app-level PlaybackLoadingCover.
         enter = fadeIn(),
         exit = fadeOut(),
     ) {
@@ -92,10 +93,10 @@ internal fun BoxScope.PlayerPlaybackOverlays(
             horizontalSafePadding = horizontalSafePadding,
             modifier = Modifier.fillMaxSize(),
             message = openingLoadingMessage,
-            progress = p2pInitialLoadingProgress,
+            progress = initialLoadingProgress,
+            usePageBackButton = true,
         )
     }
-
     P2pLoadingStatus(
         visible = showP2pRebufferStats && errorMessage == null,
         message = p2pRebufferMessage,

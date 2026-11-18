@@ -1,7 +1,7 @@
 package com.nuvio.app.features.player
 
-import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.isDesktop
+import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.features.player.skip.AutoSkipSegmentType
 import com.nuvio.app.features.player.skip.NextEpisodeThresholdMode
 import com.nuvio.app.features.streams.StreamAutoPlayMode
@@ -35,6 +35,7 @@ fun snapToAllowedTimeout(value: Int): Int {
 
 data class PlayerSettingsUiState(
     val useLegacyPlayerLayout: Boolean = false,
+    val playerUiMode: PlayerUiMode = PlayerUiMode.CODEINE_XO,
     val showLoadingOverlay: Boolean = true,
     val showPlayerLoadingStatus: Boolean = true,
     val pauseOverlayEnabled: Boolean = true,
@@ -105,7 +106,7 @@ data class PlayerSettingsUiState(
     val nextEpisodeThresholdPercent: Float = 99f,
     val nextEpisodeThresholdMinutesBeforeEnd: Float = 2f,
     val preloadNextEpisodeSources: Boolean = false,
-    val useLibass: Boolean = true,
+    val useLibass: Boolean = !isDesktop,
     val libassRenderType: String = "CUES",
     val libassRenderScale: String = "FULL",
     val libassRenderMode: String = "OVERLAY",
@@ -125,7 +126,26 @@ data class PlayerSettingsUiState(
     val iosSaturation: Int = 0,
     val iosGamma: Int = 0,
     val nvidiaRtxSuperResolutionEnabled: Boolean = false,
-    val nvidiaRtxHdrEnabled: Boolean = false,
+    val animeUpscalerOption: AnimeUpscalerOption = AnimeUpscalerOption.OFF,
+    val animeUpscalerEnabled: Boolean = false,
+    val animeUpscalerMode: AnimeUpscalerMode = AnimeUpscalerMode.FAST,
+    val svpMotionOption: SvpMotionOption = SvpMotionOption.OFF,
+    val playbackBufferPreset: PlaybackBufferPreset = PlaybackBufferPreset.MEDIUM,
+    val audioNightModeEnabled: Boolean = false,
+    val showSeekbarWhileSeeking: Boolean = true,
+    val showClockInPlayer: Boolean = true,
+    val seekPreviewEnabled: Boolean = true,
+    val seekPreviewWhileDragging: Boolean = true,
+    val seekPreviewWhileHovering: Boolean = true,
+    val seekPreviewWhileKeyboardSeeking: Boolean = true,
+    val seekPreviewThumbnailCount: Int = 5,
+    val seekrApiKey: String = "",
+    val showRemainingTime: Boolean = false,
+    val eyeFilterEnabled: Boolean = false,
+    val eyeFilterColor: String = "#000000",
+    val eyeFilterOpacity: Float = 0.35f,
+    val grainFilterEnabled: Boolean = false,
+    val playerUiScale: Int = 100,
 )
 
 /** How many further sources falling back may try after the auto-selected one fails, by default and at most. */
@@ -138,12 +158,11 @@ val SOURCE_STARTUP_TIMEOUT_SECONDS_RANGE = 5..45
 const val SOURCE_STARTUP_TIMEOUT_SECONDS_STEP = 5
 
 /**
- * Falling back to the next matching source applies only while auto source selection picks the
- * stream and the internal player plays it.
+ * Desktop Manual mode uses the first matching source for retries after the user picks a source.
  */
 val PlayerSettingsUiState.streamAutoPlayFallbackActive: Boolean
     get() = streamAutoPlayFallbackOnFailure &&
-        streamAutoPlayMode != StreamAutoPlayMode.MANUAL &&
+        (isDesktop || streamAutoPlayMode != StreamAutoPlayMode.MANUAL) &&
         !externalPlayerEnabled
 
 object PlayerSettingsRepository {
@@ -152,6 +171,7 @@ object PlayerSettingsRepository {
 
     private var hasLoaded = false
     private var useLegacyPlayerLayout = false
+    private var playerUiMode = PlayerUiMode.CODEINE_XO
     private var showLoadingOverlay = true
     private var showPlayerLoadingStatus = true
     private var pauseOverlayEnabled = true
@@ -222,7 +242,7 @@ object PlayerSettingsRepository {
     private var nextEpisodeThresholdPercent = 99f
     private var nextEpisodeThresholdMinutesBeforeEnd = 2f
     private var preloadNextEpisodeSources = false
-    private var useLibass = true
+    private var useLibass = !isDesktop
     private var libassRenderType = "OVERLAY_OPEN_GL"
     private var libassRenderScale = "FULL"
     private var libassRenderMode = "OVERLAY"
@@ -242,7 +262,26 @@ object PlayerSettingsRepository {
     private var iosSaturation = 0
     private var iosGamma = 0
     private var nvidiaRtxSuperResolutionEnabled = false
-    private var nvidiaRtxHdrEnabled = false
+    private var animeUpscalerOption = AnimeUpscalerOption.OFF
+    private var animeUpscalerEnabled = false
+    private var animeUpscalerMode = AnimeUpscalerMode.FAST
+    private var svpMotionOption = SvpMotionOption.OFF
+    private var playbackBufferPreset = PlaybackBufferPreset.MEDIUM
+    private var audioNightModeEnabled = false
+    private var showSeekbarWhileSeeking = true
+    private var showClockInPlayer = true
+    private var seekPreviewEnabled = true
+    private var seekPreviewWhileDragging = true
+    private var seekPreviewWhileHovering = true
+    private var seekPreviewWhileKeyboardSeeking = true
+    private var seekPreviewThumbnailCount = 5
+    private var seekrApiKey = ""
+    private var showRemainingTime = false
+    private var eyeFilterEnabled = false
+    private var eyeFilterColor = "#000000"
+    private var eyeFilterOpacity = 0.35f
+    private var grainFilterEnabled = false
+    private var playerUiScale = 100
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -256,6 +295,7 @@ object PlayerSettingsRepository {
     fun clearLocalState() {
         hasLoaded = false
         useLegacyPlayerLayout = false
+        playerUiMode = PlayerUiMode.CODEINE_XO
         showLoadingOverlay = true
         showPlayerLoadingStatus = true
         pauseOverlayEnabled = true
@@ -327,7 +367,7 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = 99f
         nextEpisodeThresholdMinutesBeforeEnd = 2f
         preloadNextEpisodeSources = false
-        useLibass = true
+        useLibass = !isDesktop
         libassRenderType = "OVERLAY_OPEN_GL"
         libassRenderScale = "FULL"
         libassRenderMode = "OVERLAY"
@@ -347,13 +387,33 @@ object PlayerSettingsRepository {
         iosSaturation = 0
         iosGamma = 0
         nvidiaRtxSuperResolutionEnabled = false
-        nvidiaRtxHdrEnabled = false
+        animeUpscalerOption = AnimeUpscalerOption.OFF
+        animeUpscalerEnabled = false
+        animeUpscalerMode = AnimeUpscalerMode.FAST
+        svpMotionOption = SvpMotionOption.OFF
+        playbackBufferPreset = PlaybackBufferPreset.MEDIUM
+        audioNightModeEnabled = false
+        showSeekbarWhileSeeking = true
+        showClockInPlayer = true
+        seekPreviewEnabled = true
+        seekPreviewWhileDragging = true
+        seekPreviewWhileHovering = true
+        seekPreviewWhileKeyboardSeeking = true
+        seekPreviewThumbnailCount = 5
+        seekrApiKey = ""
+        showRemainingTime = false
+        eyeFilterEnabled = false
+        eyeFilterColor = "#000000"
+        eyeFilterOpacity = 0.35f
+        grainFilterEnabled = false
+        playerUiScale = 100
         publish()
     }
 
     private fun loadFromDisk() {
         hasLoaded = true
         useLegacyPlayerLayout = PlayerSettingsStorage.loadUseLegacyPlayerLayout() ?: false
+        playerUiMode = PlayerUiMode.fromStorageKey(PlayerSettingsStorage.loadPlayerUiMode())
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true
         showPlayerLoadingStatus = PlayerSettingsStorage.loadShowPlayerLoadingStatus() ?: true
         pauseOverlayEnabled = PlayerSettingsStorage.loadPauseOverlayEnabled() ?: true
@@ -396,8 +456,11 @@ object PlayerSettingsRepository {
                 ?: SubtitleStyleState.DEFAULT.outlineColor,
             outlineEnabled = PlayerSettingsStorage.loadSubtitleOutlineEnabled()
                 ?: SubtitleStyleState.DEFAULT.outlineEnabled,
-            outlineWidth = (PlayerSettingsStorage.loadSubtitleOutlineWidth()
-                ?: SubtitleStyleState.DEFAULT.outlineWidth).coerceIn(subtitleOutlineWidthRange),
+            outlineWidth = decodeSubtitleAppearance(PlayerSettingsStorage.loadSubtitleAppearance())
+                .resolveOutlineWidth(PlayerSettingsStorage.loadSubtitleOutlineWidth()),
+            outlineEffect = SubtitleOutlineEffect.fromId(PlayerSettingsStorage.loadSubtitleOutlineEffect()),
+            fontName = PlayerSettingsStorage.loadSubtitleFont() ?: SubtitleStyleState.DEFAULT.fontName,
+            importedFontId = decodeSubtitleAppearance(PlayerSettingsStorage.loadSubtitleAppearance()).fontId.takeIf { it.startsWith("custom-") },
             bold = PlayerSettingsStorage.loadSubtitleBold()
                 ?: SubtitleStyleState.DEFAULT.bold,
             fontSizeSp = (PlayerSettingsStorage.loadSubtitleFontSizeSp()
@@ -513,7 +576,7 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = PlayerSettingsStorage.loadNextEpisodeThresholdPercent() ?: 99f
         nextEpisodeThresholdMinutesBeforeEnd = PlayerSettingsStorage.loadNextEpisodeThresholdMinutesBeforeEnd() ?: 2f
         preloadNextEpisodeSources = PlayerSettingsStorage.loadPreloadNextEpisodeSources() ?: false
-        useLibass = PlayerSettingsStorage.loadUseLibass() ?: true
+        useLibass = PlayerSettingsStorage.loadUseLibass() ?: !isDesktop
         libassRenderType = PlayerSettingsStorage.loadLibassRenderType() ?: "CUES"
         libassRenderScale = PlayerSettingsStorage.loadLibassRenderScale() ?: "FULL"
         libassRenderMode = PlayerSettingsStorage.loadLibassRenderMode() ?: "OVERLAY"
@@ -543,7 +606,32 @@ object PlayerSettingsRepository {
         iosSaturation = PlayerSettingsStorage.loadIosSaturation() ?: 0
         iosGamma = PlayerSettingsStorage.loadIosGamma() ?: 0
         nvidiaRtxSuperResolutionEnabled = PlayerSettingsStorage.loadNvidiaRtxSuperResolutionEnabled() ?: false
-        nvidiaRtxHdrEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrEnabled() ?: false
+        val storedUpscalerOption = PlayerSettingsStorage.loadAnimeUpscalerOption()
+        val legacyUpscalerEnabled = PlayerSettingsStorage.loadAnimeUpscalerEnabled()
+        animeUpscalerOption = when {
+            storedUpscalerOption != null -> AnimeUpscalerOption.fromStorageKey(storedUpscalerOption)
+            legacyUpscalerEnabled != null -> if (legacyUpscalerEnabled) AnimeUpscalerOption.ALWAYS_ON else AnimeUpscalerOption.OFF
+            else -> AnimeUpscalerOption.OFF
+        }
+        animeUpscalerEnabled = animeUpscalerOption.isEnabled
+        animeUpscalerMode = AnimeUpscalerMode.fromStorageKey(PlayerSettingsStorage.loadAnimeUpscalerMode())
+        svpMotionOption = SvpMotionOption.fromStorageKey(PlayerSettingsStorage.loadSvpMotionOption())
+        playbackBufferPreset = PlaybackBufferPreset.fromStorageKey(PlayerSettingsStorage.loadPlaybackBufferPreset())
+        audioNightModeEnabled = PlayerSettingsStorage.loadAudioNightModeEnabled() ?: false
+        showSeekbarWhileSeeking = PlayerSettingsStorage.loadShowSeekbarWhileSeeking() ?: true
+        showClockInPlayer = PlayerSettingsStorage.loadShowClockInPlayer() ?: true
+        seekPreviewEnabled = PlayerSettingsStorage.loadSeekPreviewEnabled() ?: true
+        seekPreviewWhileDragging = PlayerSettingsStorage.loadSeekPreviewWhileDragging() ?: true
+        seekPreviewWhileHovering = PlayerSettingsStorage.loadSeekPreviewWhileHovering() ?: true
+        seekPreviewWhileKeyboardSeeking = PlayerSettingsStorage.loadSeekPreviewWhileKeyboardSeeking() ?: true
+        seekPreviewThumbnailCount = PlayerSettingsStorage.loadSeekPreviewThumbnailCount()?.takeIf { it in listOf(1, 3, 5) } ?: 5
+        seekrApiKey = PlayerSettingsStorage.loadSeekrApiKey() ?: ""
+        showRemainingTime = PlayerSettingsStorage.loadShowRemainingTime() ?: false
+        eyeFilterEnabled = PlayerSettingsStorage.loadEyeFilterEnabled() ?: false
+        eyeFilterColor = PlayerSettingsStorage.loadEyeFilterColor() ?: "#000000"
+        eyeFilterOpacity = PlayerSettingsStorage.loadEyeFilterOpacity()?.coerceIn(0.10f, 0.80f) ?: 0.35f
+        grainFilterEnabled = PlayerSettingsStorage.loadGrainFilterEnabled() ?: false
+        playerUiScale = PlayerSettingsStorage.loadPlayerUiScale()?.coerceIn(50, 150) ?: 100
         publish()
     }
 
@@ -553,6 +641,17 @@ object PlayerSettingsRepository {
         useLegacyPlayerLayout = enabled
         publish()
         PlayerSettingsStorage.saveUseLegacyPlayerLayout(enabled)
+    }
+
+    fun setPlayerUiMode(mode: PlayerUiMode) {
+        ensureLoaded()
+        if (playerUiMode == mode) {
+            PlayerSettingsStorage.savePlayerUiMode(mode.storageKey)
+            return
+        }
+        playerUiMode = mode
+        publish()
+        PlayerSettingsStorage.savePlayerUiMode(mode.storageKey)
     }
 
     fun setShowLoadingOverlay(enabled: Boolean) {
@@ -705,21 +804,33 @@ object PlayerSettingsRepository {
 
     fun setSubtitleStyle(style: SubtitleStyleState) {
         ensureLoaded()
+        // Changing the effect re-derives whether an outline is wanted. Without
+        // this, switching to Background Box or None leaves outlineEnabled
+        // false, and every later effect that needs a stroke inherits that stale
+        // flag and renders as bare text.
+        val outlineEnabled = if (style.outlineEffect != subtitleStyle.outlineEffect) {
+            style.outlineEffect.needsOutline
+        } else {
+            style.outlineEnabled
+        }
         val normalized = style.copy(
+            outlineWidth = normalizeSubtitleOutlineWidth(style.outlineWidth),
             fontSizeSp = style.fontSizeSp.coerceIn(subtitleFontSizeRangeSp),
-            outlineWidth = style.outlineWidth.coerceIn(subtitleOutlineWidthRange),
+            outlineEnabled = outlineEnabled,
             bottomOffset = style.bottomOffset.coerceIn(0, 200),
-            appearance = style.appearance.normalized(),
+            appearance = style.appearanceForStorage(),
         )
         if (subtitleStyle == normalized) return
         subtitleStyle = normalized
         publish()
         PlayerSettingsStorage.saveSubtitleTextColor(normalized.textColor.toStorageHexString())
         PlayerSettingsStorage.saveSubtitleBackgroundColor(normalized.backgroundColor.toStorageHexString())
-        PlayerSettingsStorage.saveSubtitleAppearance(normalized.appearance.encode())
+        PlayerSettingsStorage.saveSubtitleAppearance(normalized.appearanceForStorage().encode())
         PlayerSettingsStorage.saveSubtitleOutlineColor(normalized.outlineColor.toStorageHexString())
         PlayerSettingsStorage.saveSubtitleOutlineEnabled(normalized.outlineEnabled)
-        PlayerSettingsStorage.saveSubtitleOutlineWidth(normalized.outlineWidth)
+        PlayerSettingsStorage.saveSubtitleOutlineWidth(normalized.outlineWidth.toInt().coerceAtLeast(1))
+        PlayerSettingsStorage.saveSubtitleOutlineEffect(normalized.outlineEffect.id)
+        PlayerSettingsStorage.saveSubtitleFont(normalized.fontName)
         PlayerSettingsStorage.saveSubtitleBold(normalized.bold)
         PlayerSettingsStorage.saveSubtitleFontSizeSp(normalized.fontSizeSp)
         PlayerSettingsStorage.saveSubtitleBottomOffset(normalized.bottomOffset)
@@ -1210,12 +1321,175 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveNvidiaRtxSuperResolutionEnabled(enabled)
     }
 
-    fun setNvidiaRtxHdrEnabled(enabled: Boolean) {
+    fun setAnimeUpscalerOption(option: AnimeUpscalerOption) {
         ensureLoaded()
-        if (nvidiaRtxHdrEnabled == enabled) return
-        nvidiaRtxHdrEnabled = enabled
+        if (animeUpscalerOption == option) return
+        animeUpscalerOption = option
+        animeUpscalerEnabled = option.isEnabled
         publish()
-        PlayerSettingsStorage.saveNvidiaRtxHdrEnabled(enabled)
+        PlayerSettingsStorage.saveAnimeUpscalerOption(option.storageKey)
+        PlayerSettingsStorage.saveAnimeUpscalerEnabled(animeUpscalerEnabled)
+    }
+
+    fun setAnimeUpscalerEnabled(enabled: Boolean) {
+        setAnimeUpscalerOption(if (enabled) AnimeUpscalerOption.ALWAYS_ON else AnimeUpscalerOption.OFF)
+    }
+
+    fun setAnimeUpscalerMode(mode: AnimeUpscalerMode) {
+        ensureLoaded()
+        if (animeUpscalerMode == mode) return
+        animeUpscalerMode = mode
+        publish()
+        PlayerSettingsStorage.saveAnimeUpscalerMode(mode.storageKey)
+    }
+
+    fun setSvpMotionOption(option: SvpMotionOption) {
+        ensureLoaded()
+        if (svpMotionOption == option) return
+        svpMotionOption = option
+        publish()
+        PlayerSettingsStorage.saveSvpMotionOption(option.storageKey)
+    }
+
+    fun setPlaybackBufferPreset(preset: PlaybackBufferPreset) {
+        ensureLoaded()
+        if (playbackBufferPreset == preset) return
+        playbackBufferPreset = preset
+        PlayerSettingsStorage.savePlaybackBufferPreset(preset.storageKey)
+        publish()
+    }
+
+    fun setAudioNightModeEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (audioNightModeEnabled == enabled) return
+        audioNightModeEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveAudioNightModeEnabled(enabled)
+    }
+
+    fun setShowSeekbarWhileSeeking(enabled: Boolean) {
+        ensureLoaded()
+        if (showSeekbarWhileSeeking == enabled) return
+        showSeekbarWhileSeeking = enabled
+        publish()
+        PlayerSettingsStorage.saveShowSeekbarWhileSeeking(enabled)
+    }
+
+    fun setShowClockInPlayer(enabled: Boolean) {
+        ensureLoaded()
+        if (showClockInPlayer == enabled) return
+        showClockInPlayer = enabled
+        publish()
+        PlayerSettingsStorage.saveShowClockInPlayer(enabled)
+    }
+
+    fun setSeekPreviewEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (seekPreviewEnabled == enabled) return
+        seekPreviewEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveSeekPreviewEnabled(enabled)
+    }
+
+    fun setSeekPreviewWhileDragging(value: Boolean) {
+        ensureLoaded()
+        val normalized = value
+        if (seekPreviewWhileDragging == normalized) return
+        seekPreviewWhileDragging = normalized
+        publish()
+        PlayerSettingsStorage.saveSeekPreviewWhileDragging(normalized)
+    }
+
+    fun setSeekPreviewWhileHovering(value: Boolean) {
+        ensureLoaded()
+        val normalized = value
+        if (seekPreviewWhileHovering == normalized) return
+        seekPreviewWhileHovering = normalized
+        publish()
+        PlayerSettingsStorage.saveSeekPreviewWhileHovering(normalized)
+    }
+
+    fun setSeekPreviewWhileKeyboardSeeking(value: Boolean) {
+        ensureLoaded()
+        val normalized = value
+        if (seekPreviewWhileKeyboardSeeking == normalized) return
+        seekPreviewWhileKeyboardSeeking = normalized
+        publish()
+        PlayerSettingsStorage.saveSeekPreviewWhileKeyboardSeeking(normalized)
+    }
+
+    fun setSeekPreviewThumbnailCount(value: Int) {
+        ensureLoaded()
+        val normalized = value.takeIf { it in listOf(1, 3, 5) } ?: 5
+        if (seekPreviewThumbnailCount == normalized) return
+        seekPreviewThumbnailCount = normalized
+        publish()
+        PlayerSettingsStorage.saveSeekPreviewThumbnailCount(normalized)
+    }
+
+    fun setSeekrApiKey(apiKey: String) {
+        ensureLoaded()
+        val trimmed = apiKey.trim()
+        if (seekrApiKey == trimmed) return
+        seekrApiKey = trimmed
+        publish()
+        PlayerSettingsStorage.saveSeekrApiKey(trimmed)
+    }
+
+    fun setShowRemainingTime(enabled: Boolean) {
+        ensureLoaded()
+        if (showRemainingTime == enabled) return
+        showRemainingTime = enabled
+        publish()
+        PlayerSettingsStorage.saveShowRemainingTime(enabled)
+    }
+
+    fun setEyeFilterEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (eyeFilterEnabled == enabled) return
+        eyeFilterEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveEyeFilterEnabled(enabled)
+    }
+
+    fun setEyeFilterColor(color: String) {
+        ensureLoaded()
+        val normalized = color.trim().ifEmpty { "#000000" }
+        if (eyeFilterColor == normalized) return
+        eyeFilterColor = normalized
+        publish()
+        PlayerSettingsStorage.saveEyeFilterColor(normalized)
+    }
+
+    fun setEyeFilterOpacity(opacity: Float) {
+        ensureLoaded()
+        val clamped = opacity.coerceIn(0.10f, 0.80f)
+        if (eyeFilterOpacity == clamped) return
+        eyeFilterOpacity = clamped
+        publish()
+        PlayerSettingsStorage.saveEyeFilterOpacity(clamped)
+    }
+
+    fun setGrainFilterEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (grainFilterEnabled == enabled) return
+        grainFilterEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveGrainFilterEnabled(enabled)
+    }
+
+    fun setPlayerUiScale(scale: Int) {
+        ensureLoaded()
+        val clamped = scale.coerceIn(50, 150)
+        if (playerUiScale == clamped) return
+        playerUiScale = clamped
+        publish()
+        PlayerSettingsStorage.savePlayerUiScale(clamped)
+    }
+
+    fun stepPlayerUiScale(delta: Int) {
+        ensureLoaded()
+        setPlayerUiScale(playerUiScale + delta)
     }
 
     fun setLibassRenderType(renderType: String) {
@@ -1410,6 +1684,7 @@ object PlayerSettingsRepository {
     private fun publish() {
         _uiState.value = PlayerSettingsUiState(
             useLegacyPlayerLayout = useLegacyPlayerLayout,
+            playerUiMode = playerUiMode,
             showLoadingOverlay = showLoadingOverlay,
             showPlayerLoadingStatus = showPlayerLoadingStatus,
             pauseOverlayEnabled = pauseOverlayEnabled,
@@ -1500,7 +1775,26 @@ object PlayerSettingsRepository {
             iosSaturation = iosSaturation,
             iosGamma = iosGamma,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
-            nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
+            animeUpscalerOption = animeUpscalerOption,
+            animeUpscalerEnabled = animeUpscalerEnabled,
+            animeUpscalerMode = animeUpscalerMode,
+            svpMotionOption = svpMotionOption,
+            playbackBufferPreset = playbackBufferPreset,
+            audioNightModeEnabled = audioNightModeEnabled,
+            showSeekbarWhileSeeking = showSeekbarWhileSeeking,
+            showClockInPlayer = showClockInPlayer,
+            seekPreviewEnabled = seekPreviewEnabled,
+            seekPreviewWhileDragging = seekPreviewWhileDragging,
+            seekPreviewWhileHovering = seekPreviewWhileHovering,
+            seekPreviewWhileKeyboardSeeking = seekPreviewWhileKeyboardSeeking,
+            seekPreviewThumbnailCount = seekPreviewThumbnailCount,
+            seekrApiKey = seekrApiKey,
+            showRemainingTime = showRemainingTime,
+            eyeFilterEnabled = eyeFilterEnabled,
+            eyeFilterColor = eyeFilterColor,
+            eyeFilterOpacity = eyeFilterOpacity,
+            grainFilterEnabled = grainFilterEnabled,
+            playerUiScale = playerUiScale,
         )
     }
 

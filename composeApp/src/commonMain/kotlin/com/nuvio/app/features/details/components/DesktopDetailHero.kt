@@ -1,6 +1,7 @@
 package com.nuvio.app.features.details.components
 
-import com.nuvio.app.core.ui.NuvioDesktopAnimation
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,10 +46,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import com.nuvio.app.core.ui.navigationGlassSource
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
@@ -61,19 +65,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
-import com.nuvio.app.core.ui.NuvioDesktopImageScaling
+import com.nuvio.app.core.ui.ArtworkRole
+import com.nuvio.app.core.ui.rememberArtworkRequest
 import com.nuvio.app.core.ui.NuvioTokens
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
 import com.nuvio.app.core.ui.DesktopBackdropVerticalBias
 import com.nuvio.app.core.ui.StandardDesktopViewportAspectRatio
-import com.nuvio.app.core.ui.FullscreenActionButton
 import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
+import com.nuvio.app.core.ui.desktopBackButtonSize
+import com.nuvio.app.core.ui.desktopBackButtonTopPadding
 import com.nuvio.app.core.ui.fullscreenActionHorizontalInsetForWidth
 import com.nuvio.app.core.ui.expandingWideArtworkWidthDp
-import com.nuvio.app.core.ui.isFullscreenActionSupported
 import com.nuvio.app.core.ui.WideDesktopViewportAspectRatio
 import com.nuvio.app.features.details.MetaDetails
+import com.nuvio.app.features.details.MetaExternalRating
 import com.nuvio.app.features.details.formatRuntimeForDisplay
-import com.nuvio.app.features.tmdb.originalTmdbImageUrl
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.detail_logo_content_description
 import nuvio.composeapp.generated.resources.hero_add_to_library
@@ -89,6 +95,19 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
+internal fun EnhancedDetailPage(
+    viewportHeight: Dp,
+    hasEpisodes: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().heightIn(min = viewportHeight),
+        verticalArrangement = if (hasEpisodes) androidx.compose.foundation.layout.Arrangement.SpaceBetween
+            else androidx.compose.foundation.layout.Arrangement.Top,
+    ) { content() }
+}
+
+@Composable
 fun DesktopDetailBackdrop(
     meta: MetaDetails,
     viewportHeight: Dp,
@@ -99,11 +118,14 @@ fun DesktopDetailBackdrop(
     heroTrailerMuted: Boolean,
     heroGradientColor: Color? = null,
     blurBackdrop: Boolean = false,
+    removeSideFade: Boolean = false,
+    enableGlassSource: Boolean = true,
     onBackdropLoaded: (Painter) -> Unit = {},
     onHeroTrailerReady: () -> Unit,
     onHeroTrailerEnded: () -> Unit,
     onHeroTrailerError: () -> Unit,
     modifier: Modifier = Modifier,
+    backdropPlaceholder: Painter? = null,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val sideGradientColor = heroGradientColor ?: colorScheme.background
@@ -121,6 +143,7 @@ fun DesktopDetailBackdrop(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
+            .navigationGlassSource(zIndex = -1f, enabled = enableGlassSource)
             .background(sideGradientColor),
     ) {
         val aspectRatio = maxWidth.value / viewportHeight.value
@@ -131,10 +154,14 @@ fun DesktopDetailBackdrop(
         } else {
             maxWidth
         }
-        val backdropModifier = Modifier
-            .align(Alignment.CenterEnd)
-            .width(backdropWidth)
-            .fillMaxHeight()
+        val backdropModifier = if (removeSideFade) {
+            Modifier.fillMaxSize()
+        } else {
+            Modifier
+                .align(Alignment.CenterEnd)
+                .width(backdropWidth)
+                .fillMaxHeight()
+        }
         val artworkModifier = if (blurBackdrop) backdropModifier.blur(30.dp) else backdropModifier
         val bottomSpreadStrength = ((21f / 9f - aspectRatio) / (5f / 9f)).coerceIn(0f, 1f)
         val baseSideFade = Brush.horizontalGradient(
@@ -148,15 +175,14 @@ fun DesktopDetailBackdrop(
             ),
         )
         val imageUrl = meta.background ?: meta.poster
-        if (imageUrl != null) {
-            AsyncImage(
-                model = originalTmdbImageUrl(imageUrl),
+        if (imageUrl != null || backdropPlaceholder != null) {
+            DetailBackdropImage(
+                model = rememberArtworkRequest(imageUrl, if (meta.background != null) ArtworkRole.Backdrop else ArtworkRole.Poster),
                 contentDescription = meta.name,
-                desktopAnimation = NuvioDesktopAnimation.Always,
-                modifier = artworkModifier,
+                carriedArtwork = backdropPlaceholder,
+                modifier = artworkModifier.navigationGlassSource(enabled = enableGlassSource),
                 alignment = BiasAlignment(0f, DesktopBackdropVerticalBias),
-                contentScale = if (useWideArtworkFrame && !cropSideBackdrop) ContentScale.Fit else ContentScale.Crop,
-                desktopImageScaling = NuvioDesktopImageScaling.Disabled,
+                contentScale = if (removeSideFade) ContentScale.Crop else if (useWideArtworkFrame && !cropSideBackdrop) ContentScale.Fit else ContentScale.Crop,
                 onSuccess = { state -> onBackdropLoaded(state.painter) },
             )
         } else {
@@ -177,24 +203,78 @@ fun DesktopDetailBackdrop(
             )
         }
 
-        Box(
-            modifier = backdropModifier
-                .drawWithCache {
-                    val bottomSpread = Brush.radialGradient(
-                        colorStops = arrayOf(
-                            0.00f to sideGradientColor.copy(alpha = 0.12f * gradientIntensity * bottomSpreadStrength),
-                            0.55f to sideGradientColor.copy(alpha = 0.12f * gradientIntensity * bottomSpreadStrength),
-                            1.00f to Color.Transparent,
-                        ),
-                        center = Offset(0f, size.height * 1.15f),
-                        radius = size.width * 0.72f,
-                    )
-                    onDrawBehind {
-                        drawRect(baseSideFade)
-                        if (bottomSpreadStrength > 0f) drawRect(bottomSpread)
-                    }
-                },
-        )
+        if (removeSideFade) {
+            Box(
+                modifier = backdropModifier
+                    .navigationGlassSource(zIndex = 0.5f, enabled = enableGlassSource)
+                    .drawWithCache {
+                        val topFadeHeightPx = 160.dp.toPx()
+                        val topFade = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = opacity.overlayHeavy * gradientIntensity),
+                                Color.Transparent,
+                            ),
+                            startY = 0f,
+                            endY = topFadeHeightPx,
+                        )
+                        val sideFade = Brush.horizontalGradient(
+                            colorStops = arrayOf(
+                                0.00f to Color.Black.copy(alpha = 0.88f * gradientIntensity),
+                                0.08f to Color.Black.copy(alpha = 0.82f * gradientIntensity),
+                                0.16f to Color.Black.copy(alpha = 0.68f * gradientIntensity),
+                                0.26f to Color.Black.copy(alpha = 0.46f * gradientIntensity),
+                                0.36f to Color.Black.copy(alpha = 0.24f * gradientIntensity),
+                                0.46f to Color.Black.copy(alpha = 0.08f * gradientIntensity),
+                                0.56f to Color.Transparent,
+                            ),
+                        )
+                        val bottomFadeHeightPx = 300.dp.toPx()
+                        val bottomFade = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.35f * gradientIntensity),
+                                Color.Black.copy(alpha = 0.75f * gradientIntensity),
+                            ),
+                            startY = (size.height - bottomFadeHeightPx).coerceAtLeast(0f),
+                            endY = size.height,
+                        )
+                        onDrawBehind {
+                            drawRect(sideFade)
+                            val topHeight = topFadeHeightPx.coerceAtMost(size.height)
+                            drawRect(
+                                brush = topFade,
+                                size = size.copy(height = topHeight),
+                            )
+                            val bottomHeight = bottomFadeHeightPx.coerceAtMost(size.height)
+                            drawRect(
+                                brush = bottomFade,
+                                topLeft = Offset(0f, size.height - bottomHeight),
+                                size = size.copy(height = bottomHeight),
+                            )
+                        }
+                    },
+            )
+        } else {
+            Box(
+                modifier = backdropModifier
+                    .navigationGlassSource(zIndex = 0.5f, enabled = enableGlassSource)
+                    .drawWithCache {
+                        val bottomSpread = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.00f to sideGradientColor.copy(alpha = 0.12f * gradientIntensity * bottomSpreadStrength),
+                                0.55f to sideGradientColor.copy(alpha = 0.12f * gradientIntensity * bottomSpreadStrength),
+                                1.00f to Color.Transparent,
+                            ),
+                            center = Offset(0f, size.height * 1.15f),
+                            radius = size.width * 0.72f,
+                        )
+                        onDrawBehind {
+                            drawRect(baseSideFade)
+                            if (bottomSpreadStrength > 0f) drawRect(bottomSpread)
+                        }
+                    },
+            )
+        }
     }
 }
 
@@ -219,6 +299,11 @@ fun DesktopDetailHero(
     onWatchedClick: () -> Unit,
     onSaveClick: () -> Unit,
     onSaveLongClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    isEnhanced: Boolean = false,
+    onPlayDown: (suspend () -> Unit)? = null,
+    logoPlaceholder: Painter? = null,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val space = NuvioTokens.Space
@@ -231,25 +316,46 @@ fun DesktopDetailHero(
     val logoUrl = meta.logo?.takeIf { it.isNotBlank() }
 
     BoxWithConstraints(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 660.dp)
+            .then(if (compact) Modifier.wrapContentHeight() else Modifier.heightIn(min = 660.dp))
             .onSizeChanged { onHeightChanged(it.height) },
     ) {
         val actionHorizontalInset = fullscreenActionHorizontalInsetForWidth(maxWidth.value)
         val pageHorizontalPadding = desktopPageHorizontalPaddingForWidth(maxWidth.value)
+        val heroAlignment = if (compact) Alignment.TopStart else Alignment.CenterStart
+        val heroTextShadow = if (isEnhanced) Shadow(
+            color = Color.Black.copy(alpha = 0.78f),
+            offset = Offset(0f, 2f),
+            blurRadius = 8f,
+        ) else null
+        val synopsisTextShadow = if (isEnhanced) Shadow(
+            color = Color.Black.copy(alpha = 0.50f),
+            offset = Offset(0f, 1f),
+            blurRadius = 3f,
+        ) else null
 
         Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
+                .align(heroAlignment)
                 .widthIn(max = 760.dp)
+                .then(if (isEnhanced && compact) Modifier.statusBarsPadding() else Modifier)
                 .padding(
-                    start = pageHorizontalPadding,
+                    start = pageHorizontalPadding + LocalDesktopSidebarContentInset.current,
                     end = space.s32,
-                    bottom = space.s40,
+                    top = if (isEnhanced && compact) desktopBackButtonTopPadding + desktopBackButtonSize + space.s8 else 0.dp,
+                    bottom = if (compact) space.s8 else space.s40,
                 ),
         ) {
-            if (logoUrl != null && !logoLoadError) {
+            if (logoPlaceholder != null) {
+                Image(
+                    painter = logoPlaceholder,
+                    contentDescription = stringResource(Res.string.detail_logo_content_description, meta.name),
+                    modifier = Modifier.widthIn(max = 560.dp).height(120.dp),
+                    alignment = Alignment.CenterStart,
+                    contentScale = ContentScale.Fit,
+                )
+            } else if (logoUrl != null && !logoLoadError) {
                 AsyncImage(
                     model = logoUrl,
                     contentDescription = stringResource(Res.string.detail_logo_content_description, meta.name),
@@ -268,49 +374,58 @@ fun DesktopDetailHero(
                         lineHeight = NuvioTokens.LineHeight.displayMd,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = NuvioTokens.LetterSpacing.none,
+                        shadow = heroTextShadow,
                     ),
                     color = colorScheme.onBackground,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(modifier = Modifier.height(space.s20))
-            DesktopHeroMetaRow(meta = meta, showOverallRatings = showOverallRatings && !isMdbListActive)
-            if (isMdbListActive && meta.externalRatings.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(space.s12))
+            Spacer(modifier = Modifier.height(if (compact) space.s12 else space.s20))
+            DesktopHeroMetaRow(
+                meta = meta,
+                showOverallRatings = showOverallRatings && !isMdbListActive,
+                externalRatings = if (isEnhanced && isMdbListActive) meta.externalRatings else emptyList(),
+                textShadow = heroTextShadow,
+            )
+            if (!isEnhanced && isMdbListActive && meta.externalRatings.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(if (compact) space.s8 else space.s12))
                 DetailRatingsRow(
                     ratings = meta.externalRatings,
+                    imdbId = meta.imdbId ?: meta.id,
                     modifier = Modifier.widthIn(max = 520.dp),
                 )
             }
             if (meta.genres.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(space.s12))
+                Spacer(modifier = Modifier.height(if (compact) space.s8 else space.s12))
                 Text(
                     text = meta.genres.take(4).joinToString(" \u2022 "),
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = NuvioTokens.Type.bodyMd,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = NuvioTokens.LetterSpacing.none,
+                        shadow = heroTextShadow,
                     ),
-                    color = colorScheme.onSurfaceVariant,
+                    color = if (isEnhanced) colorScheme.onSurface else colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             meta.description?.takeIf { it.isNotBlank() }?.let { synopsis ->
-                Spacer(modifier = Modifier.height(space.s16))
+                Spacer(modifier = Modifier.height(if (compact) space.s10 else space.s16))
                 ExpandableDescription(
                     text = synopsis,
-                    collapsedMaxLines = 4,
+                    collapsedMaxLines = if (compact) 3 else 4,
                     style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = NuvioTokens.Type.bodyLg,
-                        lineHeight = NuvioTokens.LineHeight.bodyLg,
+                        fontSize = if (isEnhanced) NuvioTokens.Type.bodyMd else NuvioTokens.Type.bodyLg,
+                        lineHeight = if (isEnhanced) NuvioTokens.LineHeight.bodyMd else NuvioTokens.LineHeight.bodyLg,
                         letterSpacing = NuvioTokens.LetterSpacing.none,
+                        shadow = synopsisTextShadow,
                     ),
                     color = colorScheme.onSurface,
                 )
             }
-            Spacer(modifier = Modifier.height(space.s28))
+            Spacer(modifier = Modifier.height(if (compact) space.s16 else space.s28))
             val shuffleAction = onShuffleClick?.let { onClick ->
                 DetailSecondaryAction(
                     label = stringResource(if (shuffleEnabled) Res.string.shuffle_stop else Res.string.random_episode_title),
@@ -320,10 +435,12 @@ fun DesktopDetailHero(
                 )
             }
             DetailActionButtons(
+                onPlayDown = onPlayDown,
                 modifier = Modifier.widthIn(max = 520.dp),
                 playLabel = if (isPrimaryPlayEnabled) playButtonLabel else stringResource(Res.string.playback_unavailable),
                 playEnabled = isPrimaryPlayEnabled,
                 pinnedAction = shuffleAction?.takeIf { shuffleEnabled },
+                alwaysShowSecondaryActions = isEnhanced,
                 secondaryActions = buildList {
                     if (!shuffleEnabled) shuffleAction?.let(::add)
                     add(DetailSecondaryAction(
@@ -366,15 +483,15 @@ fun DesktopDetailHero(
             Surface(
                 onClick = onHeroTrailerMuteToggle,
                 enabled = heroTrailerReady,
-                modifier = Modifier
+                modifier = (Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
                     .padding(
-                        top = space.s32,
-                        end = actionHorizontalInset + if (isFullscreenActionSupported) 60.dp else 0.dp,
+                        top = if (compact) space.s16 else space.s32,
+                        end = actionHorizontalInset,
                     )
                     .size(48.dp)
-                    .graphicsLayer { alpha = trailerAlpha },
+                    .graphicsLayer { alpha = trailerAlpha }).remoteNavigationTarget(shape = CircleShape),
                 shape = CircleShape,
                 color = colorScheme.surfaceVariant.copy(alpha = 0.82f),
                 contentColor = colorScheme.onSurface,
@@ -396,26 +513,16 @@ fun DesktopDetailHero(
             }
         }
 
-        if (isFullscreenActionSupported) {
-            FullscreenActionButton(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(top = space.s32, end = actionHorizontalInset),
-                buttonSize = 48.dp,
-                iconSize = 24.dp,
-                containerColor = colorScheme.surfaceVariant.copy(alpha = 0.82f),
-                contentColor = colorScheme.onSurface,
-            )
-        }
     }
 }
 
 @Composable
-private fun DesktopHeroMetaRow(meta: MetaDetails, showOverallRatings: Boolean) {
-    val colorScheme = MaterialTheme.colorScheme
-    val space = NuvioTokens.Space
-    val opacity = NuvioTokens.Opacity
+private fun DesktopHeroMetaRow(
+    meta: MetaDetails,
+    showOverallRatings: Boolean,
+    externalRatings: List<MetaExternalRating>,
+    textShadow: Shadow? = null,
+) {
     val metaItems = buildList {
         desktopYearLabel(meta)?.let(::add)
         desktopSeasonCountLabel(meta)?.let(::add)
@@ -425,7 +532,41 @@ private fun DesktopHeroMetaRow(meta: MetaDetails, showOverallRatings: Boolean) {
         ?.takeIf { raw -> raw.toDoubleOrNull()?.let { it > 0.0 } == true }
     val ratingMedia = remember(meta) { meta.ratingReference() }
     val ratingState by rememberRatingState(ratingMedia)
+    DesktopHeroMetaRow(
+        metaItems = metaItems,
+        ageRating = meta.ageRating,
+        imdbRating = validImdbRating.takeIf { showOverallRatings },
+        imdbId = meta.imdbId ?: meta.id,
+        textShadow = textShadow,
+        externalRatings = externalRatings,
+        trailingContent = {
+            if (ratingState.isAvailable) {
+                DetailRating(
+                    media = ratingMedia,
+                    title = meta.name,
+                    state = ratingState,
+                )
+            }
+        },
+    )
+}
+
+@Composable
+internal fun DesktopHeroMetaRow(
+    metaItems: List<String>,
+    ageRating: String?,
+    imdbRating: String?,
+    imdbId: String? = null,
+    modifier: Modifier = Modifier,
+    textShadow: Shadow? = null,
+    externalRatings: List<MetaExternalRating> = emptyList(),
+    trailingContent: @Composable () -> Unit = {},
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val space = NuvioTokens.Space
+    val opacity = NuvioTokens.Opacity
     Row(
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(space.s16),
     ) {
@@ -436,12 +577,13 @@ private fun DesktopHeroMetaRow(meta: MetaDetails, showOverallRatings: Boolean) {
                     fontSize = NuvioTokens.Type.bodyLg,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = NuvioTokens.LetterSpacing.none,
+                    shadow = textShadow,
                 ),
                 color = colorScheme.onBackground,
                 maxLines = 1,
             )
         }
-        meta.ageRating?.takeIf { it.isNotBlank() }?.let { rating ->
+        ageRating?.takeIf { it.isNotBlank() }?.let { rating ->
             Box(
                 modifier = Modifier
                     .border(
@@ -457,37 +599,33 @@ private fun DesktopHeroMetaRow(meta: MetaDetails, showOverallRatings: Boolean) {
                         fontSize = NuvioTokens.Type.bodySm,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = NuvioTokens.LetterSpacing.none,
+                        shadow = textShadow,
                     ),
                     color = colorScheme.onSurfaceVariant,
                 )
             }
         }
-        if (validImdbRating != null && showOverallRatings) {
+        if (externalRatings.isNotEmpty()) {
+            DetailRatingsRow(ratings = externalRatings, imdbId = imdbId)
+        } else if (imdbRating != null) {
             val imdbTextStyle = MaterialTheme.typography.titleSmall.copy(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.sp,
+                shadow = textShadow,
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            ClickableRatingBadge(url = formatImdbTitleUrl(imdbId)) {
                 ImdbRatingSourceLabel(
                     storeTextStyle = imdbTextStyle,
                     storeTextColor = ImdbYellow,
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = validImdbRating,
+                    text = imdbRating,
                     style = imdbTextStyle,
                     color = ImdbYellow,
                 )
             }
         }
-        if (ratingState.isAvailable) {
-            DetailRating(
-                media = ratingMedia,
-                title = meta.name,
-                state = ratingState,
-            )
-        }
+        trailingContent()
     }
 }

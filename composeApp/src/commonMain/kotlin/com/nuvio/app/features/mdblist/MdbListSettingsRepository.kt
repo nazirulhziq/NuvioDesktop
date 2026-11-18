@@ -1,5 +1,7 @@
 package com.nuvio.app.features.mdblist
 
+import com.nuvio.app.isDesktop
+
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +31,7 @@ object MdbListSettingsRepository {
     private var useLetterboxd = true
     private var useAudience = true
     private var useMal = true
-    private var showOnHero = false
+    private var showOnHero = isDesktop
 
     fun ensureLoaded() {
         MdbListTracker.ensureLoaded()
@@ -124,7 +126,7 @@ object MdbListSettingsRepository {
         useLetterboxd = MdbListSettingsStorage.loadUseLetterboxd() ?: true
         useAudience = MdbListSettingsStorage.loadUseAudience() ?: true
         useMal = MdbListSettingsStorage.loadUseMal() ?: true
-        showOnHero = MdbListSettingsStorage.loadShowOnHero() ?: false
+        showOnHero = MdbListSettingsStorage.loadShowOnHero() ?: isDesktop
         publish()
     }
 

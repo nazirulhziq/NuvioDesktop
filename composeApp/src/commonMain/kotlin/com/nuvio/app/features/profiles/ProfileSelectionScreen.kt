@@ -1,5 +1,7 @@
 package com.nuvio.app.features.profiles
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -11,7 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import com.nuvio.app.core.ui.collectIsRemoteHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +34,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
@@ -65,10 +67,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioDesktopAnimation
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
+import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
+import com.nuvio.app.core.ui.desktopBackButtonTopPadding
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioToastHost
 import com.nuvio.app.core.ui.LocalVerticalBarPadding
-import com.nuvio.app.core.ui.nuvioFocusBorder
 import com.nuvio.app.features.membership.CosmeticEntitlement
 import com.nuvio.app.features.settings.MemberBrandWordmark
 import kotlinx.coroutines.delay
@@ -173,7 +176,7 @@ fun ProfileSelectionScreen(
                         if (isTabletLayout) {
                             Modifier
                         } else {
-                            Modifier.verticalScroll(rememberScrollState())
+                            Modifier.nuvioVerticalScroll(rememberScrollState())
                         },
                     )
                     .padding(horizontal = 24.dp),
@@ -307,7 +310,7 @@ fun ProfileSelectionScreen(
                             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                             shape = RoundedCornerShape(24.dp),
                         )
-                        .clickable(enabled = interactionEnabled) { isEditMode = !isEditMode }
+                        .remoteNavigationTarget(shape = RoundedCornerShape(24.dp)).clickable(enabled = interactionEnabled) { isEditMode = !isEditMode }
                         .padding(horizontal = 24.dp, vertical = 10.dp),
                 ) {
                     Text(
@@ -329,11 +332,13 @@ fun ProfileSelectionScreen(
 
         if (onBack != null && interactionEnabled && contentVisible) {
             NuvioBackButton(
+                usePageStyle = true,
                 onClick = onBack,
+                buttonSize = if (isDesktop) 48.dp else 40.dp,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(LocalVerticalBarPadding.current)
-                    .padding(start = 16.dp, top = statusBarTop + 8.dp),
+                    .padding(start = if (isDesktop) desktopPageHorizontalPaddingForWidth(maxWidth.value) else 16.dp, top = statusBarTop + if (isDesktop) desktopBackButtonTopPadding else 8.dp),
             )
         }
 
@@ -346,7 +351,7 @@ fun ProfileSelectionScreen(
             onVerify = { pin -> ProfileRepository.verifyPin(profile.profileIndex, pin) },
             onVerified = {
                 pinDialogProfile = null
-                if (interactionEnabled && profile.profileIndex != activeProfileIndex) {
+                if (interactionEnabled) {
                     onProfileSelected(profile)
                 }
             },
@@ -388,7 +393,7 @@ private fun ProfileAvatarCard(
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isHovered by interactionSource.collectIsRemoteHoveredAsState()
     val currentOnHoverChange = rememberUpdatedState(onHoverChange)
     val pressScale = if (isPressed) 0.95f else 1f
 
@@ -406,7 +411,6 @@ private fun ProfileAvatarCard(
         }
     }
 
-    val profileShape = RoundedCornerShape(20.dp)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -417,7 +421,7 @@ private fun ProfileAvatarCard(
                 scaleY = animScale.value * pressScale
                 translationY = animOffset.value
             }
-            .clip(profileShape)
+            .clip(RoundedCornerShape(20.dp))
             .then(
                 if (isDesktop) {
                     Modifier.hoverable(interactionSource)
@@ -425,8 +429,7 @@ private fun ProfileAvatarCard(
                     Modifier
                 },
             )
-            .nuvioFocusBorder(profileShape)
-            .clickable(
+            .remoteNavigationTarget(shape = RoundedCornerShape(20.dp)).clickable(
                 enabled = enabled,
                 interactionSource = interactionSource,
                 indication = null,
@@ -566,7 +569,6 @@ private fun AddProfileCard(
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale = if (isPressed) 0.95f else 1f
 
-    val addProfileShape = RoundedCornerShape(20.dp)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -577,9 +579,8 @@ private fun AddProfileCard(
                 scaleY = animScale.value * pressScale
                 translationY = animOffset.value
             }
-            .clip(addProfileShape)
-            .nuvioFocusBorder(addProfileShape)
-            .clickable(
+            .clip(RoundedCornerShape(20.dp))
+            .remoteNavigationTarget(shape = RoundedCornerShape(20.dp)).clickable(
                 enabled = enabled,
                 interactionSource = interactionSource,
                 indication = null,

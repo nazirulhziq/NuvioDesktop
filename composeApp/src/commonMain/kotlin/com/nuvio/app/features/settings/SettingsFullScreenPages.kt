@@ -1,15 +1,20 @@
 package com.nuvio.app.features.settings
 
 import com.nuvio.app.core.build.AppFeaturePolicy
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioScreen
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
 import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.firstEnabledManifestError
@@ -20,6 +25,7 @@ import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.buildAddonCatalogRefreshSignature
+import com.nuvio.app.features.home.components.HomeInteractiveGradientBackground
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_settings_page_account
@@ -34,6 +40,7 @@ import org.jetbrains.compose.resources.stringResource
 fun HomescreenSettingsScreen(
     onBack: () -> Unit,
 ) {
+    val auraBackgroundEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homescreenCatalogRefreshKey = remember(addonsUiState.addons) {
         buildAddonCatalogRefreshSignature(addonsUiState.addons)
@@ -62,24 +69,35 @@ fun HomescreenSettingsScreen(
         HomeCatalogSettingsRepository.syncCollections(collections)
     }
 
-    NuvioScreen(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = stringResource(Res.string.compose_settings_page_homescreen),
-                onBack = onBack,
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (auraBackgroundEnabled) {
+            HomeInteractiveGradientBackground(modifier = Modifier.fillMaxSize())
+        }
+        NuvioScreen(
+            sidebarContentInset = LocalDesktopSidebarContentInset.current,
+            modifier = Modifier.fillMaxSize(),
+            backgroundColor = if (auraBackgroundEnabled) Color.Transparent else MaterialTheme.nuvio.colors.background,
+        ) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    showBackWithDesktopSidebar = true,
+                    title = stringResource(Res.string.compose_settings_page_homescreen),
+                    onBack = onBack,
+                )
+            }
+            homescreenSettingsContent(
+                isTablet = false,
+                heroEnabled = homescreenSettingsUiState.heroEnabled,
+                showCatalogType = homescreenSettingsUiState.showCatalogType,
+                hideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
+                appInterface = homescreenSettingsUiState.appInterface,
+                posterGutterSize = homescreenSettingsUiState.posterGutterSize,
+                alwaysAnimateCollectionCards = homescreenSettingsUiState.alwaysAnimateCollectionCards,
+                items = homescreenSettingsUiState.items,
+                isCatalogLoading = addonManifestsLoading,
+                catalogErrorMessage = addonManifestErrorMessage,
             )
         }
-        homescreenSettingsContent(
-            isTablet = false,
-            heroEnabled = homescreenSettingsUiState.heroEnabled,
-            showCatalogType = homescreenSettingsUiState.showCatalogType,
-            hideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
-            items = homescreenSettingsUiState.items,
-            isCatalogLoading = addonManifestsLoading,
-            catalogErrorMessage = addonManifestErrorMessage,
-        )
     }
 }
 
@@ -87,24 +105,33 @@ fun HomescreenSettingsScreen(
 fun MetaScreenSettingsScreen(
     onBack: () -> Unit,
 ) {
+    val auraBackgroundEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
     val metaScreenSettingsUiState by remember {
         MetaScreenSettingsRepository.ensureLoaded()
         MetaScreenSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
 
-    NuvioScreen(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = stringResource(Res.string.compose_settings_page_meta_screen),
-                onBack = onBack,
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (auraBackgroundEnabled) {
+            HomeInteractiveGradientBackground(modifier = Modifier.fillMaxSize())
+        }
+        NuvioScreen(
+            sidebarContentInset = LocalDesktopSidebarContentInset.current,
+            modifier = Modifier.fillMaxSize(),
+            backgroundColor = if (auraBackgroundEnabled) Color.Transparent else MaterialTheme.nuvio.colors.background,
+        ) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    showBackWithDesktopSidebar = true,
+                    title = stringResource(Res.string.compose_settings_page_meta_screen),
+                    onBack = onBack,
+                )
+            }
+            metaScreenSettingsContent(
+                isTablet = false,
+                uiState = metaScreenSettingsUiState,
             )
         }
-        metaScreenSettingsContent(
-            isTablet = false,
-            uiState = metaScreenSettingsUiState,
-        )
     }
 }
 
@@ -112,32 +139,41 @@ fun MetaScreenSettingsScreen(
 fun ContinueWatchingSettingsScreen(
     onBack: () -> Unit,
 ) {
+    val auraBackgroundEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
     val continueWatchingPreferencesUiState by remember {
         ContinueWatchingPreferencesRepository.ensureLoaded()
         ContinueWatchingPreferencesRepository.uiState
     }.collectAsStateWithLifecycle()
 
-    NuvioScreen(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = stringResource(Res.string.compose_settings_page_continue_watching),
-                onBack = onBack,
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (auraBackgroundEnabled) {
+            HomeInteractiveGradientBackground(modifier = Modifier.fillMaxSize())
+        }
+        NuvioScreen(
+            sidebarContentInset = LocalDesktopSidebarContentInset.current,
+            modifier = Modifier.fillMaxSize(),
+            backgroundColor = if (auraBackgroundEnabled) Color.Transparent else MaterialTheme.nuvio.colors.background,
+        ) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    showBackWithDesktopSidebar = true,
+                    title = stringResource(Res.string.compose_settings_page_continue_watching),
+                    onBack = onBack,
+                )
+            }
+            continueWatchingSettingsContent(
+                isTablet = false,
+                isVisible = continueWatchingPreferencesUiState.isVisible,
+                style = continueWatchingPreferencesUiState.style,
+                upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
+                useEpisodeThumbnails = continueWatchingPreferencesUiState.useEpisodeThumbnails,
+                showUnairedNextUp = continueWatchingPreferencesUiState.showUnairedNextUp,
+                blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
+                showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
+                sortMode = continueWatchingPreferencesUiState.sortMode,
+                clickAction = continueWatchingPreferencesUiState.clickAction,
             )
         }
-        continueWatchingSettingsContent(
-            isTablet = false,
-            isVisible = continueWatchingPreferencesUiState.isVisible,
-            style = continueWatchingPreferencesUiState.style,
-            upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
-            useEpisodeThumbnails = continueWatchingPreferencesUiState.useEpisodeThumbnails,
-            showUnairedNextUp = continueWatchingPreferencesUiState.showUnairedNextUp,
-            blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
-            showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
-            sortMode = continueWatchingPreferencesUiState.sortMode,
-            clickAction = continueWatchingPreferencesUiState.clickAction,
-        )
     }
 }
 
@@ -145,20 +181,29 @@ fun ContinueWatchingSettingsScreen(
 fun AddonsSettingsScreen(
     onBack: () -> Unit,
 ) {
+    val auraBackgroundEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         AddonRepository.initialize()
     }
 
-    NuvioScreen(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = stringResource(Res.string.compose_settings_page_addons),
-                onBack = onBack,
-            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (auraBackgroundEnabled) {
+            HomeInteractiveGradientBackground(modifier = Modifier.fillMaxSize())
         }
-        addonsSettingsContent()
+        NuvioScreen(
+            sidebarContentInset = LocalDesktopSidebarContentInset.current,
+            modifier = Modifier.fillMaxSize(),
+            backgroundColor = if (auraBackgroundEnabled) Color.Transparent else MaterialTheme.nuvio.colors.background,
+        ) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    showBackWithDesktopSidebar = true,
+                    title = stringResource(Res.string.compose_settings_page_addons),
+                    onBack = onBack,
+                )
+            }
+            addonsSettingsContent()
+        }
     }
 }
 
@@ -171,20 +216,29 @@ fun PluginsSettingsScreen(
         return
     }
 
+    val auraBackgroundEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         PluginRepository.initialize()
     }
 
-    NuvioScreen(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = stringResource(Res.string.compose_settings_page_plugins),
-                onBack = onBack,
-            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (auraBackgroundEnabled) {
+            HomeInteractiveGradientBackground(modifier = Modifier.fillMaxSize())
         }
-        pluginsSettingsContent()
+        NuvioScreen(
+            sidebarContentInset = LocalDesktopSidebarContentInset.current,
+            modifier = Modifier.fillMaxSize(),
+            backgroundColor = if (auraBackgroundEnabled) Color.Transparent else MaterialTheme.nuvio.colors.background,
+        ) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    showBackWithDesktopSidebar = true,
+                    title = stringResource(Res.string.compose_settings_page_plugins),
+                    onBack = onBack,
+                )
+            }
+            pluginsSettingsContent()
+        }
     }
 }
 
@@ -192,17 +246,27 @@ fun PluginsSettingsScreen(
 fun AccountSettingsScreen(
     onBack: () -> Unit,
 ) {
-    NuvioScreen(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = stringResource(Res.string.compose_settings_page_account),
-                onBack = onBack,
+    val auraBackgroundEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (auraBackgroundEnabled) {
+            HomeInteractiveGradientBackground(modifier = Modifier.fillMaxSize())
+        }
+        NuvioScreen(
+            sidebarContentInset = LocalDesktopSidebarContentInset.current,
+            modifier = Modifier.fillMaxSize(),
+            backgroundColor = if (auraBackgroundEnabled) Color.Transparent else MaterialTheme.nuvio.colors.background,
+        ) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    showBackWithDesktopSidebar = true,
+                    title = stringResource(Res.string.compose_settings_page_account),
+                    onBack = onBack,
+                )
+            }
+            accountSettingsContent(
+                isTablet = false,
             )
         }
-        accountSettingsContent(
-            isTablet = false,
-        )
     }
 }
+

@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,7 +32,6 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import com.nuvio.app.isWindows
 
 private val SheetShape = RoundedCornerShape(NuvioTokens.Space.s28)
 
@@ -59,6 +59,7 @@ fun NuvioModalBottomSheet(
         )
     } else {
         val tokens = MaterialTheme.nuvio
+        PlatformBackHandler(enabled = true, onBack = onDismissRequest)
         ModalBottomSheet(
             onDismissRequest = onDismissRequest,
             sheetState = sheetState,
@@ -68,24 +69,26 @@ fun NuvioModalBottomSheet(
             scrimColor = tokens.colors.overlayScrim,
             dragHandle = null,
         ) {
-            CompositionLocalProvider(LocalBottomInsetsConsumed provides true) {
-                Column(
-                    modifier = modifier
-                        .padding(NuvioTokens.Space.s10)
-                        .clip(SheetShape)
-                        .background(containerColor)
-                        .border(tokens.borders.thin, SurfaceEdge, SheetShape),
-                ) {
-                    if (showDragHandle) {
-                        NuvioBottomSheetDragHandle(Modifier.align(Alignment.CenterHorizontally))
-                    }
-                    if (isWindows) {
-                        // Inside the sheet's draggable, so content scrolls before
-                        // the sheet can claim its drag. Keep the handle outside
-                        // this scope so dragging it still moves the sheet.
-                        Column(modifier = Modifier.platformTouchScroll(), content = content)
-                    } else {
-                        content()
+            AppOverlayInput {
+                SettingsOverlaySurfaceLayer {
+                    CompositionLocalProvider(LocalBottomInsetsConsumed provides true) {
+                        SettingsAwareSurface(
+                            modifier = modifier
+                                .remoteNavigationModal()
+                                .padding(NuvioTokens.Space.s10)
+                                .border(tokens.borders.thin, SurfaceEdge, SheetShape),
+                            shape = SheetShape,
+                            color = containerColor,
+                            contentColor = contentColor,
+                            panel = true,
+                        ) {
+                            Column {
+                                if (showDragHandle) {
+                                    NuvioBottomSheetDragHandle(Modifier.align(Alignment.CenterHorizontally))
+                                }
+                                content()
+                            }
+                        }
                     }
                 }
             }
@@ -122,7 +125,7 @@ fun NuvioBottomSheetActionRow(
             .heightIn(min = NuvioTokens.Space.s56)
             .clip(tokens.shapes.compactCard)
             .background(if (selected) tokens.colors.accent.copy(alpha = tokens.opacity.hover) else Color.Transparent)
-            .clickable(onClick = onClick)
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).clickable(onClick = onClick)
             .padding(NuvioTokens.Space.s8),
         horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s14),
         verticalAlignment = Alignment.CenterVertically,

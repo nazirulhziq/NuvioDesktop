@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.ui.frostedGlassSecondaryContentColor
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -119,7 +121,7 @@ fun AudioTrackModal(
                     if (audioTracks.isEmpty()) {
                         NoAudioTracksText()
                     } else {
-                        LazyColumn(
+                        NuvioLazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f, fill = false)
@@ -219,7 +221,7 @@ private fun AudioTracksHeader() {
 private fun NoAudioTracksText() {
     Text(
         text = stringResource(Res.string.compose_player_no_audio_tracks_available),
-        color = Color.White.copy(alpha = 0.7f),
+        color = frostedGlassSecondaryContentColor(Color.White.copy(alpha = 0.7f)),
         style = MaterialTheme.typography.bodyLarge,
         modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
     )

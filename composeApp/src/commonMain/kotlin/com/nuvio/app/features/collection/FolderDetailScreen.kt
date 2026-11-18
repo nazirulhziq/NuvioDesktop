@@ -1,5 +1,13 @@
 package com.nuvio.app.features.collection
 
+import com.nuvio.app.core.ui.verticalRowAnchors
+import com.nuvio.app.core.ui.desktopBackButtonTopPadding
+
+import com.nuvio.app.core.ui.remoteNavigationGroup
+import com.nuvio.app.core.ui.BindPosterNavigationPage
+import com.nuvio.app.core.ui.PosterNavigationRow
+import com.nuvio.app.core.ui.RemotePosterRow
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
@@ -16,12 +24,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import com.nuvio.app.core.ui.NuvioLazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.LocalRippleConfiguration
@@ -57,19 +67,32 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioDesktopVerticalScrollbar
-import com.nuvio.app.controller.ControllerFocusZone
-import com.nuvio.app.controller.RegisterControllerVerticalScroll
-import com.nuvio.app.controller.controllerFocusable
 import com.nuvio.app.core.ui.NuvioPosterCard
+import com.nuvio.app.core.ui.PosterGlowOutset
 import com.nuvio.app.core.ui.NuvioPosterShape
 import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.core.ui.NuvioTokens
+import com.nuvio.app.core.ui.aspectRatio
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
+import com.nuvio.app.features.home.components.HomeSkeletonRow
+import com.nuvio.app.core.ui.navigationGlassSource
 import com.nuvio.app.core.ui.catalogPosterBaseWidthDp
+import com.nuvio.app.core.ui.desktopCatalogShelfPosterBaseWidthDp
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
 import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
+import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.posterGridColumnCountForViewport
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.home.HomeCatalogSection
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsUiState
+import com.nuvio.app.features.home.AppInterface
+import com.nuvio.app.features.home.components.PersistentHeroPane
+import com.nuvio.app.features.home.components.HomeCatalogRail
+import com.nuvio.app.features.home.components.HomeCatalogRailEntry
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.canOpenCatalog
@@ -77,6 +100,7 @@ import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomePosterHoverPreview
 import com.nuvio.app.features.home.components.homeCatalogPreviewLimitForWidth
+import com.nuvio.app.features.home.components.homePosterGutterPaddingForWidth
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watching.application.WatchingState
@@ -85,6 +109,9 @@ import com.nuvio.app.navigation.LocalUseNativeNavigation
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import com.nuvio.app.features.home.components.HomeInteractiveGradientBackground
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_folder_empty_items
 import nuvio.composeapp.generated.resources.collections_folder_not_found
@@ -95,78 +122,132 @@ private val FolderCoverHeight = 176.dp
 
 @Composable
 fun FolderDetailScreen(
+    collectionId: String,
+    folderId: String,
+    title: String,
     onBack: () -> Unit,
     onCatalogClick: (HomeCatalogSection) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
-    val uiState by FolderDetailRepository.uiState.collectAsState()
+    val repositoryState by FolderDetailRepository.uiState.collectAsState()
+    val uiState = repositoryState.takeIf { it.collectionId == collectionId && it.folderId == folderId }
+        ?: FolderDetailUiState()
     val watchedUiState by remember {
         WatchedRepository.ensureLoaded()
         WatchedRepository.uiState
     }.collectAsState()
+    val homeCatalogSettings by HomeCatalogSettingsRepository.settings.collectAsState()
     val folder = uiState.folder
     val useNativeNavigation = LocalUseNativeNavigation.current
     val coverImageUrl = folder?.coverImageUrl?.takeIf { it.isNotBlank() }
+    val auraBackgroundEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
 
-    if (!isDesktop) {
+    val persistentHero = homeCatalogSettings.appInterface == AppInterface.PersistentHero
+    if (!isDesktop && !persistentHero) {
         MobileFolderDetailContent(
             uiState = uiState,
             watchedKeys = watchedUiState.watchedKeys,
+            homeCatalogSettings = homeCatalogSettings,
             coverImageUrl = coverImageUrl,
+            auraBackgroundEnabled = auraBackgroundEnabled,
             useNativeNavigation = useNativeNavigation,
             onBack = onBack,
             onCatalogClick = onCatalogClick,
             onPosterClick = onPosterClick,
+            onPosterLongClick = onPosterLongClick,
         )
         return
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize(),
     ) {
-        if (coverImageUrl != null) {
-            AsyncImage(
-                model = coverImageUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = 1.06f
-                        scaleY = 1.06f
-                    }
-                    .blur(28.dp),
-                contentScale = ContentScale.Crop,
-                alpha = 0.72f,
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to MaterialTheme.colorScheme.background.copy(alpha = 0.50f),
-                            0.42f to MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
-                            1f to MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
-                        ),
-                    ),
-            )
+        if (!persistentHero && coverImageUrl != null) {
+            Box(Modifier.fillMaxSize().navigationGlassSource()) {
+                AsyncImage(
+                    model = coverImageUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = 1.06f
+                            scaleY = 1.06f
+                        }
+                        .blur(28.dp),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.85f,
+                )
+            }
+        } else if (auraBackgroundEnabled && !persistentHero) {
+            HomeInteractiveGradientBackground(Modifier.fillMaxSize())
+        } else {
+            Box(Modifier.fillMaxSize().navigationGlassSource(zIndex = -1f).background(MaterialTheme.nuvio.colors.background))
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val desktopPagePadding = desktopPageHorizontalPaddingForWidth(maxWidth.value)
-            Column(modifier = Modifier.fillMaxSize()) {
-                if (!useNativeNavigation) {
-                    NuvioScreenHeader(
-                        title = folder?.title ?: uiState.collectionTitle,
-                        modifier = Modifier.padding(horizontal = desktopPagePadding),
-                        backgroundColor = Color.Transparent,
-                        includeStatusBarPadding = false,
-                        topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 32.dp,
-                        onBack = onBack,
-                    )
-                }
-
+            val sidebarInset = LocalDesktopSidebarContentInset.current
+            val isGrid = uiState.viewMode == FolderViewMode.TABBED_GRID
+            val gridState = rememberLazyGridState()
+            val rowsState = rememberLazyListState()
+            val rowScrollState = if (isGrid) gridState else rowsState
+            val rowSlots = if (isGrid) emptyList() else FolderDetailRepository.getRowSlots(uiState)
+            PersistentHeroPane(
+                enabled = persistentHero,
+                onHeroClick = onPosterClick,
+                page = Triple(collectionId, folderId, uiState.selectedTabIndex.takeIf { isGrid }),
+                seed = if (uiState.viewMode == FolderViewMode.TABBED_GRID) {
+                    uiState.selectedTab?.items?.firstOrNull()
+                } else {
+                    uiState.tabs.firstNotNullOfOrNull { tab -> tab.items.firstOrNull().takeUnless { tab.isAllTab } }
+                },
+                rowScrollState = rowScrollState,
+                posterRows = if (isGrid) {
+                    mapOf(Unit to uiState.selectedTab?.items.orEmpty())
+                } else {
+                    rowSlots.associate { it.key to it.section?.items.orEmpty() }
+                },
+                rowAnchors = {
+                    if (isGrid) gridState.verticalRowAnchors() else rowsState.verticalRowAnchors()
+                },
+                loading = uiState.isLoading || uiState.selectedTab?.isLoading == true,
+                showInitialPreview = true,
+                startInset = sidebarInset,
+                header = {
+                    if (!useNativeNavigation) {
+                        NuvioScreenHeader(
+                            title = folder?.title ?: uiState.collectionTitle.ifBlank { title },
+                            modifier = Modifier.padding(start = sidebarInset),
+                            backgroundColor = Color.Transparent,
+                            includeStatusBarPadding = false,
+                            topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + desktopBackButtonTopPadding,
+                            onBack = onBack,
+                            backButtonKeyboardNavigationEnabled = false,
+                            showFullscreenAction = false,
+                        )
+                    }
+                },
+                rail = { height ->
+                    if (isGrid) {
+                        val allLabel = stringResource(Res.string.collections_tab_all)
+                        val entries = uiState.tabs.mapIndexed { index, tab ->
+                            HomeCatalogRailEntry(index, if (tab.isAllTab) allLabel else tab.label, index)
+                        }
+                        HomeCatalogRail(entries, uiState.selectedTabIndex, height) { entry ->
+                            if (entry.lazyIndex != uiState.selectedTabIndex) {
+                                FolderDetailRepository.selectTab(entry.lazyIndex)
+                                gridState.requestScrollToItem(0)
+                            }
+                        }
+                    } else {
+                        val entries = rowSlots.mapIndexed { index, slot ->
+                            HomeCatalogRailEntry(slot.key, slot.section?.title ?: slot.tab.label, index)
+                        }
+                        HomeCatalogRail(entries, rowsState, height)
+                    }
+                },
+            ) {
                 if (folder == null && !uiState.isLoading) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -178,7 +259,7 @@ fun FolderDetailScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    return@Column
+                    return@PersistentHeroPane
                 }
 
                 when (uiState.viewMode) {
@@ -186,23 +267,23 @@ fun FolderDetailScreen(
                         uiState = uiState,
                         watchedKeys = watchedUiState.watchedKeys,
                         pageHorizontalPadding = desktopPagePadding,
-                        modifier = Modifier.weight(1f),
+                        sidebarInset = sidebarInset,
+                        modifier = Modifier.fillMaxSize(),
                         onTabSelected = { FolderDetailRepository.selectTab(it) },
+                        gridState = gridState,
                         onPosterClick = onPosterClick,
+                        onPosterLongClick = onPosterLongClick,
                     )
-                    FolderViewMode.ROWS -> RowsContent(
+                    FolderViewMode.ROWS, FolderViewMode.FOLLOW_LAYOUT -> RowsContent(
                         uiState = uiState,
                         watchedKeys = watchedUiState.watchedKeys,
-                        modifier = Modifier.weight(1f),
+                        homeCatalogSettings = homeCatalogSettings,
+                        listState = rowsState,
+                        slots = rowSlots,
+                        modifier = Modifier.fillMaxSize(),
                         onCatalogClick = onCatalogClick,
                         onPosterClick = onPosterClick,
-                    )
-                    FolderViewMode.FOLLOW_LAYOUT -> RowsContent(
-                        uiState = uiState,
-                        watchedKeys = watchedUiState.watchedKeys,
-                        modifier = Modifier.weight(1f),
-                        onCatalogClick = onCatalogClick,
-                        onPosterClick = onPosterClick,
+                        onPosterLongClick = onPosterLongClick,
                     )
                 }
             }
@@ -214,11 +295,14 @@ fun FolderDetailScreen(
 private fun MobileFolderDetailContent(
     uiState: FolderDetailUiState,
     watchedKeys: Set<String>,
+    homeCatalogSettings: HomeCatalogSettingsUiState,
     coverImageUrl: String?,
+    auraBackgroundEnabled: Boolean,
     useNativeNavigation: Boolean,
     onBack: () -> Unit,
     onCatalogClick: (HomeCatalogSection) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
     val folder = uiState.folder
     val density = LocalDensity.current
@@ -260,60 +344,73 @@ private fun MobileFolderDetailContent(
         Modifier
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .then(
+                if (auraBackgroundEnabled || coverImageUrl != null) Modifier else Modifier.background(MaterialTheme.colorScheme.background)
+            ),
     ) {
-        if (coverImageUrl != null && heroHeight > 0.dp) {
-            FolderCoverImage(
-                imageUrl = coverImageUrl,
-                title = folder?.title.orEmpty(),
-                modifier = Modifier.height(heroHeight),
-            )
+        if (coverImageUrl == null && auraBackgroundEnabled) {
+            HomeInteractiveGradientBackground(Modifier.fillMaxSize())
         }
-
-        if (!useNativeNavigation) {
-            NuvioScreenHeader(
-                title = folder?.title ?: uiState.collectionTitle,
-                modifier = Modifier.padding(horizontal = 16.dp),
-                includeStatusBarPadding = coverImageUrl == null,
-                topPadding = if (coverImageUrl != null) statusBarTop * heroCollapseFraction else null,
-                onBack = onBack,
-            )
-        }
-
-        if (folder == null && !uiState.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(Res.string.collections_folder_not_found),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            if (coverImageUrl != null && heroHeight > 0.dp) {
+                FolderCoverImage(
+                    imageUrl = coverImageUrl,
+                    title = folder?.title.orEmpty(),
+                    modifier = Modifier.height(heroHeight),
                 )
             }
-            return@Column
-        }
 
-        when (uiState.viewMode) {
-            FolderViewMode.TABBED_GRID -> TabbedGridContent(
-                uiState = uiState,
-                watchedKeys = watchedKeys,
-                modifier = Modifier.weight(1f).then(contentModifier),
-                onTabSelected = { FolderDetailRepository.selectTab(it) },
-                onPosterClick = onPosterClick,
-            )
-            FolderViewMode.ROWS,
-            FolderViewMode.FOLLOW_LAYOUT,
-            -> RowsContent(
-                uiState = uiState,
-                watchedKeys = watchedKeys,
-                modifier = Modifier.weight(1f).then(contentModifier),
-                onCatalogClick = onCatalogClick,
-                onPosterClick = onPosterClick,
-            )
+            if (!useNativeNavigation) {
+                NuvioScreenHeader(
+                    title = folder?.title ?: uiState.collectionTitle,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    includeStatusBarPadding = coverImageUrl == null,
+                    topPadding = if (coverImageUrl != null) statusBarTop * heroCollapseFraction else null,
+                    onBack = onBack,
+                    showFullscreenAction = false,
+                )
+            }
+
+            if (folder == null && !uiState.isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.collections_folder_not_found),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                return@Box
+            }
+
+            when (uiState.viewMode) {
+                FolderViewMode.TABBED_GRID -> TabbedGridContent(
+                    uiState = uiState,
+                    watchedKeys = watchedKeys,
+                    modifier = Modifier.weight(1f).then(contentModifier),
+                    onTabSelected = { FolderDetailRepository.selectTab(it) },
+                    onPosterClick = onPosterClick,
+                    onPosterLongClick = onPosterLongClick,
+                )
+                FolderViewMode.ROWS,
+                FolderViewMode.FOLLOW_LAYOUT,
+                -> RowsContent(
+                    uiState = uiState,
+                    watchedKeys = watchedKeys,
+                    homeCatalogSettings = homeCatalogSettings,
+                    modifier = Modifier.weight(1f).then(contentModifier),
+                    onCatalogClick = onCatalogClick,
+                    onPosterClick = onPosterClick,
+                    onPosterLongClick = onPosterLongClick,
+                )
+            }
         }
     }
 }
@@ -339,15 +436,13 @@ private fun TabbedGridContent(
     uiState: FolderDetailUiState,
     watchedKeys: Set<String>,
     pageHorizontalPadding: Dp = 16.dp,
+    sidebarInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
     onTabSelected: (Int) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    gridState: LazyGridState = rememberLazyGridState(),
 ) {
-    val gridState = rememberLazyGridState()
-
-    // Lets the controller spatial engine scroll this grid when focus reaches the bottom edge.
-    val scrollViewportModifier = RegisterControllerVerticalScroll(lazyGridState = gridState)
-
     LaunchedEffect(gridState, uiState.selectedTabIndex, uiState.selectedTabCanLoadMore, uiState.selectedTabIsLoadingMore) {
         snapshotFlow { gridState.layoutInfo }
             .map { layoutInfo ->
@@ -366,8 +461,8 @@ private fun TabbedGridContent(
             CompositionLocalProvider(LocalRippleConfiguration provides null) {
                 ScrollableTabRow(
                     selectedTabIndex = uiState.selectedTabIndex,
-                    modifier = Modifier.fillMaxWidth(),
-                    edgePadding = pageHorizontalPadding,
+                    modifier = Modifier.fillMaxWidth().navigationGlassSource(zIndex = 1f),
+                    edgePadding = pageHorizontalPadding + sidebarInset,
                     containerColor = if (isDesktop) Color.Transparent else MaterialTheme.colorScheme.background,
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     divider = {},
@@ -376,15 +471,6 @@ private fun TabbedGridContent(
                         Tab(
                             selected = index == uiState.selectedTabIndex,
                             onClick = { onTabSelected(index) },
-                            // Category tabs are part of the spatial grid: Up from the top poster row
-                            // reaches them, Down returns to the posters and A selects a category.
-                            modifier = Modifier.controllerFocusable(
-                                id = "folder_tab_$index",
-                                zone = ControllerFocusZone.Content,
-                                groupKey = "folder_tabs",
-                                selectLabel = "Select",
-                                onSelect = { onTabSelected(index) },
-                            ),
                             text = {
                                 Text(
                                     text = if (tab.isAllTab) {
@@ -418,7 +504,7 @@ private fun TabbedGridContent(
             }
             val basePosterWidthDp = catalogPosterBaseWidthDp(posterCardStyle.widthDp)
             val gridCells = if (isDesktop) {
-                GridCells.FixedSize(basePosterWidthDp.dp)
+                GridCells.Adaptive(basePosterWidthDp.dp)
             } else {
                 GridCells.Fixed(columns)
             }
@@ -429,15 +515,15 @@ private fun TabbedGridContent(
                 selectedTab.items.isEmpty() -> EmptyMessage()
                 else -> {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        LazyVerticalGrid(
+                        NuvioLazyVerticalGrid(
                             columns = gridCells,
                             state = gridState,
-                            modifier = Modifier.fillMaxSize().then(scrollViewportModifier),
+                            modifier = Modifier.remoteNavigationGroup().then(Modifier.fillMaxSize()),
                             contentPadding = PaddingValues(
-                                start = pageHorizontalPadding,
-                                end = pageHorizontalPadding,
-                                top = if (isDesktop) 8.dp else 4.dp,
-                                bottom = nuvioSafeBottomPadding(18.dp),
+                                start = maxOf(pageHorizontalPadding + sidebarInset, if (isDesktop && posterCardStyle.glowEnabled) PosterGlowOutset else 0.dp),
+                                end = maxOf(pageHorizontalPadding, if (isDesktop && posterCardStyle.glowEnabled) PosterGlowOutset else 0.dp),
+                                top = if (isDesktop && posterCardStyle.glowEnabled) PosterGlowOutset else if (isDesktop) 8.dp else 4.dp,
+                                bottom = nuvioSafeBottomPadding(if (isDesktop && posterCardStyle.glowEnabled) PosterGlowOutset else 18.dp),
                             ),
                             horizontalArrangement = Arrangement.spacedBy(if (isDesktop) 12.dp else 10.dp),
                             verticalArrangement = Arrangement.spacedBy(if (isDesktop) 18.dp else 14.dp),
@@ -455,18 +541,21 @@ private fun TabbedGridContent(
                                     item = item,
                                     isWatched = isWatched,
                                     onClick = { onPosterClick(item) },
-                                    onLongClick = null,
+                                    onLongClick = onPosterLongClick?.let { { it(item) } },
+                                    modifier = if (isDesktop) Modifier.fillMaxWidth() else Modifier,
                                 ) { cardModifier ->
                                     NuvioPosterCard(
                                         title = item.name,
                                         imageUrl = item.poster,
                                         modifier = cardModifier,
                                         basePosterWidthDp = if (isDesktop) basePosterWidthDp else null,
+                                        fillMaxWidth = isDesktop,
                                         fallbackImageUrl = item.rawPosterUrl,
                                         shape = NuvioPosterShape.Poster,
                                         detailLine = item.releaseInfo,
                                         isWatched = isWatched,
                                         onClick = { onPosterClick(item) },
+                                        onLongClick = onPosterLongClick?.let { { it(item) } },
                                     )
                                 }
                             }
@@ -492,73 +581,144 @@ private fun TabbedGridContent(
 }
 
 @Composable
-private fun RowsContent(
+internal fun RowsContent(
     uiState: FolderDetailUiState,
     watchedKeys: Set<String>,
     modifier: Modifier = Modifier,
+    homeCatalogSettings: HomeCatalogSettingsUiState = HomeCatalogSettingsRepository.settings.collectAsState().value,
     onCatalogClick: (HomeCatalogSection) -> Unit,
     onPosterClick: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    slots: List<FolderRowSlot> = FolderDetailRepository.getRowSlots(uiState),
+    listState: LazyListState = rememberLazyListState(),
 ) {
-    val sections = FolderDetailRepository.getCatalogSectionsForRows()
-    val listState = rememberLazyListState()
-
-    // Lets the controller spatial engine scroll the rows list when focus reaches the bottom edge.
-    val scrollViewportModifier = RegisterControllerVerticalScroll(lazyListState = listState)
-
-    if (uiState.isLoading && sections.isEmpty()) {
+    if (uiState.isLoading && slots.isEmpty()) {
         LoadingIndicator()
         return
     }
 
-    if (sections.isEmpty() && !uiState.isLoading) {
+    if (slots.isEmpty() && !uiState.isLoading) {
         EmptyMessage()
         return
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val sectionPadding = if (isDesktop) homeSectionHorizontalPaddingForWidth(maxWidth.value) else null
+        val sidebarInset = LocalDesktopSidebarContentInset.current
+        val contentWidth = (maxWidth - sidebarInset).coerceAtLeast(0.dp)
+        val homeSectionPadding = if (isDesktop) homeSectionHorizontalPaddingForWidth(contentWidth.value) else null
         val posterCardStyle = rememberPosterCardStyleUiState()
+        val useGutterLayout = homeCatalogSettings.scrollPostersLayoutEnabled && isDesktop
+        val basePosterWidthDp = desktopCatalogShelfPosterBaseWidthDp(posterCardStyle.widthDp)
+        val effectivePosterWidth = if (posterCardStyle.catalogLandscapeModeEnabled) {
+            landscapePosterWidth(basePosterWidthDp)
+        } else {
+            basePosterWidthDp.dp
+        }
+        val effectivePosterSectionPadding = if (useGutterLayout) {
+            homePosterGutterPaddingForWidth(contentWidth.value, effectivePosterWidth, gutterSize = homeCatalogSettings.posterGutterSize)
+        } else {
+            homeSectionPadding
+        }
+        val sectionBottomPadding = if (useGutterLayout) 24.dp else 12.dp
         val catalogPreviewLimit = if (isDesktop) {
             homeCatalogPreviewLimitForWidth(
-                maxWidthDp = maxWidth.value,
-                sectionPadding = sectionPadding ?: 0.dp,
+                maxWidthDp = contentWidth.value,
+                sectionPadding = effectivePosterSectionPadding ?: 0.dp,
                 basePosterWidthDp = posterCardStyle.widthDp,
                 useLandscapeMode = posterCardStyle.catalogLandscapeModeEnabled,
             )
         } else {
             18
         }
-        LazyColumn(
+        // Use the same reserved geometry for loading, populated, empty and failed rows.
+        // In particular, loading a row above the viewport must not move the visible content.
+        val density = LocalDensity.current
+        val typography = MaterialTheme.typography
+        val labelsHeight = with(density) {
+            if (posterCardStyle.hideLabelsEnabled) NuvioTokens.Space.s6 else
+                typography.bodyMedium.lineHeight.toDp() + typography.labelSmall.lineHeight.toDp() + NuvioTokens.Space.s6 * 2
+        }
+        val imageHeight = effectivePosterWidth / if (posterCardStyle.catalogLandscapeModeEnabled) {
+            PosterLandscapeAspectRatio
+        } else NuvioPosterShape.Poster.aspectRatio
+        val headerHeight = with(density) { maxOf(48.dp, typography.titleLarge.lineHeight.toDp()) }
+        val slotHeight = headerHeight + MaterialTheme.nuvio.spacing.controlGap + NuvioTokens.Space.s2 +
+            imageHeight + labelsHeight + sectionBottomPadding
+        // The phone remote: the rows that show "View All" here, and its taps on them, opened like the buttons here.
+        val remoteViewAll = slots.mapNotNullTo(mutableSetOf()) { slot ->
+            slot.key.takeIf { slot.section?.let { it.items.isNotEmpty() && it.canOpenCatalog(catalogPreviewLimit) } == true }
+        }
+        LaunchedEffect(remoteViewAll) { com.nuvio.app.features.remote.RemoteViewAll.publishRows("folder", remoteViewAll) }
+        val openRemoteViewAll = androidx.compose.runtime.rememberUpdatedState { key: String ->
+            slots.firstOrNull { it.key == key }?.section?.let(onCatalogClick)
+        }
+        LaunchedEffect(com.nuvio.app.features.remote.RemoteViewAll.requests) {
+            com.nuvio.app.features.remote.RemoteViewAll.requests.collect { openRemoteViewAll.value(it) }
+        }
+        BindPosterNavigationPage(
+            "collection", uiState.collectionTitle to uiState.folder?.id,
+            slots.mapIndexed { index, slot ->
+                PosterNavigationRow(slot.key, slot.section?.items.orEmpty().map { it.stableKey() }, index)
+            },
+            listState, uiState.isLoading,
+        )
+        NuvioLazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().then(scrollViewportModifier),
+            modifier = Modifier
+                .remoteNavigationGroup()
+                .fillMaxSize()
+                .navigationGlassSource(zIndex = 1f),
             contentPadding = PaddingValues(
                 bottom = nuvioSafeBottomPadding(18.dp),
             ),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = if (useGutterLayout) Arrangement.Top else Arrangement.spacedBy(16.dp),
         ) {
             items(
-                items = sections.withDuplicateSafeLazyKeys { it.key },
-                key = { it.lazyKey },
-            ) { keyedSection ->
-                val section = keyedSection.value
-                HomeCatalogRowSection(
-                    section = section,
-                    entries = if (isDesktop) {
-                        // Match desktop home rows: the lazy row exposes every fetched item so the
-                        // catalog remains horizontally scrollable without opening the expanded view.
-                        section.items
-                    } else {
-                        section.items.take(catalogPreviewLimit)
-                    },
-                    sectionPadding = sectionPadding,
-                    onViewAllClick = if (section.canOpenCatalog(catalogPreviewLimit)) {
-                        { onCatalogClick(section) }
-                    } else {
-                        null
-                    },
-                    watchedKeys = watchedKeys,
-                    onPosterClick = { onPosterClick(it) },
-                )
+                items = slots,
+                key = { it.key },
+            ) { slot ->
+                val section = slot.section
+                Box(Modifier.fillMaxWidth().padding(start = sidebarInset).height(slotHeight)) {
+                    if (section == null || section.items.isEmpty()) {
+                        if (slot.tab.isLoading) {
+                            HomeSkeletonRow(
+                                horizontalPadding = effectivePosterSectionPadding,
+                                useGutterLayout = useGutterLayout,
+                            )
+                        } else {
+                            Column(Modifier.fillMaxSize().padding(horizontal = effectivePosterSectionPadding ?: 16.dp)) {
+                                Box(Modifier.fillMaxWidth().height(headerHeight), contentAlignment = Alignment.CenterStart) {
+                                    Text(slot.tab.label, style = MaterialTheme.typography.titleLarge, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
+                                }
+                                Box(Modifier.fillMaxWidth().weight(1f)) {
+                                    if (slot.tab.error != null) ErrorMessage(slot.tab.error) else EmptyMessage()
+                                }
+                            }
+                        }
+                    } else RemotePosterRow("collection", slot.key) {
+                        HomeCatalogRowSection(
+                            section = section,
+                            entries = if (isDesktop) {
+                                // Keep every fetched poster available for horizontal scrolling.
+                                section.items
+                            } else {
+                                section.items.take(catalogPreviewLimit)
+                            },
+                            modifier = Modifier.padding(bottom = sectionBottomPadding),
+                            sectionPadding = effectivePosterSectionPadding,
+                            useGutterLayout = useGutterLayout,
+                            onViewAllClick = if (section.canOpenCatalog(catalogPreviewLimit)) {
+                                { onCatalogClick(section) }
+                            } else {
+                                null
+                            },
+                            watchedKeys = watchedKeys,
+                            onPosterClick = { onPosterClick(it) },
+                            onPosterLongClick = onPosterLongClick,
+                        )
+                    }
+                }
             }
         }
         NuvioDesktopVerticalScrollbar(

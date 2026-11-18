@@ -40,6 +40,20 @@ data class MetaDetails(
     val links: List<MetaLink> = emptyList(),
     val seasonPosters: Map<Int, String> = emptyMap(),
     val videos: List<MetaVideo> = emptyList(),
+    val classificationHints: MetaClassificationHints? = null,
+    val provenance: MetadataProvenance = MetadataProvenance(),
+    val imdbScore: Double? = null,
+    val tmdbScore: Double? = null,
+    /** Summary for lightweight cards that do not load the episode catalogue. */
+    val seasonCount: Int? = null,
+)
+
+/** Provider evidence kept independently of localized display fields. */
+data class MetaClassificationHints(
+    val isAnimation: Boolean? = null,
+    val isAnime: Boolean = false,
+    val country: String? = null,
+    val language: String? = null,
 )
 
 enum class MoreLikeThisSource {
@@ -52,6 +66,7 @@ data class MetaExternalRating(
     val source: String,
     val value: Double,
     val isCertified: Boolean = false,
+    val url: String? = null,
 )
 
 data class MetaTrailer(
@@ -100,10 +115,14 @@ data class MetaVideo(
     val runtime: Int? = null,
     val rating: Double? = null,
     val streams: List<StreamItem> = emptyList(),
+    val isFiller: Boolean = false,
+    val isMixed: Boolean = false,
 )
 
 data class MetaDetailsUiState(
+    val requestKey: String? = null,
     val isLoading: Boolean = false,
     val meta: MetaDetails? = null,
     val errorMessage: String? = null,
+    val isFromCache: Boolean = false,
 )

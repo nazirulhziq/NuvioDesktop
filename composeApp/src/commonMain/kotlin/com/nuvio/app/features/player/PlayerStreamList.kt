@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
@@ -120,7 +120,7 @@ internal fun PlayerStreamList(
             }
             val formatStreamSize = rememberStreamSizeLabelFormat()
             CompositionLocalProvider(LocalStreamSizeLabelFormat provides formatStreamSize) {
-            LazyColumn(
+            NuvioLazyColumn(
                 state = listState,
                 modifier = modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),

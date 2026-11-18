@@ -46,11 +46,20 @@ internal fun PlayerScreen(
     contentLanguage: String? = null,
     subtitleExtras: SubtitleRequestExtras? = null,
     launchId: Long? = null,
+    streamLaunchId: Long? = null,
+    onMinimize: (() -> Unit)? = null,
+    onExpand: (() -> Unit)? = null,
+    onClose: (() -> Unit)? = null,
+    mediaContentType: MediaContentType = MediaContentType.UNKNOWN,
     sourceFilename: String? = null,
     stream: com.nuvio.app.features.streams.StreamItem? = null,
+    classificationHint: MediaClassificationHint? = null,
+    playbackOrigin: String = "player",
     sourceFromLinkCache: Boolean = false,
     sourceAutoSelected: Boolean = false,
 ) {
+    com.nuvio.app.core.ui.RemoteNavigationDisabled {
+    androidx.compose.runtime.key(profileId, parentMetaType, parentMetaId, launchId) {
     PlayerScreenContent(
         PlayerScreenArgs(
             profileId = profileId,
@@ -92,11 +101,20 @@ internal fun PlayerScreen(
             contentLanguage = contentLanguage,
             subtitleExtras = subtitleExtras,
             launchId = launchId,
+            streamLaunchId = streamLaunchId,
+            onMinimize = onMinimize,
+            onExpand = onExpand,
+            onClose = onClose,
+            mediaContentType = mediaContentType,
             sourceFilename = sourceFilename,
             onOpenPartyMedia = onOpenPartyMedia,
             stream = stream,
+            classificationHint = classificationHint,
+            playbackOrigin = playbackOrigin,
             sourceFromLinkCache = sourceFromLinkCache,
             sourceAutoSelected = sourceAutoSelected,
         )
     )
+    }
+    }
 }

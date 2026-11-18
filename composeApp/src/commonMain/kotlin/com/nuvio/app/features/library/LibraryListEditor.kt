@@ -1,5 +1,7 @@
 package com.nuvio.app.features.library
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,7 +14,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
@@ -54,14 +56,14 @@ internal fun LibraryListEditor(
         focusedContainerColor = tokens.colors.surfaceCard,
         unfocusedContainerColor = tokens.colors.surfaceCard,
     )
-    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    Column(modifier.nuvioVerticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         OutlinedTextField(
             value = state.name,
             onValueChange = onNameChange,
             label = { Text(stringResource(Res.string.library_list_name)) },
             singleLine = true,
             enabled = !state.isPending,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = (Modifier.fillMaxWidth()).remoteNavigationTarget(textField = true),
             shape = tokens.shapes.compactCard,
             colors = inputColors,
             keyboardOptions = KeyboardOptions(imeAction = if (capabilities.supportsDescription) ImeAction.Next else ImeAction.Done),
@@ -73,7 +75,7 @@ internal fun LibraryListEditor(
                 onValueChange = onDescriptionChange,
                 label = { Text(stringResource(Res.string.library_list_description)) },
                 enabled = !state.isPending,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = (Modifier.fillMaxWidth()).remoteNavigationTarget(textField = true),
                 shape = tokens.shapes.compactCard,
                 colors = inputColors,
                 minLines = 2,
@@ -99,7 +101,7 @@ internal fun LibraryListEditor(
                                 border = BorderStroke(1.dp, if (selected) tokens.colors.accent.copy(alpha = 0.5f) else tokens.colors.borderSubtle),
                             ) {
                                 Row(
-                                    modifier = Modifier.selectable(selected, enabled = !state.isPending, role = Role.RadioButton) {
+                                    modifier = Modifier.remoteNavigationTarget().selectable(selected, enabled = !state.isPending, role = Role.RadioButton) {
                                         onPrivacyChange(privacy)
                                     }.padding(horizontal = 14.dp, vertical = 14.dp),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),

@@ -6,8 +6,10 @@ import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
+import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -25,7 +27,7 @@ internal fun PlayerScreenRuntime.playReplacementSource(stream: StreamItem, url: 
     if (playerSettingsUiState.streamReuseLastLinkEnabled) {
         saveDirectStreamForReuse(stream, url, videoId, activeSeasonNumber, activeEpisodeNumber)
     }
-    if (activeSourceUrl == autoSelectedSourceUrl) autoSelectedSourceUrl = url
+    if (activeSourceUrl == sourceFallbackUrl) sourceFallbackUrl = url
     if (initialLoadCompleted) {
         activeInitialPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
         activeInitialProgressFraction = null
@@ -39,7 +41,8 @@ internal fun PlayerScreenRuntime.playReplacementSource(stream: StreamItem, url: 
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
     activeStreamType = stream.streamType
     activeSourceIdentityKey = stream.playerSourceIdentityKey() ?: activeSourceIdentityKey
-    activeSourceFilename = stream.behaviorHints.filename
+    activeSourceFilename = stream.classificationFilename
+    activeClassificationHint = stream.classificationHint
     activeStreamTitle = stream.streamLabel
     activeStreamSubtitle = stream.streamSubtitle
     activeStreamFilename = streamPlaybackFilename(stream, url)
@@ -48,10 +51,22 @@ internal fun PlayerScreenRuntime.playReplacementSource(stream: StreamItem, url: 
     activeStream = stream
     currentStreamBingeGroup = stream.behaviorHints.bingeGroup
     activeSubtitleExtras = SubtitleRequestExtras.from(stream.behaviorHints, url)
-    currentStreamFilename = stream.behaviorHints.filename
+    currentStreamFilename = stream.classificationFilename
     currentStreamInfoHash = stream.infoHash
     showSourcesPanel = false
     controlsVisible = true
+}
+
+internal fun PlayerScreenRuntime.resetSourceFallback(
+    url: String? = null,
+    tried: PlayerSourceFallbackTried? = null,
+) {
+    sourceFallbackJob?.cancel()
+    sourceFallbackJob = null
+    sourceFallbackAttempts = tried?.attempts ?: 0
+    sourceFallbackTriedKeys.clear()
+    if (tried != null) sourceFallbackTriedKeys.addAll(tried.keys)
+    sourceFallbackUrl = url
 }
 
 /** Shows [message] as the playback error unless the next matching source is tried instead. */
@@ -62,9 +77,8 @@ internal fun PlayerScreenRuntime.showErrorUnlessSourceFallback(message: String?)
 }
 
 /**
- * When the auto-selected source fails before playback starts, quietly plays the next source that
- * auto source selection would pick, up to the configured number of further sources. It never
- * applies to a source the user picked, and it excludes the engine switch on error.
+ * When an eligible source fails before playback starts, quietly tries the next matching sources
+ * up to the configured limit. Desktop source changes inside the player also start a new attempt.
  *
  * Returns `true` when a fallback was started and the error must not be shown yet.
  */
@@ -72,10 +86,10 @@ internal fun PlayerScreenRuntime.tryFallbackToNextSourceAfterError(message: Stri
     if (sourceFallbackJob?.isActive == true) return true
     val settings = playerSettingsUiState
     if (!settings.streamAutoPlayFallbackActive) return false
-    if (!isIos && settings.autoSwitchPlaybackEngineOnError) return false
+    if (!isDesktop && !isIos && settings.autoSwitchPlaybackEngineOnError) return false
     if (initialLoadCompleted) return false
     val failedUrl = activeSourceUrl
-    if (failedUrl.isBlank() || failedUrl != autoSelectedSourceUrl) return false
+    if (failedUrl.isBlank() || failedUrl != sourceFallbackUrl) return false
     if (sourceFallbackAttempts >= settings.streamAutoPlayFallbackMaxSources) return false
     val videoId = activeVideoId ?: return false
 
@@ -161,9 +175,14 @@ internal fun nextSourceFallbackCandidate(
             (failedInfoHash != null && stream.addonId == failedAddonId &&
                 stream.p2pInfoHash.equals(failedInfoHash, ignoreCase = true))
     }
+    val retryMode = if (settings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL) {
+        StreamAutoPlayMode.FIRST_STREAM
+    } else {
+        settings.streamAutoPlayMode
+    }
     return StreamAutoPlaySelector.evaluateAutoPlayStream(
         streams = untried,
-        mode = settings.streamAutoPlayMode,
+        mode = retryMode,
         regexPattern = settings.streamAutoPlayRegex,
         source = settings.streamAutoPlaySource,
         installedAddonNames = installedAddonNames,

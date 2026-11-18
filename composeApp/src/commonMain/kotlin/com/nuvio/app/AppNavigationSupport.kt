@@ -10,6 +10,7 @@ import com.nuvio.app.features.collection.disposeCollectionEditorPage
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.player.ExternalPlayerPlaybackRequest
+import com.nuvio.app.features.player.InAppPlayerManager
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
 import com.nuvio.app.features.player.externalPlaybackSession
@@ -23,10 +24,14 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import com.nuvio.app.core.build.AppFeaturePolicy
 
+internal fun shuffleNavigationSelected(routes: List<NavKey>): Boolean =
+    routes.lastOrNull { it is TabsRoute || it is RandomPickerRoute } is RandomPickerRoute
+
 internal val navigationSavedStateConfiguration = SavedStateConfiguration {
     serializersModule = SerializersModule {
         polymorphic(NavKey::class) {
             subclass(TabsRoute::class, TabsRoute.serializer())
+            subclass(RandomPickerRoute::class, RandomPickerRoute.serializer())
             subclass(DetailRoute::class, DetailRoute.serializer())
             subclass(PersonDetailRoute::class, PersonDetailRoute.serializer())
             subclass(EntityBrowseRoute::class, EntityBrowseRoute.serializer())
@@ -43,12 +48,15 @@ internal val navigationSavedStateConfiguration = SavedStateConfiguration {
             subclass(SupportersContributorsSettingsRoute::class, SupportersContributorsSettingsRoute.serializer())
             subclass(LicensesAttributionsSettingsRoute::class, LicensesAttributionsSettingsRoute.serializer())
             subclass(CollectionsRoute::class, CollectionsRoute.serializer())
+            subclass(CollectionFoldersRoute::class, CollectionFoldersRoute.serializer())
             subclass(CollectionEditorRoute::class, CollectionEditorRoute.serializer())
             subclass(CollectionEditorPageRoute::class, CollectionEditorPageRoute.serializer())
             subclass(FolderDetailRoute::class, FolderDetailRoute.serializer())
             subclass(StreamRoute::class, StreamRoute.serializer())
             subclass(CatalogRoute::class, CatalogRoute.serializer())
+            subclass(ContinueWatchingRoute::class, ContinueWatchingRoute.serializer())
             subclass(PlayerRoute::class, PlayerRoute.serializer())
+            subclass(OnboardingRoute::class, OnboardingRoute.serializer())
         }
     }
 }
@@ -61,12 +69,14 @@ internal fun disposeRouteResources(route: AppRoute) {
         }
 
         is PlayerRoute -> {
-            ResumePromptRepository.markPlayerExitedNormally()
-            PlayerLaunchStore.remove(route.launchId)
+            if (!InAppPlayerManager.isMinimized(route.launchId)) {
+                ResumePromptRepository.markPlayerExitedNormally()
+                PlayerLaunchStore.remove(route.launchId)
+            }
         }
 
         is CatalogRoute -> {
-            CatalogRepository.clear()
+            CatalogRepository.clear(route.launchId)
             CatalogLaunchStore.remove(route.launchId)
         }
 
@@ -76,7 +86,7 @@ internal fun disposeRouteResources(route: AppRoute) {
                 .getOrNull()
                 ?.let(::disposeCollectionEditorPage)
         }
-        is FolderDetailRoute -> FolderDetailRepository.clear()
+        is FolderDetailRoute -> FolderDetailRepository.clear(route.collectionId, route.folderId)
         else -> Unit
     }
 }

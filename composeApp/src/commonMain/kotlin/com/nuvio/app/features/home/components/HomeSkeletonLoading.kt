@@ -17,8 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -37,11 +37,12 @@ fun HomeSkeletonHero(
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
     sectionPadding: Dp? = null,
+    containerMode: Boolean = false,
 ) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
+            .then(if (containerMode) Modifier else Modifier.heroBottomFeather(bottomFadeRatio = 0.42f)),
     ) {
         val layout = homeHeroLayout(
             maxWidthDp = maxWidth.value,
@@ -64,10 +65,10 @@ fun HomeSkeletonHero(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.02f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.12f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.34f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.78f),
+                                Color.Black.copy(alpha = 0.02f),
+                                Color.Black.copy(alpha = 0.10f),
+                                Color.Black.copy(alpha = 0.28f),
+                                Color.Black.copy(alpha = 0.65f),
                             ),
                         ),
                     ),
@@ -81,8 +82,9 @@ fun HomeSkeletonHero(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                                MaterialTheme.colorScheme.background,
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.35f),
+                                Color.Black.copy(alpha = 0.75f),
                             ),
                         ),
                     ),
@@ -146,6 +148,7 @@ fun HomeSkeletonHero(
 fun HomeSkeletonRow(
     modifier: Modifier = Modifier,
     horizontalPadding: Dp? = null,
+    useGutterLayout: Boolean = false,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
     val basePosterWidthDp = if (isDesktop) {
@@ -183,6 +186,7 @@ fun HomeSkeletonRow(
                 height = skeletonHeight,
                 cornerRadius = posterCardStyle.cornerRadiusDp.dp,
                 horizontalPadding = sectionPadding,
+                useGutterLayout = useGutterLayout,
                 showLabels = !posterCardStyle.hideLabelsEnabled,
                 showDetail = !posterCardStyle.catalogLandscapeModeEnabled,
             )

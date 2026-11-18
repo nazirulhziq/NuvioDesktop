@@ -1,5 +1,9 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.AppBasicAlertDialog
+
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -19,13 +23,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material3.BasicAlertDialog
+import com.nuvio.app.core.ui.PlatformBackHandler
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import com.nuvio.app.core.ui.SettingsAwareSurface
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -51,7 +56,6 @@ import com.nuvio.app.core.ui.NuvioModalBottomSheet
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.core.ui.platformTouchScroll
 import com.nuvio.app.core.ui.SurfaceEdge
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -152,11 +156,13 @@ private fun AppIconPickerDialog(
     onDismiss: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    BasicAlertDialog(onDismissRequest = onDismiss, modifier = Modifier.platformTouchScroll()) {
-        Surface(
+    PlatformBackHandler(enabled = true, onBack = onDismiss)
+    AppBasicAlertDialog(onDismissRequest = onDismiss) {
+        SettingsAwareSurface(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = tokens.components.dialogMaxWidth),
+            panel = true,
             shape = tokens.shapes.dialog,
             color = tokens.colors.surfaceDialog,
             border = BorderStroke(tokens.borders.thin, SurfaceEdge),
@@ -183,7 +189,7 @@ private fun AppIconPickerContent(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(max = 720.dp)
-            .verticalScroll(rememberScrollState())
+            .nuvioVerticalScroll(rememberScrollState())
             .padding(start = horizontalPadding, top = 10.dp, end = horizontalPadding, bottom = 20.dp),
     ) {
         Text(
@@ -248,7 +254,7 @@ private fun AppIconChoice(
     val label = stringResource(icon.labelResource)
     Surface(
         onClick = onClick,
-        modifier = modifier.semantics { this.selected = selected },
+        modifier = (modifier.semantics { this.selected = selected }).remoteNavigationTarget(shape = tokens.shapes.compactCard),
         enabled = enabled,
         shape = tokens.shapes.compactCard,
         color = if (selected) tokens.colors.overlaySelected else tokens.colors.surfaceCard,

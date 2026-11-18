@@ -1,4 +1,5 @@
 const partyButton = document.getElementById("partyButton");
+const codeinePartyButton = document.getElementById("codeinePartyButton");
 const partyPill = document.getElementById("partyPill");
 const partyPillStack = document.getElementById("partyPillStack");
 const partyPillText = document.getElementById("partyPillText");
@@ -197,6 +198,13 @@ const renderPartyChrome = () => {
   partyButton.setAttribute("aria-label", title);
   partyButton.setAttribute("title", title);
 
+  if (codeinePartyButton) {
+    codeinePartyButton.hidden = !party.available;
+    codeinePartyButton.classList.toggle("party-active", Boolean(party.active));
+    codeinePartyButton.classList.toggle("active", Boolean(party.active || activeModal === "party"));
+    codeinePartyButton.setAttribute("aria-label", title);
+  }
+
   const members = partyMembers();
   const message = String(party.pillMessage || "").trim();
   const visible = Boolean(
@@ -207,7 +215,9 @@ const renderPartyChrome = () => {
     !state.isInPip,
   );
   root.classList.toggle("party-pill-visible", visible);
+  root.classList.toggle("party-pill-pinned", Boolean(party.pillPinned));
   partyPill.classList.toggle("visible", visible);
+  partyPill.classList.toggle("pinned", Boolean(party.pillPinned));
   partyPill.setAttribute("aria-hidden", visible ? "false" : "true");
   partyPill.tabIndex = visible ? 0 : -1;
   partyPill.setAttribute("aria-label", message || title);
@@ -820,6 +830,14 @@ partyButton.addEventListener("click", event => {
   noteChromeActivity(true);
   openPlayerModal("party");
 });
+
+if (codeinePartyButton) {
+  codeinePartyButton.addEventListener("click", event => {
+    event.stopPropagation();
+    noteChromeActivity(true);
+    openPlayerModal("party");
+  });
+}
 
 partyPill.addEventListener("click", event => {
   event.stopPropagation();

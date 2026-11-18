@@ -4,6 +4,7 @@ import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamProxyHeaders
 import com.nuvio.app.features.streams.normalizeStreamType
+import com.nuvio.app.features.streams.parseStreamSize
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -22,13 +23,13 @@ import org.jetbrains.compose.resources.getString
 internal object MetaDetailsParser {
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun parse(payload: String): MetaDetails {
+    fun parse(payload: String, includeDetails: Boolean = true): MetaDetails {
         val root = json.parseToJsonElement(payload).asJsonObjectOrNull()
             ?: error("Expected top-level JSON object in response")
         val meta = root.extractMetaObject()
             ?: error("Response did not contain a valid meta object")
-        val links = meta.links()
-        val videos = meta.videos()
+        val links = if (includeDetails) meta.links() else emptyList()
+        val videos = if (includeDetails) meta.videos() else emptyList()
 
         return MetaDetails(
             id = meta.requiredString("id"),
@@ -43,22 +44,27 @@ internal object MetaDetailsParser {
             lastAirDate = meta.string("lastAirDate"),
             status = meta.string("status"),
             imdbRating = meta.string("imdbRating"),
-            ageRating = meta.ageRating(),
+            imdbScore = meta.string("imdbRating")?.toDoubleOrNull()?.takeIf { it in 0.0..10.0 },
+            tmdbScore = meta.string("tmdbRating")?.toDoubleOrNull()?.takeIf { it in 0.0..10.0 },
+            ageRating = readAgeRating(meta),
             runtime = meta.string("runtime"),
-            genres = meta.stringList("genres"),
-            director = meta.directors(links),
-            writer = meta.writers(links),
-            cast = meta.cast(links),
-            country = meta.string("country"),
+            genres = meta.stringListOrCsv("genres"),
+            director = if (includeDetails) meta.directors(links) else emptyList(),
+            writer = if (includeDetails) meta.writers(links) else emptyList(),
+            cast = if (includeDetails) meta.cast(links) else emptyList(),
+            country = meta.stringListOrCsv("country").joinToString(", ").takeIf(String::isNotBlank),
             awards = meta.string("awards"),
-            language = meta.string("language"),
+            language = meta.stringListOrCsv("language").joinToString(", ").takeIf(String::isNotBlank),
             website = meta.string("website"),
             hasScheduledVideos = meta.behaviorHints().boolean("hasScheduledVideos") == true,
             defaultVideoId = meta.behaviorHints().string("defaultVideoId"),
-            trailers = meta.trailers(),
+            trailers = if (includeDetails) meta.trailers() else emptyList(),
             links = links,
-            seasonPosters = meta.seasonPosters(videos),
+            seasonPosters = if (includeDetails) meta.seasonPosters(videos) else emptyMap(),
             videos = videos,
+            seasonCount = meta.array("videos").mapNotNull {
+                ((it as? JsonObject)?.get("season") as? JsonPrimitive)?.intOrNull?.takeIf { season -> season > 0 }
+            }.toSet().size.takeIf { it > 0 },
         )
     }
 
@@ -77,7 +83,7 @@ internal object MetaDetailsParser {
     private fun JsonObject.stringListOrCsv(name: String): List<String> {
         val value = this[name] ?: return emptyList()
         return when (value) {
-            is JsonArray -> value.mapNotNull { it.jsonPrimitive.contentOrNull?.takeIf(String::isNotBlank) }
+            is JsonArray -> value.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf(String::isNotBlank) }
             is JsonPrimitive -> value.contentOrNull
                 ?.split(',')
                 ?.map(String::trim)
@@ -119,14 +125,14 @@ internal object MetaDetailsParser {
     private fun JsonObject.looksLikeMetaObject(): Boolean =
         string("id") != null && string("type") != null && string("name") != null
 
-    private fun JsonObject.ageRating(): String? {
-        val appExtras = this["app_extras"] as? JsonObject
+    internal fun readAgeRating(meta: JsonObject): String? {
+        val appExtras = meta["app_extras"] as? JsonObject
         return listOf(
-            string("ageRating"),
-            appExtras?.string("certificationLocal"),
-            appExtras?.string("certification"),
+            meta["ageRating"],
+            appExtras?.get("certificationLocal"),
+            appExtras?.get("certification"),
         ).firstNotNullOfOrNull { value ->
-            value?.trim()?.takeIf(String::isNotBlank)
+            (value as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf(String::isNotBlank)
         }
     }
 
@@ -247,10 +253,12 @@ internal object MetaDetailsParser {
                 thumbnail = video.string("thumbnail"),
                 seasonPoster = video.string("seasonPoster") ?: video.string("season_poster_path"),
                 season = video.int("season"),
-                episode = video.int("episode"),
+                episode = video.int("episode") ?: video.int("number"),
                 overview = video.string("overview") ?: video.string("description"),
                 runtime = parseRuntimeMinutes((video["runtime"] as? JsonPrimitive)?.contentOrNull),
-                rating = video.string("rating")?.trim()?.toDoubleOrNull()?.takeIf { it > 0.0 },
+                rating = sequenceOf("rating", "imdbRating", "imdb_rating", "vote_average")
+                    .mapNotNull { key -> video.string(key)?.trim()?.toDoubleOrNull() }
+                    .firstOrNull { it > 0.0 },
                 streams = video.embeddedStreams(),
             )
         }
@@ -338,9 +346,23 @@ internal object MetaDetailsParser {
             val addonName = streamData?.string("addon")
                 ?: obj.string("name")
                 ?: runBlocking { getString(Res.string.source_embedded) }
+            val parsedTitle = obj.string("title")
+            val parsedDescription = obj.string("description") ?: parsedTitle
+            val parsedName = obj.string("name")
+            val parsedVideoSize = hintsObj?.fileSizeBytes("videoSize")
+                ?: hintsObj?.fileSizeBytes("fileSize")
+                ?: hintsObj?.fileSizeBytes("size")
+                ?: obj.fileSizeBytes("size")
+                ?: obj.fileSizeBytes("fileSize")
+                ?: obj.fileSizeBytes("videoSize")
+                ?: parseStreamSize(parsedDescription)
+                ?: parseStreamSize(parsedTitle)
+                ?: parseStreamSize(parsedName)
+
             StreamItem(
-                name = obj.string("name"),
-                description = obj.string("description") ?: obj.string("title"),
+                name = parsedName,
+                title = parsedTitle,
+                description = parsedDescription,
                 url = url,
                 infoHash = infoHash,
                 fileIdx = obj.int("fileIdx"),
@@ -351,7 +373,7 @@ internal object MetaDetailsParser {
                 behaviorHints = StreamBehaviorHints(
                     bingeGroup = hintsObj?.string("bingeGroup"),
                     notWebReady = (hintsObj?.boolean("notWebReady") ?: false) || proxyHeaders != null,
-                    videoSize = hintsObj?.long("videoSize"),
+                    videoSize = parsedVideoSize,
                     filename = hintsObj?.string("filename"),
                     proxyHeaders = proxyHeaders,
                 ),
@@ -383,6 +405,13 @@ internal object MetaDetailsParser {
 
     private fun JsonObject.long(name: String): Long? =
         this[name]?.jsonPrimitive?.longOrNull
+
+    private fun JsonObject.fileSizeBytes(name: String): Long? =
+        this[name]?.jsonPrimitive?.let { primitive ->
+            primitive.longOrNull
+                ?: primitive.contentOrNull?.toLongOrNull()
+                ?: parseStreamSize(primitive.contentOrNull)
+        }
 }
 
 private fun JsonElement?.asJsonObjectOrNull(): JsonObject? = this as? JsonObject

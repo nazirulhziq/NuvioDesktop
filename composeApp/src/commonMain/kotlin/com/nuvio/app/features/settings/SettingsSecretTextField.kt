@@ -1,5 +1,9 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.isRemoteKeyboardNavigationActive
+import androidx.compose.runtime.remember
+
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -48,11 +52,13 @@ internal fun SettingsSecretTextField(
     imeAction: ImeAction = ImeAction.Default,
 ) {
     var visible by rememberSaveable { mutableStateOf(false) }
+    var isEditing by remember { mutableStateOf(false) }
 
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        readOnly = isRemoteKeyboardNavigationActive && !isEditing,
+        modifier = (modifier).remoteNavigationTarget(textField = true, onEditingChange = { isEditing = it }),
         enabled = enabled,
         isError = isError,
         singleLine = true,
@@ -66,7 +72,7 @@ internal fun SettingsSecretTextField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction),
         keyboardActions = keyboardActions,
         trailingIcon = {
-            IconButton(onClick = { visible = !visible }) {
+            IconButton(onClick = { visible = !visible }, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                 Icon(
                     imageVector = if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
                     contentDescription = stringResource(

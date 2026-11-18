@@ -2,6 +2,17 @@ package com.nuvio.app.features.player.desktop
 
 import androidx.compose.ui.graphics.Color
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.player.AnimeShaderProvider
+import com.nuvio.app.features.player.EyeFilterShaderProvider
+import com.nuvio.app.features.remote.RemotePlayerLink
+import com.nuvio.app.features.player.AnimeUpscalerMode
+import com.nuvio.app.features.player.AnimeUpscalerOption
+import com.nuvio.app.features.player.MediaContentType
+import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.SvpMotionOption
+import com.nuvio.app.features.player.PlaybackBufferPreset
+import com.nuvio.app.features.player.SvpProfile
+import com.nuvio.app.features.player.SvpScriptProvider
 import com.nuvio.app.features.player.PlayerControlAddonSubtitleItem
 import com.nuvio.app.features.player.PlayerControlEpisodeItem
 import com.nuvio.app.features.player.PlayerControlFilterItem
@@ -12,38 +23,79 @@ import com.nuvio.app.features.player.PlayerControlSubtitleCueItem
 import com.nuvio.app.features.player.PlayerControlSubtitleLanguageItem
 import com.nuvio.app.features.player.PlayerControlSubtitleOptionItem
 import com.nuvio.app.features.player.AudioTrack
+import com.nuvio.app.features.player.ImportedSubtitleFile
+import com.nuvio.app.features.player.SubtitleImportBridge
+import com.nuvio.app.features.player.findPreferredAudioTrackIndex
 import com.nuvio.app.features.player.ParentalWarning
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerChapter
-import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.player.PlayerEngineController
 import com.nuvio.app.features.player.PlayerMediaInfo
 import com.nuvio.app.features.player.mpvMediaInfo
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
+import com.nuvio.app.features.player.PlayerPlaybackStats
 import com.nuvio.app.features.player.PlayerResizeMode
 import com.nuvio.app.features.player.SUBTITLE_DELAY_MAX_MS
-import com.nuvio.app.features.player.findPreferredAudioTrackIndex
 import com.nuvio.app.features.player.SUBTITLE_DELAY_MIN_MS
 import com.nuvio.app.features.player.SubtitleColorSwatches
 import com.nuvio.app.features.player.SubtitleFontResolver
 import com.nuvio.app.features.player.SubtitleOutlineColorSwatches
+import com.nuvio.app.features.player.SubtitleOutlineEffect
+import com.nuvio.app.features.player.backgroundBoxColor
+import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.core.storage.ProfileScopedKey
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import com.nuvio.app.features.streams.StreamSubtitle
+import com.nuvio.app.features.addons.encodeUnsafeHttpUrlCharacters
 import com.nuvio.app.features.player.SubtitleStyleState
 import com.nuvio.app.features.player.SubtitleTrack
 import com.nuvio.app.features.player.inferForcedSubtitleTrack
 import com.nuvio.app.features.player.toStorageHexString
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.settings_playback_mpv_config_fallback
+import nuvio.composeapp.generated.resources.settings_playback_mpv_night_filter_error
+import org.jetbrains.compose.resources.getString
 import java.awt.Component
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.swing.SwingUtilities
+import javax.swing.Timer
 import kotlin.concurrent.Volatile
 
 internal typealias NativePlayerCreate = (
     Long,
+    String,
     String,
     Array<String>,
     Boolean,
@@ -51,24 +103,29 @@ internal typealias NativePlayerCreate = (
     String,
     Int,
     Boolean,
-    Boolean,
     NativePlayerEventSink,
 ) -> Long
 
 internal class NativePlayerController(
     private val host: NativePlayerHost,
-    private val nativeCreate: NativePlayerCreate = { hostViewPtr, source, headers, playWhenReady, positionMs, controlsUrl, decoder, rtx, rtxHdr, sink ->
-        NativePlayerBridge.ensureLoaded()
-        NativePlayerBridge.create(hostViewPtr, source, headers, playWhenReady, positionMs, controlsUrl, decoder, rtx, rtxHdr, sink)
-    },
+    private val nativeCreate: NativePlayerCreate? = null,
     private val nativeDispose: (Long) -> Unit = NativePlayerBridge::dispose,
     private val nativeSeekTo: (Long, Long) -> Unit = NativePlayerBridge::seekTo,
+    private val nativeSeekBy: (Long, Long) -> Unit = NativePlayerBridge::seekBy,
+    private val nativePositionMs: (Long) -> Long = NativePlayerBridge::positionMs,
+    private val nativeDurationMs: (Long) -> Long = { handle ->
+        if (handle <= 0x10000L) 0L else runCatching { NativePlayerBridge.durationMs(handle) }.getOrDefault(0L)
+    },
     private val isHostDisplayable: () -> Boolean = { host.isDisplayable },
     private val resolveHostView: () -> Long = { AwtNativeViewResolver.resolveNativeViewPointer(host) },
     private val createWaitTimeoutMs: Long = 5_000L,
     private val releaseTimeoutMs: Long = 10_000L,
     private val onCreateWaitCompleted: () -> Unit = {},
+    private val nativeSetPlaybackBufferPreset: (Long, PlaybackBufferPreset) -> Unit = NativePlayerBridge::setPlaybackBufferPreset,
 ) : PlayerEngineController {
+    private val hlsDeferredSubtitles = MutableStateFlow<List<StreamSubtitle>>(emptyList())
+    override val engineStreamSubtitles: StateFlow<List<StreamSubtitle>> = hlsDeferredSubtitles.asStateFlow()
+
     private companion object {
         val json = Json { ignoreUnknownKeys = true }
         val log = Logger.withTag("NativePlayerControls")
@@ -81,6 +138,15 @@ internal class NativePlayerController(
 
         @Volatile
         var rememberedResizeMode: PlayerResizeMode = PlayerResizeMode.Fit
+
+        val subtitleDownloadClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .build()
+        }
     }
 
     private data class ReleaseCallback(
@@ -88,13 +154,63 @@ internal class NativePlayerController(
         val onFailed: (String) -> Unit,
     )
 
+    private val _releasingForNavigation = MutableStateFlow(false)
+
+    /** True from a Back request until its release fails; the host parks the video window meanwhile. */
+    val releasingForNavigation: StateFlow<Boolean> = _releasingForNavigation.asStateFlow()
+
     private val lifecycleLock = Any()
+    private val playerCommandDispatcher = Dispatchers.IO.limitedParallelism(1)
+    @Volatile
+    private var playerScope = CoroutineScope(SupervisorJob() + playerCommandDispatcher)
+    @Volatile
+    private var downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var inFlightSubtitleDownloadJob: Job? = null
+    @Volatile
+    private var cachedSubtitleTracks: List<NativeMpvTrack> = emptyList()
+    @Volatile
+    private var cachedAudioTracks: List<NativeMpvTrack> = emptyList()
+    @Volatile
+    private var pendingSubtitleUri: String? = null
+    @Volatile
+    private var pendingAudioUri: String? = null
+
+    private fun ensureScopesActive() {
+        synchronized(lifecycleLock) {
+            if (!playerScope.isActive) {
+                playerScope = CoroutineScope(SupervisorJob() + playerCommandDispatcher)
+            }
+            if (!downloadScope.isActive) {
+                downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            }
+        }
+    }
+
+    private fun cancelInFlightSubtitleDownload() {
+        inFlightSubtitleDownloadJob?.cancel()
+        inFlightSubtitleDownloadJob = null
+    }
+
+    private fun executePlayerCommand(action: (Long) -> Unit) {
+        val current = handle.takeIf { it != 0L } ?: return
+        val source = pendingSource
+        ensureScopesActive()
+        playerScope.launch {
+            val activeHandle = handle.takeIf { it != 0L } ?: return@launch
+            if (activeHandle != current || pendingSource !== source) return@launch
+            action(activeHandle)
+        }
+    }
+
     private var currentNowPlayingTitle: String = ""
     private var currentNowPlayingSubtitle: String = ""
     private var currentArtworkUrl: String = ""
 
     @Volatile
     private var handle: Long = 0L
+    private var playbackBufferPreset = PlayerSettingsRepository.uiState.value.playbackBufferPreset
+    private var lastAppliedPlaybackBuffer: Pair<Long, PlaybackBufferPreset>? = null
 
     /** Native teardown of the previous player, if one is still running. */
     @Volatile
@@ -102,6 +218,15 @@ internal class NativePlayerController(
 
     @Volatile
     private var pendingSource: PendingSource? = null
+    @Volatile
+    private var attachedSource: PendingSource? = null
+
+    fun isAttachedTo(sourceUrl: String, sourceHeaders: Map<String, String>): Boolean =
+        synchronized(lifecycleLock) {
+            val attached = attachedSource
+            !releaseRequested && handle != 0L && attached != null && attached === pendingSource &&
+                attached.sourceUrl == sourceUrl && attached.headerLines == sourceHeaders.toHeaderLines()
+        }
     @Volatile
     private var releaseRequested: Boolean = false
     val isReleasing: Boolean
@@ -119,35 +244,100 @@ internal class NativePlayerController(
     private var pendingSubtitleDelayMs: Int? = null
     private var pendingSubtitleStyle: SubtitleStyleState? = null
     private var pendingUseLibass: Boolean = false
+    private var mediaContentType: MediaContentType = MediaContentType.UNKNOWN
+    private var animeUpscalerOption: AnimeUpscalerOption = AnimeUpscalerOption.OFF
+    private var animeUpscalerMode: AnimeUpscalerMode = AnimeUpscalerMode.FAST
+    private var svpMotionOption: SvpMotionOption = SvpMotionOption.AUTO
+    private var overrideAnimeUpscaler: Boolean? = null
+    private var overrideSvpProfile: String? = null
+    @Volatile
+    private var animeUpscalerActive: Boolean = false
+    @Volatile
+    private var isAutoBypassed: Boolean = false
+    @Volatile
+    private var svpActive: Boolean = false
+    @Volatile
+    private var currentSvpProfile: String = ""
+    private var rememberedAudioNightModeEnabled: Boolean = false
+    private var isPlaybackStatsActive: Boolean = false
+    private data class MpvConfigSession(val snapshot: WindowsMpvConfig.Snapshot, val status: String)
+
+    @Volatile
+    private var mpvConfigSession: MpvConfigSession? = null
+    private var currentPlaybackStats: JsonObject? = null
+    private var statsJob: Job? = null
     private var lastSentControlsStructureKey: NativeControlsStructureKey? = null
+    private var lastEnhancementShadersKey: String? = null
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
     private var onEvent: (String, Double) -> Boolean = { _, _ -> false }
     private var onScrubChange: (Long) -> Boolean = { false }
     private var onScrubFinished: (Long) -> Boolean = { false }
-    private val eventSink = NativePlayerEventSink { type, value ->
-        SwingUtilities.invokeLater {
-            handlePlayerEvent(type, value)
+
+    /** Fired on the EDT once the controls page has painted its first opening overlay. */
+    @Volatile
+    var onControlsPainted: (() -> Unit)? = null
+    private fun setPlaybackStatsActive(active: Boolean) {
+        if (isPlaybackStatsActive == active) return
+        isPlaybackStatsActive = active
+        statsJob?.cancel()
+        statsJob = null
+        if (active) {
+            ensureScopesActive()
+            statsJob = playerScope.launch {
+                while (isActive && isPlaybackStatsActive) {
+                    val current = handle
+                    val session = mpvConfigSession
+                    if (current != 0L && session != null) {
+                        val stats = runCatching {
+                            NativePlayerBridge.windowsPlaybackStatsJson(current)?.let { Json.parseToJsonElement(it).jsonObject }
+                        }.getOrNull()
+                        val reopen = session.snapshot.needsReopen(WindowsMpvConfig.settings.value)
+                        val job = coroutineContext[Job]
+                        SwingUtilities.invokeLater {
+                            if (!releaseRequested && isPlaybackStatsActive && statsJob === job &&
+                                handle == current && mpvConfigSession === session
+                            ) {
+                                currentPlaybackStats = stats?.let {
+                                    JsonObject(it + mapOf(
+                                        "mpvConfigStatus" to JsonPrimitive(session.status),
+                                        "mpvConfigReopen" to JsonPrimitive(reopen),
+                                    ))
+                                }
+                                lastSentControlsStructureKey = null
+                                updateControls(controlsState)
+                            }
+                        }
+                    }
+                    delay(350L)
+                }
+            }
+        } else {
+            currentPlaybackStats = null
+            lastSentControlsStructureKey = null
+            updateControls(controlsState)
         }
     }
 
     fun attach(
         sourceUrl: String,
+        sourceAudioUrl: String? = null,
         sourceHeaders: Map<String, String>,
         playWhenReady: Boolean,
         initialPositionMs: Long,
         decoderPriority: Int,
         nvidiaRtxSuperResolutionEnabled: Boolean,
-        nvidiaRtxHdrEnabled: Boolean = false,
         onError: (String?) -> Unit,
     ) {
+        ensureScopesActive()
+        pendingAudioUri = sourceAudioUrl
         val pending = PendingSource(
             sourceUrl = sourceUrl,
+            sourceAudioUrl = sourceAudioUrl,
             headerLines = sourceHeaders.toHeaderLines(),
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs.coerceAtLeast(0L),
             decoderPriority = decoderPriority,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
-            nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             onError = onError,
         )
         var terminalFailure: String? = null
@@ -311,24 +501,74 @@ internal class NativePlayerController(
         // the app stops responding and Windows closes it as "stopped interacting" (Hang 1002).
         // Create off the EDT and come back to it for the parts that touch Swing state.
         val createWorker = Thread({
+            val eventSink = NativePlayerEventSink { type, value ->
+                SwingUtilities.invokeLater {
+                    if (!releaseRequested && pendingSource === pending &&
+                        (attachedSource === pending || type == "controlsUnavailable")
+                    ) {
+                        handlePlayerEvent(type, value)
+                    }
+                }
+            }
             try {
+                val config = if (nativeCreate == null && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+                    WindowsMpvConfig.settings.value
+                } else {
+                    null
+                }
+                val parsed = config?.takeIf { it.enabled }?.let { WindowsMpvConfig.parse(it.text) }
+                val create: NativePlayerCreate = nativeCreate ?: { host, source, audio, headers, play, position, controls, decoder, rtx, sink ->
+                    NativePlayerBridge.ensureLoaded()
+                    if (config != null) {
+                        val options = if (parsed == null) emptyArray()
+                            else if (parsed.issues.isEmpty()) parsed.nativeOptions() else null
+                        NativePlayerBridge.createWindows(host, source, audio, headers, play, position, controls, decoder, rtx, options, sink)
+                    } else {
+                        NativePlayerBridge.create(host, source, audio, headers, play, position, controls, decoder, rtx, sink)
+                    }
+                }
+                // Windows only: play a local master trimmed to the top variant, and offer its
+                // subtitle renditions as stream subtitles instead of opening them all up front.
+                val hlsTrim = if (config != null) HlsStartupTrim.prepare(resolvedSource, pending.headerLines) else null
+                // Windows only: open a gateway's redirect target directly, so mpv's opens and
+                // seeks do not each go through the gateway again (HLS sources are left as is).
+                val playSource = when {
+                    hlsTrim != null -> hlsTrim.localUrl
+                    config != null -> DirectSourceRedirect.resolve(resolvedSource, pending.headerLines)
+                    else -> resolvedSource
+                }
+                if (pendingSource === pending) hlsDeferredSubtitles.value = hlsTrim?.subtitles.orEmpty()
                 runCatching {
-                    nativeCreate(
+                    create(
                         hostViewPtr,
-                        resolvedSource,
+                        playSource,
+                        pending.sourceAudioUrl.orEmpty(),
                         pending.headerLines.toTypedArray(),
                         pending.playWhenReady,
                         pending.initialPositionMs,
                         NativePlayerBridge.controlsPageUrl,
                         pending.decoderPriority,
                         pending.nvidiaRtxSuperResolutionEnabled,
-                        pending.nvidiaRtxHdrEnabled,
                         eventSink,
                     ).also { if (it == 0L) error("Native player did not return a handle.") }
                 }.onSuccess { created ->
+                    val usedDefaultConfig = config != null &&
+                        runCatching { NativePlayerBridge.usedDefaultWindowsMpvConfig(created) }.getOrDefault(false)
+                    val configSession = config?.let {
+                        val status = when {
+                            !it.enabled -> "off"
+                            usedDefaultConfig -> "fallback"
+                            parsed?.options.isNullOrEmpty() -> "empty"
+                            else -> "loaded"
+                        }
+                        MpvConfigSession(it, status)
+                    }
                     val accepted = synchronized(lifecycleLock) {
                         if (!releaseRequested && terminalReleaseFailure == null && pendingSource === pending) {
+                            mpvConfigSession = configSession
                             handle = created
+                            attachedSource = pending
+                            lastAppliedPlaybackBuffer = null
                             true
                         } else {
                             false
@@ -345,6 +585,7 @@ internal class NativePlayerController(
                                 handle != created -> false
                                 pendingSource !== pending || !isHostDisplayable() -> {
                                     handle = 0L
+                                    attachedSource = null
                                     lastSentControlsStructureKey = null
                                     startTrackedDisposeLocked(created)
                                     false
@@ -363,7 +604,15 @@ internal class NativePlayerController(
                         if (currentNowPlayingTitle.isNotEmpty() || currentArtworkUrl.isNotEmpty()) {
                             setNowPlayingMetadata(currentNowPlayingTitle, currentNowPlayingSubtitle, currentArtworkUrl)
                         }
-                        applyPendingSubtitleSettings()
+                        applyPendingSubtitleSettings(created)
+                        applyPlaybackBufferPreset(created)
+                        pendingSubtitleUri?.let { setSubtitleUri(it) }
+                        pendingAudioUri?.let { if (attachedSource?.sourceAudioUrl != it) setAudioUri(it) }
+                        applyCoordinatedEnhancements(created)
+                        applyAudioNightMode(created, rememberedAudioNightModeEnabled)
+                        if (usedDefaultConfig) {
+                            showMpvNotice(created) { getString(Res.string.settings_playback_mpv_config_fallback) }
+                        }
                     }
                 }.onFailure { error ->
                     log.w(error) { "attach failed source=${pending.sourceUrl.toPlaybackLogKey()}" }
@@ -448,23 +697,89 @@ internal class NativePlayerController(
                 rememberedLevel = rememberedVolumeLevel,
             ),
         )
-        currentVolumeLevel = stateWithVolume.volumeLevel ?: currentVolumeLevel
-        controlsState = stateWithVolume
+        val stateWithEnhancements = stateWithVolume.copy(
+            animeUpscalerActive = animeUpscalerActive,
+            animeUpscalerEnabled = animeUpscalerActive,
+            isAutoBypassed = isAutoBypassed,
+            animeUpscalerOption = animeUpscalerOption,
+            animeUpscalerModeIndex = animeUpscalerMode.index,
+            svpMode = overrideSvpProfile ?: when (svpMotionOption) {
+                SvpMotionOption.OFF -> "off"
+                SvpMotionOption.AUTO -> "auto"
+                SvpMotionOption.GLOBAL -> "global"
+            },
+            svpActive = svpActive,
+            svpProfile = currentSvpProfile,
+            svpAvailable = runCatching { NativePlayerBridge.isSvpAvailable() }.getOrDefault(false),
+            mediaContentType = mediaContentType,
+        )
+        currentVolumeLevel = stateWithEnhancements.volumeLevel ?: currentVolumeLevel
+        controlsState = stateWithEnhancements
+        RemotePlayerLink.publish(this, stateWithEnhancements)
+        val isBwActive = stateWithEnhancements.eyeFilterEnabled &&
+            (stateWithEnhancements.eyeFilterColor.equals("BW", ignoreCase = true) || stateWithEnhancements.eyeFilterColor.equals("#BW", ignoreCase = true))
+        val isGrainActive = PlayerSettingsRepository.uiState.value.grainFilterEnabled
+        val desiredShadersKey = "$animeUpscalerActive-${animeUpscalerMode.index}-$isBwActive-$isGrainActive"
+        if (desiredShadersKey != lastEnhancementShadersKey) {
+            lastEnhancementShadersKey = desiredShadersKey
+            applyCoordinatedEnhancements(current)
+        }
         val isFullscreen = isDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
+        val currentUiScale = PlayerSettingsRepository.uiState.value.playerUiScale
         val structureKey = NativeControlsStructureKey(
-            state = stateWithVolume.nativeControlsStructureKey(),
+            state = stateWithEnhancements.nativeControlsStructureKey(),
             isFullscreen = isFullscreen,
             isInPip = DesktopPlayerPictureInPicture.isEnabled,
+            playerUiScale = currentUiScale,
         )
         if (structureKey == lastSentControlsStructureKey) return
         lastSentControlsStructureKey = structureKey
         log.d {
-            "updateControls handle=$current title=${stateWithVolume.title.take(40)} " +
-                "pos=${stateWithVolume.positionMs} duration=${stateWithVolume.durationMs} " +
-                "speed=${stateWithVolume.playbackSpeedLabel} audioLabel=${stateWithVolume.audioLabel} " +
-                "subsLabel=${stateWithVolume.subtitlesLabel} fullscreen=$isFullscreen"
+            "updateControls handle=$current title=${stateWithEnhancements.title.take(40)} " +
+                "pos=${stateWithEnhancements.positionMs} duration=${stateWithEnhancements.durationMs} " +
+                "speed=${stateWithEnhancements.playbackSpeedLabel} audioLabel=${stateWithEnhancements.audioLabel} " +
+                "subsLabel=${stateWithEnhancements.subtitlesLabel} fullscreen=$isFullscreen"
         }
-        NativePlayerBridge.updateControls(current, stateWithVolume.toControlsJson(isFullscreen, ::refreshControlsForImage))
+        val stateToSend = stateWithEnhancements.copy(
+            closeModalsToken = stateWithEnhancements.closeModalsToken + remoteCloseCount,
+        )
+        val controlsJson = stateToSend.toControlsJson(isFullscreen, ::refreshControlsForImage, currentPlaybackStats)
+            .dropLast(1) + ",\"remoteClick\":${JsonPrimitive(remoteClickTarget)},\"remoteClickToken\":$remoteClickCount}"
+        NativePlayerBridge.updateControls(current, controlsJson)
+    }
+
+    /** Each phone remote "close" bumps the token the controls page watches to close its open panel. */
+    private var remoteCloseCount = 0L
+
+    /** A control message from the phone remote, handled like one from the on-screen controls. */
+    fun remoteEvent(type: String, value: Double) {
+        SwingUtilities.invokeLater {
+            if (type == "skipInterval" &&
+                (!controlsState.skipPromptVisible || value != controlsState.skipPromptEndMs.toDouble())
+            ) return@invokeLater
+            handlePlayerEvent(type, value)
+        }
+    }
+
+    fun closeRemotePanels() {
+        SwingUtilities.invokeLater {
+            remoteCloseCount++
+            lastSentControlsStructureKey = null
+            updateControls(controlsState)
+        }
+    }
+
+    /** The phone remote clicks the on-screen control with this element id, e.g. to open its panel. */
+    private var remoteClickTarget = ""
+    private var remoteClickCount = 0L
+
+    fun remoteClick(elementId: String) {
+        SwingUtilities.invokeLater {
+            remoteClickTarget = elementId
+            remoteClickCount++
+            lastSentControlsStructureKey = null
+            updateControls(controlsState)
+        }
     }
 
     private fun refreshControlsForImage() {
@@ -495,16 +810,26 @@ internal class NativePlayerController(
         NativePlayerBridge.layoutNativeSubviews(current)
     }
 
-    fun requestKeyboardFocus() {
+    override fun requestKeyboardFocus() {
         SwingUtilities.invokeLater {
             val current = handle.takeIf { it != 0L } ?: return@invokeLater
             if (DesktopPlayerPictureInPicture.isEnabled) {
-                DesktopPlayerPictureInPicture.pipWindow?.videoHolderPanel?.requestFocusInWindow()
+                val pip = DesktopPlayerPictureInPicture.pipWindow
+                // Never pull keyboard focus out of the page the user is browsing into the docked mini player.
+                if (DesktopPlayerPictureInPicture.isDocked && pip?.window?.isFocused != true) return@invokeLater
+                pip?.videoHolderPanel?.requestFocusInWindow()
                 NativePlayerBridge.requestFocus(current)
                 return@invokeLater
             }
             if (!isHostDisplayable()) return@invokeLater
-            host.requestFocusInWindow()
+            val window = SwingUtilities.getWindowAncestor(host)
+            if (window != null && !window.isFocused) {
+                window.toFront()
+                window.requestFocus()
+            }
+            if (!host.requestFocusInWindow()) {
+                host.requestFocus()
+            }
             NativePlayerBridge.requestFocus(current)
         }
     }
@@ -551,11 +876,224 @@ internal class NativePlayerController(
         }
     }
 
+    fun setAnimeUpscaler(enabled: Boolean, mode: AnimeUpscalerMode) {
+        animeUpscalerOption = if (enabled) AnimeUpscalerOption.ALWAYS_ON else AnimeUpscalerOption.OFF
+        animeUpscalerMode = mode
+        overrideAnimeUpscaler = enabled
+        handle.takeIf { it != 0L }?.let { current ->
+            applyCoordinatedEnhancements(current)
+        }
+    }
+
+    fun setVideoEnhancements(
+        mediaContentType: MediaContentType,
+        animeUpscalerOption: AnimeUpscalerOption,
+        animeUpscalerMode: AnimeUpscalerMode,
+        svpMotionOption: SvpMotionOption,
+    ) {
+        this.mediaContentType = mediaContentType
+        this.animeUpscalerOption = animeUpscalerOption
+        this.animeUpscalerMode = animeUpscalerMode
+        this.svpMotionOption = svpMotionOption
+        handle.takeIf { it != 0L }?.let { current ->
+            applyCoordinatedEnhancements(current)
+        }
+    }
+
+    fun setPlaybackBufferPreset(preset: PlaybackBufferPreset) = synchronized(lifecycleLock) {
+        playbackBufferPreset = preset
+        handle.takeIf { it != 0L }?.let(::applyPlaybackBufferPreset)
+    }
+
+    private fun applyPlaybackBufferPreset(target: Long) = synchronized(lifecycleLock) {
+        if (handle != target || releaseRequested) return@synchronized
+        val update = target to playbackBufferPreset
+        if (lastAppliedPlaybackBuffer == update) return@synchronized
+        runCatching { nativeSetPlaybackBufferPreset(target, playbackBufferPreset) }
+            .onSuccess { lastAppliedPlaybackBuffer = update }
+            .onFailure { log.w(it) { "Failed to update playback buffer handle=$target" } }
+    }
+
+    private fun computeUpscalerState(): Pair<Boolean, Boolean> {
+        if (overrideAnimeUpscaler != null) {
+            val active = overrideAnimeUpscaler == true
+            return Pair(active, false)
+        }
+        return when (animeUpscalerOption) {
+            AnimeUpscalerOption.OFF -> Pair(false, false)
+            AnimeUpscalerOption.ALWAYS_ON -> Pair(true, false)
+            AnimeUpscalerOption.AUTO -> {
+                when (mediaContentType) {
+                    MediaContentType.ANIME, MediaContentType.CARTOON -> Pair(true, false)
+                    MediaContentType.LIVE_ACTION, MediaContentType.UNKNOWN -> Pair(false, true)
+                }
+            }
+        }
+    }
+
+    private fun computeSvpState(): Pair<Boolean, String> {
+        val resolvedMode = overrideSvpProfile ?: when (svpMotionOption) {
+            SvpMotionOption.OFF -> "off"
+            SvpMotionOption.AUTO -> "auto"
+            SvpMotionOption.GLOBAL -> "global"
+        }
+        return when (resolvedMode) {
+            "off" -> Pair(false, "")
+            "anime" -> Pair(true, "anime")
+            "cinema" -> Pair(true, "cinema")
+            "auto" -> {
+                if (mediaContentType == MediaContentType.ANIME || mediaContentType == MediaContentType.CARTOON) {
+                    Pair(true, "anime")
+                } else {
+                    Pair(false, "")
+                }
+            }
+            "global" -> {
+                if (mediaContentType == MediaContentType.ANIME || mediaContentType == MediaContentType.CARTOON) {
+                    Pair(true, "anime")
+                } else {
+                    Pair(true, "cinema")
+                }
+            }
+            else -> Pair(false, "")
+        }
+    }
+
+    private fun applyCoordinatedEnhancements(targetHandle: Long) {
+        val (upscalerActive, autoBypassed) = computeUpscalerState()
+        animeUpscalerActive = upscalerActive
+        isAutoBypassed = autoBypassed
+
+        val isSvpRuntimeAvailable = runCatching { NativePlayerBridge.isSvpAvailable() }.getOrDefault(false)
+        val (rawSvpIsActive, svpProf) = computeSvpState()
+        val svpIsActive = rawSvpIsActive && isSvpRuntimeAvailable
+        svpActive = svpIsActive
+        currentSvpProfile = if (isSvpRuntimeAvailable) svpProf else ""
+
+        val shaderPaths = mutableListOf<String>()
+        if (upscalerActive) {
+            AnimeShaderProvider.getShaderPath(animeUpscalerMode)?.let { shaderPaths.add(it) }
+        }
+        val isBwActive = controlsState.eyeFilterEnabled &&
+            (controlsState.eyeFilterColor.equals("BW", ignoreCase = true) || controlsState.eyeFilterColor.equals("#BW", ignoreCase = true))
+        if (isBwActive) {
+            EyeFilterShaderProvider.getBwShaderPath()?.let { shaderPaths.add(it) }
+        }
+        if (PlayerSettingsRepository.uiState.value.grainFilterEnabled) {
+            EyeFilterShaderProvider.getGrainShaderPath()?.let { shaderPaths.add(it) }
+        }
+        runCatching {
+            val paths = shaderPaths.filter { it.isNotBlank() }
+            if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+                check(NativePlayerBridge.setWindowsGlslShaders(targetHandle, paths.toTypedArray()))
+            } else {
+                NativePlayerBridge.setGlslShaders(targetHandle, paths.joinToString(java.io.File.pathSeparator))
+            }
+        }.onFailure { error ->
+            log.w(error) { "Failed to set GLSL shaders handle=$targetHandle active=$upscalerActive mode=$animeUpscalerMode" }
+        }
+
+        val scriptPath = if (svpIsActive && svpProf.isNotEmpty()) {
+            val prof = if (svpProf == "cinema") SvpProfile.CINEMA else SvpProfile.ANIME
+            SvpScriptProvider.getScriptPath(prof).orEmpty()
+        } else {
+            ""
+        }
+        val svpEnabled = svpIsActive && scriptPath.isNotEmpty()
+        runCatching {
+            NativePlayerBridge.setSvpFilter(targetHandle, svpEnabled, scriptPath)
+        }.onFailure { error ->
+            log.w(error) { "Failed to set SVP filter handle=$targetHandle enabled=$svpEnabled script=$scriptPath" }
+        }
+
+        lastSentControlsStructureKey = null
+        updateControls(controlsState)
+    }
+
+    fun setAudioNightMode(enabled: Boolean) {
+        rememberedAudioNightModeEnabled = enabled
+        handle.takeIf { it != 0L }?.let { current ->
+            applyAudioNightMode(current, enabled)
+        }
+    }
+
+    private fun applyAudioNightMode(targetHandle: Long, enabled: Boolean) {
+        val filter = if (enabled) {
+            "dynaudnorm=f=75:g=25:p=0.55:m=2.0"
+        } else {
+            ""
+        }
+        runCatching {
+            if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+                if (!NativePlayerBridge.setWindowsAudioNightFilter(targetHandle, filter)) {
+                    showMpvNotice(targetHandle) { getString(Res.string.settings_playback_mpv_night_filter_error) }
+                }
+            } else {
+                NativePlayerBridge.setAudioFilter(targetHandle, filter)
+            }
+        }.onFailure { error ->
+            log.w(error) { "Failed to set audio filter handle=$targetHandle enabled=$enabled" }
+        }
+    }
+
+    private fun showMpvNotice(targetHandle: Long, message: suspend () -> String) {
+        playerScope.launch {
+            val text = message()
+            SwingUtilities.invokeLater {
+                if (handle == targetHandle && handle != 0L) {
+                    updateControls(controlsState.copy(notificationMessage = text, notificationToken = System.currentTimeMillis()))
+                }
+            }
+        }
+    }
+
     private fun handlePlayerEvent(type: String, value: Double) {
         if (type.shouldLogNativeControlEvent()) {
             log.d { "event received handle=$handle type=$type value=$value" }
         }
         when (type) {
+            "controlsPainted" -> {
+                SwingUtilities.invokeLater { onControlsPainted?.invoke() }
+            }
+            "hlsDetected" -> reloadDetectedHlsSource()
+            "startupSourceReplaced" -> {
+                // The replaced file took its externally added tracks with it.
+                pendingSubtitleUri?.let { setSubtitleUri(it) }
+                pendingAudioUri?.let { if (attachedSource?.sourceAudioUrl != it) setAudioUri(it) }
+            }
+            "controlsUnavailable" -> {
+                log.e { "Player controls initialization failed HRESULT=${value.toLong()} handle=$handle" }
+                pendingSource?.onError("Player controls could not be loaded. Please reopen the player.")
+            }
+            "svp_unavailable" -> {
+                log.w { "SVP unavailable: VapourSynth runtime is missing." }
+                controlsState = controlsState.copy(
+                    notificationMessage = if (DesktopHostOs.current == DesktopHostOs.WINDOWS)
+                        "Motion smoothing is unavailable. Check its status in Settings."
+                    else "Motion Smoothing requires VapourSynth or SVP 4 to be installed.",
+                    notificationToken = System.currentTimeMillis()
+                )
+                overrideSvpProfile = "off"
+                svpActive = false
+                currentSvpProfile = ""
+                lastSentControlsStructureKey = null
+                updateControls(controlsState)
+            }
+            "svp_error" -> {
+                log.w { "SVP error occurred during script execution." }
+                controlsState = controlsState.copy(
+                    notificationMessage = "Motion Smoothing error occurred. Disabled SVP.",
+                    notificationToken = System.currentTimeMillis()
+                )
+                overrideSvpProfile = "off"
+                svpActive = false
+                currentSvpProfile = ""
+                lastSentControlsStructureKey = null
+                updateControls(controlsState)
+            }
+            "audio_night_filter_error" -> {
+                showMpvNotice(handle) { getString(Res.string.settings_playback_mpv_night_filter_error) }
+            }
             "cursorActivity" -> host.noteCursorActivity()
             "scrubChange" -> {
                 val handled = onScrubChange(value.toLong())
@@ -571,6 +1109,29 @@ internal class NativePlayerController(
                     seekTo(value.toLong())
                 }
             }
+            "keyboardFineSeekBack",
+            "keyboardFineSeekForward" -> {
+                val handled = onScrubFinished(value.toLong())
+                log.d { "$type positionMs=${value.toLong()} handled=$handled handle=$handle" }
+                if (!handled) {
+                    seekTo(value.toLong())
+                }
+            }
+            "playerUiScale" -> {
+                PlayerSettingsRepository.setPlayerUiScale(kotlin.math.round(value).toInt().coerceIn(50, 150))
+            }
+            "setGrainFilterEnabled" -> {
+                if (onEvent(type, value)) return
+                PlayerSettingsRepository.setGrainFilterEnabled(value >= 0.5)
+            }
+            "setEyeFilterBw" -> {
+                if (onEvent(type, value)) return
+                if (value >= 0.5) {
+                    PlayerSettingsRepository.setEyeFilterColor("BW")
+                } else if (PlayerSettingsRepository.uiState.value.eyeFilterColor.equals("BW", ignoreCase = true)) {
+                    PlayerSettingsRepository.setEyeFilterColor("#000000")
+                }
+            }
             "toggleFullscreen" -> {
                 if (onEvent(type, value)) 
                     return
@@ -582,12 +1143,95 @@ internal class NativePlayerController(
                 }
             }
             "dragWindow" -> NativePlayerBridge.beginWindowDrag(handle)
+            "externalSubtitleImported" -> {
+                val activeHandle = handle
+                if (activeHandle != 0L) {
+                    val info = runCatching { NativePlayerBridge.popLastImportedSubtitle(activeHandle) }.getOrNull()
+                    if (!info.isNullOrBlank()) {
+                        val parts = info.split("|", limit = 2)
+                        val filePath = parts.getOrNull(0).orEmpty()
+                        val fileName = parts.getOrNull(1).takeIf { !it.isNullOrBlank() }
+                            ?: filePath.substringAfterLast('\\').substringAfterLast('/')
+                        if (filePath.isNotBlank()) {
+                            SubtitleImportBridge.onImport?.invoke(ImportedSubtitleFile(filePath, fileName))
+                        }
+                    }
+                }
+            }
+            "resizePip" -> DesktopPlayerPictureInPicture.resizeWindow(value)
             "volumeChange" -> setFallbackVolume(value.toFloat())
             "volumeChangeTemporary" -> setTemporaryVolume(value.toFloat())
             "setPlaybackSpeed" -> {
                 if (onEvent(type, value)) return
                 setPlaybackSpeed(value.toFloat())
             }
+            "setAnimeUpscalerOption" -> {
+                overrideAnimeUpscaler = null
+                val option = when (value.toInt()) {
+                    0 -> AnimeUpscalerOption.OFF
+                    1 -> AnimeUpscalerOption.AUTO
+                    2 -> AnimeUpscalerOption.ALWAYS_ON
+                    else -> AnimeUpscalerOption.OFF
+                }
+                animeUpscalerOption = option
+                PlayerSettingsRepository.setAnimeUpscalerOption(option)
+                handle.takeIf { it != 0L }?.let { applyCoordinatedEnhancements(it) }
+            }
+            "forceAnimeUpscalerOn" -> {
+                overrideAnimeUpscaler = true
+                animeUpscalerOption = AnimeUpscalerOption.ALWAYS_ON
+                PlayerSettingsRepository.setAnimeUpscalerOption(AnimeUpscalerOption.ALWAYS_ON)
+                handle.takeIf { it != 0L }?.let { applyCoordinatedEnhancements(it) }
+            }
+            "setAnimeUpscalerMode" -> {
+                val mode = AnimeUpscalerMode.fromIndex(value.toInt())
+                animeUpscalerMode = mode
+                PlayerSettingsRepository.setAnimeUpscalerMode(mode)
+                handle.takeIf { it != 0L }?.let { applyCoordinatedEnhancements(it) }
+            }
+            "setSvpMode" -> {
+                val mode = value.toInt()
+                if (mode != 0 && !runCatching { NativePlayerBridge.isSvpAvailable() }.getOrDefault(false)) {
+                    controlsState = controlsState.copy(
+                        notificationMessage = if (DesktopHostOs.current == DesktopHostOs.WINDOWS)
+                            "Motion smoothing is unavailable. Check its status in Settings."
+                        else "Motion Smoothing requires VapourSynth or SVP 4 to be installed.",
+                        notificationToken = System.currentTimeMillis()
+                    )
+                    overrideSvpProfile = "off"
+                    svpMotionOption = SvpMotionOption.OFF
+                    PlayerSettingsRepository.setSvpMotionOption(SvpMotionOption.OFF)
+                    lastSentControlsStructureKey = null
+                    updateControls(controlsState)
+                } else {
+                    overrideSvpProfile = null
+                    when (mode) {
+                        0 -> {
+                            svpMotionOption = SvpMotionOption.OFF
+                            PlayerSettingsRepository.setSvpMotionOption(SvpMotionOption.OFF)
+                        }
+                        1 -> {
+                            svpMotionOption = SvpMotionOption.AUTO
+                            PlayerSettingsRepository.setSvpMotionOption(SvpMotionOption.AUTO)
+                        }
+                        2, 3 -> {
+                            svpMotionOption = SvpMotionOption.GLOBAL
+                            PlayerSettingsRepository.setSvpMotionOption(SvpMotionOption.GLOBAL)
+                        }
+                    }
+                    handle.takeIf { it != 0L }?.let { applyCoordinatedEnhancements(it) }
+                }
+            }
+            "toggleAnimeUpscaler" -> {
+                val enabled = value >= 0.5
+                overrideAnimeUpscaler = enabled
+                val option = if (enabled) AnimeUpscalerOption.ALWAYS_ON else AnimeUpscalerOption.OFF
+                animeUpscalerOption = option
+                PlayerSettingsRepository.setAnimeUpscalerOption(option)
+                handle.takeIf { it != 0L }?.let { applyCoordinatedEnhancements(it) }
+            }
+            "setPlaybackStatsVisible" -> setPlaybackStatsActive(value > 0.5)
+            "togglePlaybackStats" -> setPlaybackStatsActive(!isPlaybackStatsActive)
             else -> {
                 val eventHandled = onEvent(type, value)
                 if (type.shouldLogNativeControlEvent()) {
@@ -606,6 +1250,27 @@ internal class NativePlayerController(
     }
 
     @Synchronized
+    /**
+     * mpv reported an HLS response for a URL the up-front trim did not recognise (no "m3u8").
+     * Trim its master and swap the still-opening source for the local trimmed copy, so FFmpeg
+     * stops opening and probing every rendition. Native refuses once playback has started.
+     */
+    private fun reloadDetectedHlsSource() {
+        val source = attachedSource ?: return
+        val target = handle.takeIf { it != 0L } ?: return
+        if (HlsStartupTrim.looksLikeHls(source.sourceUrl)) return // Already trimmed (or untrimmable).
+        ensureScopesActive()
+        downloadScope.launch {
+            val trim = HlsStartupTrim.prepare(source.sourceUrl, source.headerLines, knownHls = true) ?: return@launch
+            if (handle != target || attachedSource !== source) return@launch
+            val reloaded = runCatching { NativePlayerBridge.reloadStartupSource(target, trim.localUrl) }
+                .onFailure { error -> log.w(error) { "HLS startup reload failed handle=$target" } }
+                .getOrDefault(false)
+            log.d { "HLS detected by content type; trimmed reload=$reloaded handle=$target" }
+            if (reloaded && attachedSource === source) hlsDeferredSubtitles.value = trim.subtitles
+        }
+    }
+
     private fun updateLocalProgress(positionMs: Long) {
         controlsState = controlsState.copy(positionMs = positionMs)
         updateControls(controlsState)
@@ -620,7 +1285,10 @@ internal class NativePlayerController(
                 if (current == 0L) return
                 val isEnded = NativePlayerBridge.isEnded(current)
                 val isPaused = NativePlayerBridge.isPaused(current)
-                if (isEnded) {
+                val duration = nativeDurationMs(current)
+                val pos = nativePositionMs(current)
+                val trulyEnded = isEnded && (duration <= 0L || pos >= duration - 3_000L)
+                if (trulyEnded) {
                     NativePlayerBridge.seekTo(current, 0L)
                     NativePlayerBridge.setPaused(current, false)
                 } else {
@@ -628,9 +1296,13 @@ internal class NativePlayerController(
                 }
             }
             PlayerControlsAction.SeekBack,
-            PlayerControlsAction.KeyboardSeekBack -> fallbackSeekBy(-10_000L)
+            PlayerControlsAction.KeyboardSeekBack -> fallbackSeekBy(-3_000L)
+            PlayerControlsAction.KeyboardSeek10Back -> fallbackSeekBy(-10_000L)
             PlayerControlsAction.SeekForward,
-            PlayerControlsAction.KeyboardSeekForward -> fallbackSeekBy(10_000L)
+            PlayerControlsAction.KeyboardSeekForward -> fallbackSeekBy(3_000L)
+            PlayerControlsAction.KeyboardSeek10Forward -> fallbackSeekBy(10_000L)
+            PlayerControlsAction.KeyboardFineSeekBack -> fallbackSeekBy(-1_000L)
+            PlayerControlsAction.KeyboardFineSeekForward -> fallbackSeekBy(1_000L)
             PlayerControlsAction.KeyboardVolumeDown -> adjustFallbackVolume(-10f)
             PlayerControlsAction.KeyboardVolumeUp -> adjustFallbackVolume(10f)
             PlayerControlsAction.PictureInPicture -> togglePictureInPictureFromShortcut()
@@ -641,11 +1313,6 @@ internal class NativePlayerController(
 
     fun togglePictureInPictureFromShortcut() {
         DesktopPlayerPictureInPicture.toggle()
-    }
-
-    override fun adjustVolumeBy(deltaFraction: Float): Boolean {
-        adjustFallbackVolume(deltaFraction * 100f)
-        return true
     }
 
     @Synchronized
@@ -702,7 +1369,7 @@ internal class NativePlayerController(
     private fun fallbackSeekBy(offsetMs: Long) {
         val current = handle
         if (current != 0L) {
-            NativePlayerBridge.seekBy(current, offsetMs)
+            nativeSeekBy(current, offsetMs)
         }
     }
 
@@ -715,21 +1382,74 @@ internal class NativePlayerController(
         NativePlayerBridge.setSpeed(current, next)
     }
 
+    private var firstFrameHandle = 0L
+    private var firstFrameShown = false
+    private var firstFrameReadySinceNanos = 0L
+    private var firstFrameVoReadySinceNanos = 0L
+
+    /**
+     * mpv reports the file as loaded before its first frame reaches the screen. Keep the opening overlay up until
+     * the video output is configured and a few frames have had time to present, so it fades onto the picture
+     * instead of onto a black window. Only the first load of each player is held, and never for long.
+     */
+    @Synchronized
+    private fun awaitingFirstVideoFrame(current: Long): Boolean {
+        if (firstFrameHandle != current) {
+            firstFrameHandle = current
+            firstFrameShown = false
+            firstFrameReadySinceNanos = 0L
+            firstFrameVoReadySinceNanos = 0L
+        }
+        if (firstFrameShown) return false
+        val now = System.nanoTime()
+        if (firstFrameReadySinceNanos == 0L) firstFrameReadySinceNanos = now
+        fun flag(name: String): Boolean =
+            NativePlayerBridge.stringProperty(current, name).trim().lowercase() in setOf("yes", "true", "1")
+        val video = NativePlayerBridge.stringProperty(current, "vid").trim().lowercase()
+        val hasVideo = video.isNotEmpty() && video != "no" && video != "false"
+        if (hasVideo && flag("vo-configured")) {
+            if (firstFrameVoReadySinceNanos == 0L) firstFrameVoReadySinceNanos = now
+        }
+        val presented = !hasVideo ||
+            (firstFrameVoReadySinceNanos != 0L && now - firstFrameVoReadySinceNanos >= FIRST_FRAME_GRACE_NANOS)
+        val timedOut = now - firstFrameReadySinceNanos >= FIRST_FRAME_TIMEOUT_NANOS
+        if (presented || timedOut) firstFrameShown = true
+        return !firstFrameShown
+    }
+
     fun snapshot(): PlayerPlaybackSnapshot {
         val current = handle
         if (current == 0L) return PlayerPlaybackSnapshot(isLoading = true)
         return runCatching {
-            val isLoading = NativePlayerBridge.isLoading(current)
-            val isEnded = NativePlayerBridge.isEnded(current)
+            val isLoading = NativePlayerBridge.isLoading(current) || awaitingFirstVideoFrame(current)
+            val isPaused = NativePlayerBridge.isPaused(current)
+            val durationMs = NativePlayerBridge.durationMs(current)
+            val positionMs = NativePlayerBridge.positionMs(current)
+            val rawBufferedMs = NativePlayerBridge.bufferedPositionMs(current)
+            val rawIsEnded = NativePlayerBridge.isEnded(current)
+            val isEnded = rawIsEnded && (durationMs <= 0L || positionMs >= durationMs - 3_000L)
+            val bufferedPositionMs = if (durationMs > 2_000L && (rawBufferedMs >= durationMs - 2_000L || positionMs >= durationMs - 1_500L)) {
+                durationMs
+            } else {
+                rawBufferedMs
+            }
+            val cacheSpeed = WindowsMpvSubStyleHelper.getCacheSpeed(current)
             val videoSize = desktopMpvVideoSize { name -> NativePlayerBridge.stringProperty(current, name) }
             PlayerPlaybackSnapshot(
                 isLoading = isLoading,
-                isPlaying = !NativePlayerBridge.isPaused(current) && !isLoading && !isEnded,
+                isOpening = isLoading && (
+                    DesktopHostOs.current != DesktopHostOs.WINDOWS ||
+                        NativePlayerBridge.isOpeningWindowsSource(current)
+                    ),
+                isPlaying = !isPaused && !isLoading && !isEnded,
+                isPaused = isPaused,
                 isEnded = isEnded,
-                durationMs = NativePlayerBridge.durationMs(current),
-                positionMs = NativePlayerBridge.positionMs(current),
-                bufferedPositionMs = NativePlayerBridge.bufferedPositionMs(current),
+                durationMs = durationMs,
+                positionMs = positionMs,
+                bufferedPositionMs = bufferedPositionMs,
                 playbackSpeed = NativePlayerBridge.speed(current),
+                downloadSpeedBytes = cacheSpeed,
+                downloadSpeedAvailable = WindowsMpvSubStyleHelper.supportsCacheSpeed(),
                 videoWidth = videoSize.width,
                 videoHeight = videoSize.height,
             )
@@ -744,12 +1464,26 @@ internal class NativePlayerController(
         onReleased: () -> Unit,
         onReleaseFailed: (String) -> Unit,
     ) {
+        // The native window drops to black as it parks and shuts down, above anything the app draws. Hold a picture of
+        // the last frame over the app window instead, and fade it onto the page that comes back beneath.
+        if (!_releasingForNavigation.value && SwingUtilities.isEventDispatchThread()) {
+            NativeTransitionShield.cover(host)?.let { shield ->
+                Timer(EXIT_SHIELD_HOLD_MS) { shield.fadeOut(EXIT_SHIELD_FADE_MS) }.apply {
+                    isRepeats = false
+                    start()
+                }
+            }
+        }
         synchronized(lifecycleLock) {
             releaseRequested = true
         }
+        _releasingForNavigation.value = true
         host.resetCursorVisibility()
         invalidateForRelease()
-        val callback = ReleaseCallback(onReleased, onReleaseFailed)
+        val callback = ReleaseCallback(onReleased) { message ->
+            _releasingForNavigation.value = false
+            onReleaseFailed(message)
+        }
         var shouldStart = false
         var immediateFailure: String? = null
         val worker = synchronized(lifecycleLock) {
@@ -862,7 +1596,15 @@ internal class NativePlayerController(
             }
         }
         if (!accepted) return
+        RemotePlayerLink.clear(this)
         host.onPeerReady = null
+        cancelInFlightSubtitleDownload()
+        statsJob?.cancel()
+        statsJob = null
+        isPlaybackStatsActive = false
+        currentPlaybackStats = null
+        playerScope.cancel()
+        downloadScope.cancel()
         disposePlayerHandle()
     }
 
@@ -874,7 +1616,13 @@ internal class NativePlayerController(
     }
 
     private fun invalidateForRelease() {
+        RemotePlayerLink.clear(this)
         cancelPendingAttachment()
+        cancelInFlightSubtitleDownload()
+        statsJob?.cancel()
+        statsJob = null
+        isPlaybackStatsActive = false
+        currentPlaybackStats = null
         host.onCursorActivity = null
         onAction = { false }
         onEvent = { _, _ -> false }
@@ -930,6 +1678,12 @@ internal class NativePlayerController(
     private fun detachPlayerHandle(): Long = synchronized(lifecycleLock) {
         val current = handle
         handle = 0L
+        attachedSource = null
+        cancelInFlightSubtitleDownload()
+        cachedSubtitleTracks = emptyList()
+        cachedAudioTracks = emptyList()
+        pendingSubtitleUri = null
+        pendingAudioUri = null
         lastSentControlsStructureKey = null
         current
     }
@@ -948,7 +1702,7 @@ internal class NativePlayerController(
             {
                 awaitThreadCompletion(prior, "prior native teardown")
                 runCatching { nativeDispose(current) }
-                    .onFailure { error -> recordTerminalDisposeFailure(error, "native", current) }
+                .onFailure { error -> recordTerminalDisposeFailure(error, "native", current) }
             },
             "nuvio-player-dispose",
         ).apply {
@@ -963,6 +1717,14 @@ internal class NativePlayerController(
             val current = handle
             if (current == 0L) return
             handle = 0L
+            attachedSource = null
+            mpvConfigSession = null
+            currentPlaybackStats = null
+            cancelInFlightSubtitleDownload()
+            cachedSubtitleTracks = emptyList()
+            cachedAudioTracks = emptyList()
+            pendingSubtitleUri = null
+            pendingAudioUri = null
             lastSentControlsStructureKey = null
             // Register and start teardown atomically so terminal release cannot sample an empty
             // worker slot between detaching the handle and starting native disposal.
@@ -982,19 +1744,52 @@ internal class NativePlayerController(
 
     override fun seekTo(positionMs: Long) {
         log.d { "seekTo positionMs=$positionMs handle=$handle" }
-        handle.takeIf { it != 0L }?.let { nativeSeekTo(it, positionMs) }
+        handle.takeIf { it != 0L }?.let { performSeekTo(it, positionMs) }
     }
 
     override fun trySeekTo(positionMs: Long): Boolean {
         val current = handle.takeIf { it != 0L } ?: return false
         log.d { "trySeekTo positionMs=$positionMs handle=$current" }
-        nativeSeekTo(current, positionMs)
+        performSeekTo(current, positionMs)
         return true
     }
 
     override fun seekBy(offsetMs: Long) {
         log.d { "seekBy offsetMs=$offsetMs handle=$handle" }
-        handle.takeIf { it != 0L }?.let { NativePlayerBridge.seekBy(it, offsetMs) }
+        handle.takeIf { it != 0L }?.let { current ->
+            val durationMs = controlsState.durationMs.takeIf { it > 0L }
+                ?: nativeDurationMs(current).takeIf { it > 0L }
+                ?: 0L
+            val currentPos = nativePositionMs(current).takeIf { it > 0L }
+                ?: controlsState.positionMs.takeIf { it > 0L }
+                ?: 0L
+            if (durationMs > 2_000L) {
+                val targetMs = (currentPos + offsetMs).coerceIn(0L, durationMs - 1_500L)
+                val nearEnd = targetMs >= durationMs - 45_000L
+                if (nearEnd) {
+                    nativeSeekTo(current, targetMs)
+                    return@let
+                }
+                val safeOffset = targetMs - currentPos
+                nativeSeekBy(current, safeOffset)
+            } else {
+                nativeSeekBy(current, offsetMs)
+            }
+        }
+    }
+
+    private fun performSeekTo(current: Long, positionMs: Long) {
+        val durationMs = controlsState.durationMs.takeIf { it > 0L }
+            ?: nativeDurationMs(current).takeIf { it > 0L }
+            ?: 0L
+        val clampedPosition = if (durationMs > 2_000L) {
+            positionMs.coerceIn(0L, durationMs - 1_500L)
+        } else {
+            positionMs.coerceAtLeast(0L)
+        }
+        // Keep the requested destination independent of an earlier seek still in flight.
+        // The native bridge selects exact or keyframe seeking for this absolute target.
+        nativeSeekTo(current, clampedPosition)
     }
 
     override fun retry() {
@@ -1006,7 +1801,6 @@ internal class NativePlayerController(
             initialPositionMs = pending.initialPositionMs,
             decoderPriority = pending.decoderPriority,
             nvidiaRtxSuperResolutionEnabled = pending.nvidiaRtxSuperResolutionEnabled,
-            nvidiaRtxHdrEnabled = pending.nvidiaRtxHdrEnabled,
             onError = pending.onError,
         )
     }
@@ -1016,8 +1810,10 @@ internal class NativePlayerController(
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setSpeed(it, speed) }
     }
 
-    override fun getAudioTracks(): List<AudioTrack> =
-        decodeTracks { NativePlayerBridge.audioTracksJson(it) }.map { track ->
+    override fun getAudioTracks(): List<AudioTrack> {
+        val tracks = decodeTracks { NativePlayerBridge.audioTracksJson(it) }
+        cachedAudioTracks = tracks
+        return tracks.map { track ->
             AudioTrack(
                 index = track.index,
                 id = track.id,
@@ -1026,6 +1822,7 @@ internal class NativePlayerController(
                 isSelected = track.selected,
             )
         }
+    }
 
     override suspend fun getChapters(): List<PlayerChapter> {
         if (!PlayerSettingsRepository.uiState.value.androidExoChaptersEnabled) return emptyList()
@@ -1046,8 +1843,10 @@ internal class NativePlayerController(
         return mpvMediaInfo { name -> NativePlayerBridge.stringProperty(current, name).takeIf { it.isNotBlank() } }
     }
 
-    override fun getSubtitleTracks(): List<SubtitleTrack> =
-        decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }.map { track ->
+    override fun getSubtitleTracks(): List<SubtitleTrack> {
+        val tracks = decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }
+        cachedSubtitleTracks = tracks
+        return tracks.map { track ->
             SubtitleTrack(
                 index = track.index,
                 id = track.id,
@@ -1061,6 +1860,7 @@ internal class NativePlayerController(
                 ),
             )
         }
+    }
 
     override fun applyAudioLanguagePreferences(languages: List<String>) {
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setAudioLanguages(it, languages.joinToString(",")) }
@@ -1070,59 +1870,185 @@ internal class NativePlayerController(
 
     override fun selectAudioTrack(index: Int) {
         val current = handle.takeIf { it != 0L } ?: return
-        val tracks = decodeTracks { NativePlayerBridge.audioTracksJson(it) }
-        val trackId = resolveTrackId(index, tracks) ?: run {
-            log.w { "selectAudioTrack missing track index=$index count=${tracks.size} handle=$current" }
-            return
+        val cachedTrackId = resolveTrackId(index, cachedAudioTracks)
+        executePlayerCommand { activeHandle ->
+            val trackId = cachedTrackId ?: run {
+                val tracks = decodeTracks(activeHandle) { NativePlayerBridge.audioTracksJson(it) }
+                cachedAudioTracks = tracks
+                resolveTrackId(index, tracks)
+            }
+            if (trackId == null) {
+                log.w { "selectAudioTrack missing track index=$index count=${cachedAudioTracks.size} handle=$activeHandle" }
+                return@executePlayerCommand
+            }
+            log.d { "selectAudioTrack index=$index trackId=$trackId count=${cachedAudioTracks.size} handle=$activeHandle" }
+            NativePlayerBridge.selectAudioTrack(activeHandle, trackId)
         }
-        log.d { "selectAudioTrack index=$index trackId=$trackId count=${tracks.size} handle=$current" }
-        NativePlayerBridge.selectAudioTrack(current, trackId)
     }
 
     override fun selectSubtitleTrack(index: Int) {
+        cancelInFlightSubtitleDownload()
+        pendingSubtitleUri = null
         val current = handle.takeIf { it != 0L } ?: return
         if (index < 0) {
             log.d { "selectSubtitleTrack off handle=$current" }
-            NativePlayerBridge.selectSubtitleTrack(current, -1)
+            executePlayerCommand { activeHandle ->
+                NativePlayerBridge.selectSubtitleTrack(activeHandle, -1)
+            }
             return
         }
-        val tracks = decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }
-        val trackId = resolveTrackId(index, tracks) ?: run {
-            log.w { "selectSubtitleTrack missing track index=$index count=${tracks.size} handle=$current" }
-            return
+        val cachedTrackId = resolveTrackId(index, cachedSubtitleTracks)
+        executePlayerCommand { activeHandle ->
+            val trackId = cachedTrackId ?: run {
+                val tracks = decodeTracks(activeHandle) { NativePlayerBridge.subtitleTracksJson(it) }
+                cachedSubtitleTracks = tracks
+                resolveTrackId(index, tracks)
+            }
+            if (trackId == null) {
+                log.w { "selectSubtitleTrack missing track index=$index count=${cachedSubtitleTracks.size} handle=$activeHandle" }
+                return@executePlayerCommand
+            }
+            log.d { "selectSubtitleTrack index=$index trackId=$trackId count=${cachedSubtitleTracks.size} handle=$activeHandle" }
+            NativePlayerBridge.selectSubtitleTrack(activeHandle, trackId)
+            applyPendingSubtitleSettingsDirect(activeHandle)
         }
-        log.d { "selectSubtitleTrack index=$index trackId=$trackId count=${tracks.size} handle=$current" }
-        NativePlayerBridge.selectSubtitleTrack(current, trackId)
-        applyPendingSubtitleSettings()
+    }
+
+    override val supportsSecondarySubtitles: Boolean
+        get() = DesktopHostOs.current == DesktopHostOs.WINDOWS
+
+    override fun loadSecondarySubtitlePreference(key: String): String? =
+        DesktopStorage.store("nuvio_player_track_preferences").getString(ProfileScopedKey.of("secondary_subtitle|$key"))
+
+    override fun saveSecondarySubtitlePreference(key: String, value: String) {
+        DesktopStorage.store("nuvio_player_track_preferences").putString(ProfileScopedKey.of("secondary_subtitle|$key"), value)
+    }
+
+    override suspend fun selectSecondarySubtitle(trackId: String?, url: String?): Boolean {
+        if (!supportsSecondarySubtitles) return false
+        val current = handle.takeIf { it != 0L } ?: return false
+        val source = pendingSource
+        return withContext(Dispatchers.IO) {
+            val path = if (url != null && (url.startsWith("http://", true) || url.startsWith("https://", true))) {
+                resolveCachedSubtitlePath(url) ?: downloadSubtitleToCache(url)
+            } else url
+            ensureActive()
+            if (current != handle || source !== pendingSource) return@withContext false
+            if (url != null && path == null) return@withContext false
+            NativePlayerBridge.selectSecondarySubtitle(current, trackId?.toIntOrNull() ?: -1, path.orEmpty())
+        }
+    }
+
+    override fun applySecondarySubtitleStyle(style: SubtitleStyleState, delayMs: Int, useLibass: Boolean) {
+        if (!supportsSecondarySubtitles) return
+        val importedFont = style.importedFontId?.let(SubtitleFontResolver::resolveImported)
+        val fontsDir = if (importedFont != null) SubtitleFontResolver.fontsDir(style.importedFontId) else ""
+        val safeFont = (importedFont ?: style.fontName).filterNot { it in "\\{}\r\n" }
+        val outline = style.resolveWindowsSubtitleOutline()
+        // mpv's text subtitle blur uses a 288-unit script height. ASS overlay tags use 720.
+        val overlayBlur = outline.blur.toDouble() * (720.0 / 288.0)
+        val size = style.toMpvSubtitleFontSize()
+        val tags = buildString {
+            append("\\fn").append(safeFont).append("\\fs").append(size)
+            append("\\b").append(if (style.bold) 1 else 0)
+            append("\\bord").append(outline.strokeWidth)
+            append("\\shad").append(outline.shadowOffset).append("\\blur").append(overlayBlur)
+            append(style.textColor.toAssColorTags(1))
+            append(style.outlineColor.toAssColorTags(3))
+            append(outline.shadowColor.toAssColorTags(4))
+        }
+        executePlayerCommand { current ->
+            val boxTags = if (outline.boxColor.alpha > 0f) outline.boxColor.toAssColorTags(1) else ""
+            NativePlayerBridge.setSecondarySubtitleStyle(current, tags, boxTags, fontsDir, style.bottomOffset, delayMs, useLibass)
+        }
     }
 
     override fun setSubtitleUri(url: String) {
         log.d { "setSubtitleUri ${url.toPlaybackLogKey()} handle=$handle" }
-        handle.takeIf { it != 0L }?.let { current ->
-            NativePlayerBridge.clearExternalSubtitles(current)
-            NativePlayerBridge.addSubtitleUrl(current, url)
+        cancelInFlightSubtitleDownload()
+        pendingSubtitleUri = url
+        val current = handle.takeIf { it != 0L } ?: return
+
+        val isRemote = url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
+        if (!isRemote) {
+            executePlayerCommand { activeHandle ->
+                NativePlayerBridge.clearExternalSubtitles(activeHandle)
+                NativePlayerBridge.addSubtitleUrl(activeHandle, url)
+                applyPendingSubtitleSettingsDirect(activeHandle)
+            }
+            return
+        }
+
+        val cachedPath = resolveCachedSubtitlePath(url)
+        if (cachedPath != null) {
+            log.d { "setSubtitleUri using cached file=$cachedPath handle=$current" }
+            executePlayerCommand { activeHandle ->
+                NativePlayerBridge.clearExternalSubtitles(activeHandle)
+                NativePlayerBridge.addSubtitleUrl(activeHandle, cachedPath)
+                applyPendingSubtitleSettingsDirect(activeHandle)
+            }
+            return
+        }
+
+        ensureScopesActive()
+        inFlightSubtitleDownloadJob = downloadScope.launch {
+            log.d { "setSubtitleUri downloading asynchronously url=${url.toPlaybackLogKey()}" }
+            val downloadedPath = downloadSubtitleToCache(url)
+            if (!isActive) return@launch
+            if (downloadedPath != null) {
+                log.d { "setSubtitleUri download complete file=$downloadedPath handle=$handle" }
+                executePlayerCommand { activeHandle ->
+                    NativePlayerBridge.clearExternalSubtitles(activeHandle)
+                    NativePlayerBridge.addSubtitleUrl(activeHandle, downloadedPath)
+                    applyPendingSubtitleSettingsDirect(activeHandle)
+                }
+            } else {
+                log.w { "setSubtitleUri download failed for ${url.toPlaybackLogKey()}" }
+            }
         }
     }
 
     override fun clearExternalSubtitle() {
+        cancelInFlightSubtitleDownload()
+        pendingSubtitleUri = null
         log.d { "clearExternalSubtitle handle=$handle" }
-        handle.takeIf { it != 0L }?.let(NativePlayerBridge::clearExternalSubtitles)
+        executePlayerCommand { activeHandle ->
+            NativePlayerBridge.clearExternalSubtitles(activeHandle)
+        }
     }
 
     override fun clearExternalSubtitleAndSelect(trackIndex: Int) {
+        cancelInFlightSubtitleDownload()
+        pendingSubtitleUri = null
         val current = handle.takeIf { it != 0L } ?: return
-        val trackId = if (trackIndex < 0) {
-            -1
-        } else {
-            val tracks = decodeTracks { NativePlayerBridge.subtitleTracksJson(it) }
-            resolveTrackId(trackIndex, tracks) ?: run {
-                log.w { "clearExternalSubtitleAndSelect missing track index=$trackIndex count=${tracks.size} handle=$current" }
-                return
+        val cachedTrackId = if (trackIndex < 0) -1 else resolveTrackId(trackIndex, cachedSubtitleTracks)
+        executePlayerCommand { activeHandle ->
+            val trackId = if (trackIndex < 0) {
+                -1
+            } else {
+                cachedTrackId ?: run {
+                    val tracks = decodeTracks(activeHandle) { NativePlayerBridge.subtitleTracksJson(it) }
+                    cachedSubtitleTracks = tracks
+                    resolveTrackId(trackIndex, tracks)
+                } ?: run {
+                    log.w { "clearExternalSubtitleAndSelect missing track index=$trackIndex count=${cachedSubtitleTracks.size} handle=$activeHandle" }
+                    return@executePlayerCommand
+                }
             }
+            log.d { "clearExternalSubtitleAndSelect trackIndex=$trackIndex trackId=$trackId handle=$activeHandle" }
+            NativePlayerBridge.clearExternalSubtitlesAndSelect(activeHandle, trackId)
+            applyPendingSubtitleSettingsDirect(activeHandle)
         }
-        log.d { "clearExternalSubtitleAndSelect trackIndex=$trackIndex trackId=$trackId handle=$current" }
-        NativePlayerBridge.clearExternalSubtitlesAndSelect(current, trackId)
-        applyPendingSubtitleSettings()
+    }
+
+    override fun setAudioUri(url: String) {
+        log.d { "setAudioUri ${url.toPlaybackLogKey()} handle=$handle" }
+        pendingAudioUri = url
+        val current = handle.takeIf { it != 0L } ?: return
+        if (attachedSource?.sourceAudioUrl == url) return
+        executePlayerCommand { activeHandle ->
+            NativePlayerBridge.addAudioUrl(activeHandle, url)
+        }
     }
 
     override fun setSubtitleVisible(visible: Boolean) {
@@ -1132,57 +2058,254 @@ internal class NativePlayerController(
     override fun setSubtitleDelayMs(delayMs: Int) {
         val clamped = delayMs.coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS)
         pendingSubtitleDelayMs = clamped
-        handle.takeIf { it != 0L }?.let { current ->
-            NativePlayerBridge.setSubtitleDelayMs(current, clamped)
+        executePlayerCommand { activeHandle ->
+            NativePlayerBridge.setSubtitleDelayMs(activeHandle, clamped)
         }
     }
 
     override fun applySubtitleStyle(style: SubtitleStyleState, useLibass: Boolean) {
         pendingSubtitleStyle = style
         pendingUseLibass = useLibass
-        handle.takeIf { it != 0L }?.let { current ->
-            applySubtitleStyle(current, style, useLibass)
+        executePlayerCommand { activeHandle ->
+            applySubtitleStyle(activeHandle, style, useLibass)
         }
     }
 
-    private fun applyPendingSubtitleSettings() {
-        val current = handle.takeIf { it != 0L } ?: return
+    private fun applyPendingSubtitleSettings(targetHandle: Long = handle) {
+        val target = targetHandle.takeIf { it != 0L } ?: handle.takeIf { it != 0L } ?: return
+        ensureScopesActive()
+        playerScope.launch {
+            val activeHandle = synchronized(lifecycleLock) {
+                if (handle == target) handle else target
+            }.takeIf { it != 0L } ?: return@launch
+            applyPendingSubtitleSettingsDirect(activeHandle)
+        }
+    }
+
+    private fun applyPendingSubtitleSettingsDirect(handle: Long) {
+        if (handle == 0L) return
         pendingSubtitleDelayMs?.let { delayMs ->
-            NativePlayerBridge.setSubtitleDelayMs(current, delayMs)
+            NativePlayerBridge.setSubtitleDelayMs(handle, delayMs)
         }
         pendingSubtitleStyle?.let { style ->
-            applySubtitleStyle(current, style, pendingUseLibass)
+            applySubtitleStyle(handle, style, pendingUseLibass)
         }
     }
 
     private fun applySubtitleStyle(handle: Long, style: SubtitleStyleState, useLibass: Boolean) {
+        val applyLibass = useLibass
+        val isBackgroundBox = style.outlineEffect == SubtitleOutlineEffect.BACKGROUND_BOX
+        val resolvedBoxColor = style.backgroundBoxColor
+        val resolvedOutlineSize = if (!style.outlineEnabled) 0f else when (style.outlineEffect) {
+            SubtitleOutlineEffect.NONE -> 0f
+            SubtitleOutlineEffect.BACKGROUND_BOX -> 0f
+            SubtitleOutlineEffect.SOFT_GLOW -> (style.outlineWidth.toFloat() * 1.5f).coerceAtLeast(3f)
+            SubtitleOutlineEffect.OUTLINE,
+            SubtitleOutlineEffect.OUTLINE_AND_SHADOW -> if (style.outlineEffect.needsOutline) {
+                style.outlineWidth.toFloat()
+            } else {
+                0f
+            }
+        }
+
+        val resolvedBackgroundColor = if (isBackgroundBox) {
+            resolvedBoxColor.toMpvColorString()
+        } else {
+            androidx.compose.ui.graphics.Color.Transparent.toMpvColorString()
+        }
+        val resolvedOutlineColor = if (isBackgroundBox) {
+            resolvedBoxColor.toMpvColorString()
+        } else {
+            style.outlineColor.toMpvColorString()
+        }
+
         NativePlayerBridge.applySubtitleStyle(
             handle = handle,
             textColor = style.textColor.toMpvColorString(),
-            backgroundColor = style.backgroundColor.toMpvColorString(),
-            outlineColor = style.outlineColor.toMpvColorString(),
-            outlineSize = if (style.outlineEnabled) style.outlineWidth.toFloat() else 0f,
+            backgroundColor = resolvedBackgroundColor,
+            outlineColor = resolvedOutlineColor,
+            outlineSize = resolvedOutlineSize,
             bold = style.bold,
             fontSize = style.toMpvSubtitleFontSize(),
             subPos = style.toMpvSubtitlePosition(),
-            useLibass = useLibass,
+            useLibass = applyLibass,
             stripSdh = style.stripSdh,
         )
-        val shadowAlpha = if (style.appearance.shadowEnabled) (style.appearance.shadowOpacity * 255 / 100) else 0
-        NativePlayerBridge.setSubtitleAppearance(
-            handle = handle,
-            font = SubtitleFontResolver.mpvFontName(style.appearance.fontId),
-            fontsDir = SubtitleFontResolver.fontsDir(),
-            shadowColor = "#" + shadowAlpha.toHexByte() + "000000",
-            shadowOffset = if (style.appearance.shadowEnabled) style.appearance.shadowSize.toFloat() else 0f,
+
+        if (!applyLibass) {
+            val importedFont = style.importedFontId?.let {
+                com.nuvio.app.features.player.SubtitleFontResolver.resolveImported(it)
+            }
+            NativePlayerBridge.setSubtitleAppearance(
+                handle = handle,
+                font = importedFont ?: style.fontName,
+                fontsDir = if (importedFont != null) com.nuvio.app.features.player.SubtitleFontResolver.fontsDir() else "",
+                shadowColor = style.outlineColor.toMpvColorString(),
+                shadowOffset = if (style.outlineEnabled && style.outlineEffect == SubtitleOutlineEffect.OUTLINE_AND_SHADOW) {
+                    (style.outlineWidth + 1f).coerceIn(2f, 5f)
+                } else if (isBackgroundBox) 4f else 0f,
+            )
+        }
+        WindowsMpvSubStyleHelper.applyExtendedSubtitleStyle(
+            bridgeHandle = handle,
+            style = style,
+            useLibass = applyLibass,
         )
     }
 
-    private fun decodeTracks(readJson: (Long) -> String): List<NativeMpvTrack> {
+    private fun decodeTracks(readJson: (Long) -> String): List<NativeMpvTrack> =
+        decodeTracks(handle, readJson)
+
+    private fun decodeTracks(handle: Long, readJson: (Long) -> String): List<NativeMpvTrack> {
         val current = handle.takeIf { it != 0L } ?: return emptyList()
         return runCatching {
             json.decodeFromString<List<NativeMpvTrack>>(readJson(current))
         }.getOrDefault(emptyList())
+    }
+
+    private fun resolveCachedSubtitlePath(url: String): String? {
+        val subtitlesDir = DesktopStorage.cacheDir.resolve("subtitles")
+        if (!Files.exists(subtitlesDir)) return null
+        val hash = hashUrl(url)
+        val extensions = listOf(resolveSubtitleExtension(url), "srt", "vtt", "ass", "ssa", "sub").distinct()
+        for (ext in extensions) {
+            val file = subtitlesDir.resolve("$hash.$ext")
+            if (Files.exists(file) && Files.isRegularFile(file) && Files.size(file) > 0L) {
+                return file.toAbsolutePath().toString()
+            }
+        }
+        return null
+    }
+
+    private suspend fun downloadSubtitleToCache(url: String): String? = withContext(Dispatchers.IO) {
+        val subtitlesDir = DesktopStorage.cacheDir.resolve("subtitles")
+        runCatching { Files.createDirectories(subtitlesDir) }
+        val hash = hashUrl(url)
+        val initialExt = resolveSubtitleExtension(url)
+        val tempFile = subtitlesDir.resolve("$hash-${System.nanoTime()}.tmp")
+
+        try {
+            val encodedUrl = url.encodeUnsafeHttpUrlCharacters()
+            val request = Request.Builder()
+                .url(encodedUrl)
+                .header("User-Agent", "Mozilla/5.0")
+                .build()
+            val call = subtitleDownloadClient.newCall(request)
+
+            val response = suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation {
+                    call.cancel()
+                }
+                call.enqueue(object : okhttp3.Callback {
+                    override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                        continuation.resumeWith(Result.success(response))
+                    }
+                    override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                        continuation.resumeWith(Result.failure(e))
+                    }
+                })
+            }
+
+            val finalUrl = response.use { resp ->
+                if (!resp.isSuccessful) {
+                    log.w { "downloadSubtitleToCache HTTP ${resp.code} for ${url.toPlaybackLogKey()}" }
+                    return@withContext null
+                }
+                val body = resp.body ?: return@withContext null
+                body.byteStream().use { input ->
+                    Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING)
+                }
+                resp.request.url.toString()
+            }
+            if (!expandHlsSubtitlePlaylist(tempFile, finalUrl)) return@withContext null
+
+            if (!Files.exists(tempFile) || Files.size(tempFile) == 0L) {
+                Files.deleteIfExists(tempFile)
+                return@withContext null
+            }
+
+            val headerBytes = ByteArray(128)
+            val readCount = Files.newInputStream(tempFile).use { it.read(headerBytes) }
+            val finalExt = if (readCount > 0) {
+                detectSubtitleExtension(headerBytes.copyOf(readCount), initialExt)
+            } else {
+                initialExt
+            }
+            val finalTargetFile = subtitlesDir.resolve("$hash.$finalExt")
+            try {
+                Files.move(tempFile, finalTargetFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: Exception) {
+                Files.move(tempFile, finalTargetFile, StandardCopyOption.REPLACE_EXISTING)
+            }
+            finalTargetFile.toAbsolutePath().toString()
+        } catch (e: Exception) {
+            if (e is CancellationException) {
+                log.d { "downloadSubtitleToCache cancelled for ${url.toPlaybackLogKey()}" }
+            } else {
+                log.w(e) { "downloadSubtitleToCache error for ${url.toPlaybackLogKey()}" }
+            }
+            null
+        } finally {
+            runCatching { Files.deleteIfExists(tempFile) }
+        }
+    }
+
+    /**
+     * An HLS subtitle rendition (offered by [HlsStartupTrim]) is a playlist of WebVTT segments:
+     * replace [file] with the segments joined into one WebVTT file. Leaves other files alone.
+     */
+    private fun expandHlsSubtitlePlaylist(file: Path, playlistUrl: String): Boolean {
+        val head = Files.newInputStream(file).use { it.readNBytes(16) }
+        if (!String(head, Charsets.UTF_8).trimStart('﻿').startsWith("#EXTM3U")) return true
+        val base = java.net.URI(playlistUrl)
+        val segments = Files.readAllLines(file, Charsets.UTF_8)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .take(4_000)
+            .map { segment -> base.resolve(segment).toString() }
+        if (segments.isEmpty()) return false
+        val merged = StringBuilder()
+        for ((index, segmentUrl) in segments.withIndex()) {
+            val request = Request.Builder()
+                .url(segmentUrl.encodeUnsafeHttpUrlCharacters())
+                .header("User-Agent", "Mozilla/5.0")
+                .build()
+            val text = subtitleDownloadClient.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    log.w { "HLS subtitle segment HTTP ${resp.code} for ${segmentUrl.toPlaybackLogKey()}" }
+                    return false
+                }
+                resp.body?.string().orEmpty().removePrefix("﻿").replace("\r\n", "\n")
+            }
+            // Every segment repeats the WEBVTT header block; keep only the first one.
+            merged.append(if (index == 0) text else text.substringAfter("\n\n", "")).append("\n\n")
+        }
+        Files.writeString(file, merged.toString())
+        return true
+    }
+}
+
+private fun hashUrl(url: String): String {
+    val md = MessageDigest.getInstance("SHA-256")
+    val digest = md.digest(url.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(it) }
+}
+
+private fun resolveSubtitleExtension(url: String): String {
+    val cleanUrl = url.substringBefore('?').substringBefore('#')
+    val ext = cleanUrl.substringAfterLast('.', "").lowercase(Locale.ROOT)
+    return when (ext) {
+        "srt", "vtt", "ass", "ssa", "sub" -> ext
+        else -> "srt"
+    }
+}
+
+private fun detectSubtitleExtension(firstBytes: ByteArray, fallbackExt: String): String {
+    val header = String(firstBytes, 0, minOf(firstBytes.size, 128), Charsets.UTF_8).trimStart()
+    return when {
+        header.startsWith("WEBVTT", ignoreCase = true) -> "vtt"
+        header.startsWith("[Script Info]", ignoreCase = true) -> "ass"
+        else -> fallbackExt
     }
 }
 
@@ -1224,6 +2347,13 @@ private fun resolveTrackId(index: Int, tracks: List<NativeMpvTrack>): Int? =
         }
     } ?: tracks.getOrNull(index)?.id?.toIntOrNull()
 
+private fun Color.toAssColorTags(channel: Int): String {
+    val argb = toMpvColorString().removePrefix("#")
+    val opacity = 255 - argb.substring(0, 2).toInt(16)
+    val bgr = argb.substring(6, 8) + argb.substring(4, 6) + argb.substring(2, 4)
+    return "\\${channel}c&H$bgr&\\${channel}a&H${opacity.toHexByte()}&"
+}
+
 private fun Color.toMpvColorString(): String {
     val alphaInt = (alpha * 255f).toInt().coerceIn(0, 255)
     val redInt = (red * 255f).toInt().coerceIn(0, 255)
@@ -1255,12 +2385,12 @@ private fun Int.toHexByte(): String {
 
 private data class PendingSource(
     val sourceUrl: String,
+    val sourceAudioUrl: String? = null,
     val headerLines: List<String>,
     val playWhenReady: Boolean,
     val initialPositionMs: Long,
     val decoderPriority: Int,
     val nvidiaRtxSuperResolutionEnabled: Boolean,
-    val nvidiaRtxHdrEnabled: Boolean,
     val onError: (String?) -> Unit,
 )
 
@@ -1290,8 +2420,12 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         "keyboardToggle" -> PlayerControlsAction.KeyboardTogglePlayback
         "seekBack" -> PlayerControlsAction.SeekBack
         "keyboardSeekBack" -> PlayerControlsAction.KeyboardSeekBack
+        "keyboardSeek10Back" -> PlayerControlsAction.KeyboardSeek10Back
+        "keyboardFineSeekBack" -> PlayerControlsAction.KeyboardFineSeekBack
         "seekForward" -> PlayerControlsAction.SeekForward
         "keyboardSeekForward" -> PlayerControlsAction.KeyboardSeekForward
+        "keyboardSeek10Forward" -> PlayerControlsAction.KeyboardSeek10Forward
+        "keyboardFineSeekForward" -> PlayerControlsAction.KeyboardFineSeekForward
         "keyboardVolumeDown" -> PlayerControlsAction.KeyboardVolumeDown
         "keyboardVolumeUp" -> PlayerControlsAction.KeyboardVolumeUp
         "pictureInPicture", "pip" -> PlayerControlsAction.PictureInPicture
@@ -1304,6 +2438,8 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         "external" -> PlayerControlsAction.OpenExternalPlayer
         "submitIntro" -> PlayerControlsAction.SubmitIntro
         "videoSettings" -> PlayerControlsAction.VideoSettings
+        "minimize" -> PlayerControlsAction.Minimize
+        "expand" -> PlayerControlsAction.Expand
         else -> null
     }
 
@@ -1311,11 +2447,78 @@ private data class NativeControlsStructureKey(
     val state: PlayerControlsState,
     val isFullscreen: Boolean,
     val isInPip: Boolean,
+    val playerUiScale: Int = 100,
 )
 
-private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageReady: () -> Unit): String =
+internal fun PlayerControlsState.toControlsJson(
+    isFullscreen: Boolean,
+    onImageReady: () -> Unit = {},
+    windowsPlaybackStats: JsonObject? = null,
+): String =
     buildString {
         append('{')
+        appendJsonField("playerUiMode", playerUiMode)
+        append(',')
+        appendJsonField("seekPreviewEnabled", seekPreviewEnabled)
+        append(",")
+        appendJsonField("seekPreviewWhileDragging", seekPreviewWhileDragging)
+        append(",")
+        appendJsonField("seekPreviewWhileHovering", seekPreviewWhileHovering)
+        append(",")
+        appendJsonField("seekPreviewWhileKeyboardSeeking", seekPreviewWhileKeyboardSeeking)
+        append(",")
+        appendJsonField("seekPreviewThumbnailCount", seekPreviewThumbnailCount)
+        append(',')
+        appendJsonField("seekPreviewVttUrl", seekPreviewVttUrl)
+        append(',')
+        appendJsonField("seekrApiKey", seekrApiKey)
+        append(',')
+        appendJsonField("seekrImdbId", seekrImdbId)
+        append(',')
+        appendJsonField("seekrTmdbId", seekrTmdbId)
+        append(',')
+        appendJsonField("seekrSeason", seekrSeason)
+        append(',')
+        appendJsonField("seekrEpisode", seekrEpisode)
+        append(',')
+        appendJsonField("animeUpscalerEnabled", animeUpscalerEnabled)
+        append(',')
+        appendJsonField("animeUpscalerModeIndex", animeUpscalerModeIndex)
+        append(',')
+        appendJsonField("animeUpscalerOption", animeUpscalerOption.name.lowercase())
+        append(',')
+        appendJsonField("animeUpscalerActive", animeUpscalerActive)
+        append(',')
+        appendJsonField("mediaContentType", mediaContentType.name.lowercase())
+        append(',')
+        appendJsonField("isAutoBypassed", isAutoBypassed)
+        append(',')
+        appendJsonField("svpMode", svpMode)
+        append(',')
+        appendJsonField("svpActive", svpActive)
+        append(',')
+        appendJsonField("svpProfile", svpProfile)
+        append(',')
+        appendJsonField("svpAvailable", svpAvailable)
+        append(',')
+        appendJsonField("svpRuntimeBundled", DesktopHostOs.current == DesktopHostOs.WINDOWS)
+        append(',')
+        appendJsonField("audioNightModeEnabled", audioNightModeEnabled)
+        append(',')
+        appendJsonField("showSeekbarWhileSeeking", showSeekbarWhileSeeking)
+        append(',')
+        appendJsonField("showRemainingTime", showRemainingTime)
+        append(',')
+        appendJsonField("eyeFilterEnabled", eyeFilterEnabled)
+        append(',')
+        appendJsonField("eyeFilterColor", eyeFilterColor)
+        append(',')
+        appendJsonField("eyeFilterOpacity", eyeFilterOpacity)
+        append(',')
+        appendJsonField("grainFilterEnabled", PlayerSettingsRepository.uiState.value.grainFilterEnabled)
+        append(',')
+        appendJsonField("playerUiScale", PlayerSettingsRepository.uiState.value.playerUiScale)
+        append(',')
         appendJsonField("title", title)
         append(',')
         appendJsonField("episodeText", episodeText)
@@ -1346,7 +2549,7 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         append(',')
         appendJsonField("isFullscreen", isFullscreen)
         append(',')
-        appendJsonField("volumeLevel", volumeLevel)
+        appendJsonVolumeLevel("volumeLevel", volumeLevel)
         append(',')
         appendJsonField("subtitlesLabel", subtitlesLabel)
         append(',')
@@ -1361,6 +2564,22 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         appendJsonField("playLabel", playLabel)
         append(',')
         appendJsonField("pauseLabel", pauseLabel)
+        append(',')
+        appendJsonField("toastPlayingLabel", toastLabels.playing)
+        append(',')
+        appendJsonField("toastPausedLabel", toastLabels.paused)
+        append(',')
+        appendJsonField("toastOnLabel", toastLabels.on)
+        append(',')
+        appendJsonField("toastOffLabel", toastLabels.off)
+        append(',')
+        appendJsonField("toastAudioLabel", toastLabels.audio)
+        append(',')
+        appendJsonField("toastSubtitlesLabel", toastLabels.subtitles)
+        append(',')
+        appendJsonField("toastNoAudioTracksLabel", toastLabels.noAudioTracks)
+        append(',')
+        appendJsonField("toastNoSubtitlesLabel", toastLabels.noSubtitles)
         append(',')
         appendJsonField("closeLabel", closeLabel)
         append(',')
@@ -1442,6 +2661,8 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         append(',')
         appendJsonField("subtitleStyleTabLabel", subtitleStyleTabLabel)
         append(',')
+        appendJsonField("customSubtitleStyleLabel", customSubtitleStyleLabel)
+        append(',')
         appendJsonField("forcedLabel", forcedLabel)
         append(',')
         appendJsonField("noneLabel", noneLabel)
@@ -1476,31 +2697,21 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         append(',')
         appendJsonField("outlineColorLabel", outlineColorLabel)
         append(',')
-        appendJsonField("fontLabel", fontLabel)
+        appendJsonField("fontLabel", fontPicker.label)
         append(',')
-        appendJsonField("backgroundColorLabel", backgroundColorLabel)
+        appendJsonField("fontImportLabel", fontPicker.importLabel)
         append(',')
-        appendJsonField("backgroundOpacityLabel", backgroundOpacityLabel)
+        appendJsonField("fontImportHint", fontPicker.importHint)
         append(',')
-        appendJsonField("fontImportLabel", fontImportLabel)
+        appendJsonField("fontImportError", fontPicker.importError)
         append(',')
-        appendJsonField("fontImportHint", fontImportHint)
+        appendJsonField("doneLabel", fontPicker.doneLabel)
         append(',')
-        appendJsonField("fontImportError", fontImportError)
+        appendJsonField("fontRemoveLabel", fontPicker.removeLabel)
         append(',')
-        appendJsonField("doneLabel", doneLabel)
+        appendJsonField("subtitleFontImportFailed", fontPicker.importFailed)
         append(',')
-        appendJsonField("fontRemoveLabel", fontRemoveLabel)
-        append(',')
-        appendJsonField("subtitleFontImportFailed", subtitleFontImportFailed)
-        append(',')
-        appendJsonField("shadowLabel", shadowLabel)
-        append(',')
-        appendJsonField("shadowOpacityLabel", shadowOpacityLabel)
-        append(',')
-        appendJsonField("shadowSizeLabel", shadowSizeLabel)
-        append(',')
-        appendJsonArrayField("subtitleFonts", subtitleFonts) {
+        appendJsonArrayField("subtitleFonts", fontPicker.items) {
             append("{\"id\":").append(it.id.toJsonString())
             append(",\"label\":").append(it.label.toJsonString())
             append('}')
@@ -1558,6 +2769,8 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         append(',')
         appendJsonField("isPlaying", isPlaying)
         append(',')
+        appendJsonField("isEnded", isEnded)
+        append(',')
         appendJsonField("isLoading", isLoading)
         append(',')
         appendJsonField(
@@ -1571,11 +2784,15 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
             },
         )
         append(',')
+        appendJsonField("minimizeLabel", minimizeLabel)
+        append(',')
         appendJsonField("lockLabel", lockLabel)
         append(',')
         appendJsonField("unlockLabel", unlockLabel)
         append(',')
         appendJsonField("isInPip", DesktopPlayerPictureInPicture.isEnabled)
+        append(',')
+        appendJsonField("isMiniPlayer", DesktopPlayerPictureInPicture.isEnabled && DesktopPlayerPictureInPicture.isDocked)
         append(',')
         appendJsonField("controlsVisible", controlsVisible)
         append(',')
@@ -1621,6 +2838,10 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         append(',')
         appendJsonField("nextEpisodePlayable", nextEpisodePlayable)
         append(',')
+        appendJsonField("nextEpisodeIsFiller", nextEpisodeIsFiller)
+        append(',')
+        appendJsonField("nextEpisodeIsMixed", nextEpisodeIsMixed)
+        append(',')
         appendJsonField("showSubmitIntro", showSubmitIntro)
         append(',')
         appendJsonField("showVideoSettings", showVideoSettings)
@@ -1643,6 +2864,14 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         append(',')
         appendJsonArrayField("sourceItems", sourceItems) { appendSourceItemJson(it) }
         append(',')
+        appendJsonField("sourceReleaseDate", sourceReleaseDate)
+        append(',')
+        appendJsonField("sourceRating", sourceRating)
+        append(',')
+        appendJsonField("sourceIsFiller", sourceIsFiller)
+        append(',')
+        appendJsonField("sourceIsMixed", sourceIsMixed)
+        append(',')
         appendJsonArrayField("episodeItems", episodeItems) { appendEpisodeItemJson(it) }
         append(',')
         appendJsonArrayField("episodeSeasons", episodeSeasons) { appendSeasonItemJson(it) }
@@ -1652,6 +2881,14 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         appendJsonField("episodeStreamsIsLoading", episodeStreamsIsLoading)
         append(',')
         appendJsonField("selectedEpisodeLabel", selectedEpisodeLabel)
+        append(',')
+        appendJsonField("selectedEpisodeReleaseDate", selectedEpisodeReleaseDate)
+        append(',')
+        appendJsonField("selectedEpisodeRating", selectedEpisodeRating)
+        append(',')
+        appendJsonField("selectedEpisodeIsFiller", selectedEpisodeIsFiller)
+        append(',')
+        appendJsonField("selectedEpisodeIsMixed", selectedEpisodeIsMixed)
         append(',')
         appendJsonArrayField("episodeStreamFilters", episodeStreamFilters) { appendFilterItemJson(it) }
         append(',')
@@ -1673,6 +2910,16 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         append(',')
         appendJsonField("showP2pConsent", showP2pConsent)
         append(',')
+        appendJsonField("secondarySubtitleSupported", subtitleAppearance.slots.supported)
+        append(',')
+        appendJsonField("secondarySubtitleMenu", subtitleAppearance.slots.secondarySelected)
+        append(',')
+        appendJsonField("secondarySubtitleActive", subtitleAppearance.slots.secondaryActive)
+        append(',')
+        appendJsonField("primarySubtitleLabel", subtitleAppearance.slots.primaryLabel)
+        append(',')
+        appendJsonField("secondarySubtitleLabel", subtitleAppearance.slots.secondaryLabel)
+        append(',')
         appendJsonField("subtitleActiveTab", subtitleActiveTab)
         append(',')
         appendJsonArrayField("subtitleLanguageItems", subtitleLanguageItems) { appendSubtitleLanguageItemJson(it) }
@@ -1690,6 +2937,8 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         appendJsonField("selectedAddonSubtitleId", selectedAddonSubtitleId)
         append(',')
         appendJsonField("useCustomSubtitles", useCustomSubtitles)
+        append(',')
+        appendJsonField("customSubtitleStylingEnabled", customSubtitleStylingEnabled)
         append(',')
         appendJsonField("subtitleDelayMs", subtitleDelayMs)
         append(',')
@@ -1717,6 +2966,53 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         append(',')
         appendJsonField("notificationToken", notificationToken)
         append(',')
+        appendJsonField("showPlaybackTimeOverlay", showPlaybackTimeOverlay)
+        append(',')
+        appendJsonField("showTorrentStatsOverlay", showTorrentStatsOverlay)
+        append(',')
+        appendJsonField("torrentStatsText", torrentStatsText)
+        if (windowsPlaybackStats != null) {
+            append(",\"playbackStats\":").append(windowsPlaybackStats)
+        } else if (playbackStats != null) {
+            append(",\"playbackStats\":{")
+            appendJsonField("videoCodec", playbackStats.videoCodec)
+            append(',')
+            appendJsonField("videoDecoder", playbackStats.videoDecoder)
+            append(',')
+            appendJsonField("videoResolution", playbackStats.videoResolution)
+            append(',')
+            appendJsonField("videoColor", playbackStats.videoColor)
+            append(',')
+            append("\"containerFps\":").append(playbackStats.containerFps)
+            append(',')
+            append("\"outputFps\":").append(playbackStats.outputFps)
+            append(',')
+            append("\"displayFps\":").append(playbackStats.displayFps)
+            append(',')
+            appendJsonField("videoBitrateKbps", playbackStats.videoBitrateKbps)
+            append(',')
+            appendJsonField("droppedFrames", playbackStats.droppedFrames)
+            append(',')
+            appendJsonField("voDroppedFrames", playbackStats.voDroppedFrames)
+            append(',')
+            appendJsonField("audioCodec", playbackStats.audioCodec)
+            append(',')
+            appendJsonField("audioChannels", playbackStats.audioChannels)
+            append(',')
+            appendJsonField("audioSampleRateHz", playbackStats.audioSampleRateHz)
+            append(',')
+            appendJsonField("audioBitrateKbps", playbackStats.audioBitrateKbps)
+            append(',')
+            append("\"cacheDurationSec\":").append(playbackStats.cacheDurationSec)
+            append(',')
+            appendJsonField("cacheUsedBytes", playbackStats.cacheUsedBytes)
+            append(',')
+            appendJsonField("cacheSpeedBytes", playbackStats.cacheSpeedBytes)
+            append('}')
+        } else {
+            append(",\"playbackStats\":null")
+        }
+        append(',')
         appendJsonArrayField("badges", badges) {
             append("{\"name\":").append(it.name.toJsonString())
             append(",\"imageUrl\":").append(it.imageURL.toJsonString())
@@ -1726,39 +3022,27 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
             append('}')
         }
         append(',')
-        appendJsonArrayField("chapters", chapters) {
+        appendJsonArrayField("chapters", chapterControls.chapters) {
             append("{\"startMs\":").append(it.startMs)
             append(",\"title\":").append(it.title.toJsonString())
             append('}')
         }
         append(',')
-        appendJsonField("chapterTitleEnabled", chapterTitleEnabled)
+        appendJsonField("chapterTitleEnabled", chapterControls.chapterTitleEnabled)
         append(',')
-        appendJsonField("chaptersLabel", chaptersLabel)
+        appendJsonField("chaptersLabel", chapterControls.chaptersLabel)
         append(',')
-        appendJsonField("chaptersPanelTitle", chaptersPanelTitle)
+        appendJsonField("chaptersPanelTitle", chapterControls.chaptersPanelTitle)
         append(',')
-        appendJsonField("chapterRemainingTemplate", chapterRemainingTemplate)
+        appendJsonField("chapterRemainingTemplate", chapterControls.chapterRemainingTemplate)
         append(',')
         appendJsonField("autoSyncedLabel", autoSyncedLabel)
         append(',')
-        appendJsonField("streamInfoLabel", streamInfoLabel)
-        append(',')
-        appendJsonArrayField("streamInfoSections", streamInfoSections) { section ->
-            append("{\"title\":").append(section.title.toJsonString())
-            append(",\"logo\":").append((section.logo ?: "").toJsonString())
-            append(",\"name\":").append((section.name ?: "").toJsonString())
-            append(",\"subtitle\":").append((section.subtitle ?: "").toJsonString())
-            append(",\"description\":").append((section.description ?: "").toJsonString())
-            append(",\"items\":[")
-            section.items.forEachIndexed { index, item ->
-                if (index > 0) append(',')
-                append("{\"label\":").append(item.label.toJsonString())
-                append(",\"value\":").append(item.value.toJsonString())
-                append('}')
-            }
-            append("]}")
+        append("\"playbackStatsMetadata\":")
+        val metadata = playbackStatsMetadata?.let {
+            it.copy(providerLogo = it.providerLogo?.let { logo -> WebviewImages.resolve(logo, onImageReady) })
         }
+        append(partyJson.encodeToString(metadata))
         append(",\"party\":")
         append(partyJson.encodeToString(PlayerControlPartyState.serializer(), party.withWebviewImages(onImageReady)))
         append('}')
@@ -1771,8 +3055,7 @@ private fun PlayerControlPartyState.withWebviewImages(onImageReady: () -> Unit):
 
 private fun PlayerControlsState.nativeControlsStructureKey(): PlayerControlsState =
     copy(
-        isPlaying = false,
-        isLoading = false,
+        playback = playback.copy(isPlaying = false, isLoading = false),
         durationMs = 0L,
         positionMs = 0L,
         bufferedPositionMs = 0L,
@@ -1797,8 +3080,19 @@ private fun StringBuilder.appendJsonField(name: String, value: Float?) {
         append("null")
     } else if (name == "holdToSpeedValue") {
         append(value.coerceIn(1f, 4f))
+    } else if (name == "outlineWidth") {
+        append(value.coerceIn(0.5f, 8f))
     } else {
         append(value.coerceIn(0f, 1f))
+    }
+}
+
+private fun StringBuilder.appendJsonVolumeLevel(name: String, value: Float?) {
+    append('"').append(name).append("\":")
+    if (value == null || value.isNaN() || value.isInfinite()) {
+        append("null")
+    } else {
+        append(value.coerceDesktopPlayerVolumeLevel())
     }
 }
 
@@ -1904,6 +3198,8 @@ private fun StringBuilder.appendEpisodeItemJson(item: PlayerControlEpisodeItem) 
     append(',')
     appendJsonField("released", item.released)
     append(',')
+    appendJsonField("rating", item.rating)
+    append(',')
     appendJsonField("season", item.season)
     append(',')
     appendJsonField("episode", item.episode)
@@ -1911,6 +3207,10 @@ private fun StringBuilder.appendEpisodeItemJson(item: PlayerControlEpisodeItem) 
     appendJsonField("isCurrent", item.isCurrent)
     append(',')
     appendJsonField("isWatched", item.isWatched)
+    append(',')
+    appendJsonField("isFiller", item.isFiller)
+    append(',')
+    appendJsonField("isMixed", item.isMixed)
     append('}')
 }
 
@@ -1992,7 +3292,7 @@ private fun StringBuilder.appendSubtitleStyleJson(style: SubtitleStyleState) {
     append(',')
     appendJsonField("outlineColor", style.outlineColor.toStorageHexString())
     append(',')
-    appendJsonField("backgroundColor", style.backgroundColor.toStorageHexString())
+    appendJsonField("backgroundColor", (if (style.outlineEffect == SubtitleOutlineEffect.BACKGROUND_BOX) style.backgroundBoxColor else style.backgroundColor).toStorageHexString())
     append(',')
     appendJsonField("outlineEnabled", style.outlineEnabled)
     append(',')
@@ -2002,13 +3302,13 @@ private fun StringBuilder.appendSubtitleStyleJson(style: SubtitleStyleState) {
     append(',')
     appendJsonField("bottomOffset", style.bottomOffset)
     append(',')
-    appendJsonField("fontId", style.appearance.fontId)
+    appendJsonField("fontId", style.importedFontId ?: style.fontName)
     append(',')
-    appendJsonField("shadowEnabled", style.appearance.shadowEnabled)
+    appendJsonField("fontName", style.fontName)
     append(',')
-    appendJsonField("shadowOpacity", style.appearance.shadowOpacity)
+    appendJsonField("outlineEffect", style.outlineEffect.id)
     append(',')
-    appendJsonField("shadowSize", style.appearance.shadowSize)
+    appendJsonField("outlineWidth", style.outlineWidth)
     append('}')
 }
 
@@ -2036,3 +3336,11 @@ private fun String.toJsonString(): String =
         }
         append('"')
     }
+
+private const val FIRST_FRAME_GRACE_NANOS = 120_000_000L
+private const val FIRST_FRAME_TIMEOUT_NANOS = 2_000_000_000L
+
+/** How long the exit shield holds the last frame fully up while the page beneath comes back. */
+private const val EXIT_SHIELD_HOLD_MS = 120
+
+private const val EXIT_SHIELD_FADE_MS = 300

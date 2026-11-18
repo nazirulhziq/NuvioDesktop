@@ -559,11 +559,13 @@ internal fun findPersistedSubtitleTrackIndex(
     // Track ids are positional (mpv "3"), so the same id can be another track in a later episode.
     val savedLanguage = preference.subtitleLanguage?.takeIf { it.isNotBlank() }
     preference.subtitleTrackId?.takeIf { it.isNotBlank() }?.let { trackId ->
+        // Embedded IDs are local to a file and can identify a different language next episode.
         tracks.firstOrNull { track ->
             track.id == trackId &&
+                (preference.subtitleLanguage.isNullOrBlank() ||
+                    subtitleTrackMatchesLanguage(track, preference.subtitleLanguage)) &&
                 (!wantsForced || track.isForced) &&
-                (savedLanguage == null || track.language.isNullOrBlank() ||
-                    SubtitleLanguageMatching.matchesLanguageCode(track.language, savedLanguage))
+                (preference.subtitleIsForced != false || !track.isForced)
         }?.let { return it.index }
     }
 

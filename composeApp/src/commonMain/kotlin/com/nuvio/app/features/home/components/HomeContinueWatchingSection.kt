@@ -1,8 +1,13 @@
 package com.nuvio.app.features.home.components
 
 import com.nuvio.app.core.ui.rememberAnimatedArtworkAnimation
+import com.nuvio.app.features.home.MetaPreview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -60,10 +65,12 @@ import com.nuvio.app.core.ui.PosterCardStyleUiState
 import com.nuvio.app.core.ui.ScopedDisintegrationTracker
 import com.nuvio.app.core.ui.landscapePosterHeightForWidth
 import com.nuvio.app.core.ui.landscapePosterWidth
-import com.nuvio.app.core.ui.nuvioFocusBorder
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.desktopPosterHoverScale
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.rememberArtworkGlowState
+import com.nuvio.app.core.ui.posterGlow
+import com.nuvio.app.core.ui.PosterGlowState
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.cloudLibraryDisplayArtworkUrl
 import com.nuvio.app.features.tracking.WatchProgressSource
@@ -280,11 +287,14 @@ internal fun HomeContinueWatchingSection(
     modifier: Modifier = Modifier,
     title: String? = null,
     sectionPadding: Dp? = null,
+    useGutterLayout: Boolean = false,
     layout: ContinueWatchingLayout? = null,
     listState: LazyListState = rememberLazyListState(),
     onItemClick: ((ContinueWatchingItem) -> Unit)? = null,
     onItemLongPress: ((ContinueWatchingItem) -> Unit)? = null,
+    onItemRemove: ((ContinueWatchingItem) -> Unit)? = null,
     disintegrationRequest: DisintegrationRequest<String>? = null,
+    onViewAllClick: (() -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
 
@@ -298,11 +308,14 @@ internal fun HomeContinueWatchingSection(
             modifier = modifier.fillMaxWidth(),
             title = title,
             sectionPadding = sectionPadding,
+            useGutterLayout = useGutterLayout,
             layout = layout,
             listState = listState,
             onItemClick = onItemClick,
             onItemLongPress = onItemLongPress,
+            onItemRemove = onItemRemove,
             disintegrationRequest = disintegrationRequest,
+            onViewAllClick = onViewAllClick,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -315,11 +328,14 @@ internal fun HomeContinueWatchingSection(
                 modifier = Modifier.fillMaxWidth(),
                 title = title,
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
+                useGutterLayout = useGutterLayout,
                 layout = rememberContinueWatchingLayout(maxWidth.value, rememberPosterCardStyleUiState()),
                 listState = listState,
                 onItemClick = onItemClick,
                 onItemLongPress = onItemLongPress,
+                onItemRemove = onItemRemove,
                 disintegrationRequest = disintegrationRequest,
+                onViewAllClick = onViewAllClick,
             )
         }
     }
@@ -335,11 +351,14 @@ private fun HomeContinueWatchingSectionContent(
     modifier: Modifier,
     title: String?,
     sectionPadding: Dp,
+    useGutterLayout: Boolean,
     layout: ContinueWatchingLayout,
     listState: LazyListState,
     onItemClick: ((ContinueWatchingItem) -> Unit)?,
     onItemLongPress: ((ContinueWatchingItem) -> Unit)?,
+    onItemRemove: ((ContinueWatchingItem) -> Unit)?,
     disintegrationRequest: DisintegrationRequest<String>?,
+    onViewAllClick: (() -> Unit)?,
 ) {
     key(dataSourceKey) {
         val disintegration = remember {
@@ -354,7 +373,11 @@ private fun HomeContinueWatchingSectionContent(
             entries = displayEntries,
             modifier = modifier,
             headerHorizontalPadding = sectionPadding,
+            onViewAllClick = onViewAllClick,
+            onTitleClick = onViewAllClick?.takeIf { isDesktop },
             rowContentPadding = PaddingValues(horizontal = sectionPadding),
+            useGutterLayout = useGutterLayout,
+            showRowNavigationControls = true,
             itemSpacing = layout.itemGap,
             key = { entry -> entry.key },
             animatePlacement = true,
@@ -363,39 +386,87 @@ private fun HomeContinueWatchingSectionContent(
             val item = entry.item
             val onClick = if (entry.exiting) null else onItemClick?.let { { it(item) } }
             val onLongClick = if (entry.exiting) null else onItemLongPress?.let { { it(item) } }
+            val onRemove = if (entry.exiting) null else onItemRemove?.let { { it(item) } }
             DisintegratingContainer(
                 disintegrating = entry.exiting,
                 onDisintegrated = { disintegration.onDisintegrated(entry.key) },
             ) {
-                when (style) {
-                    ContinueWatchingSectionStyle.Card -> ContinueWatchingCard(
-                        item = item,
-                        useEpisodeThumbnails = useEpisodeThumbnails,
-                        blurNextUp = blurNextUp,
-                        onClick = onClick,
-                        onLongClick = onLongClick,
-                    )
-                    ContinueWatchingSectionStyle.Wide -> ContinueWatchingWideCard(
-                        item = item,
-                        layout = layout,
-                        useEpisodeThumbnails = useEpisodeThumbnails,
-                        blurNextUp = blurNextUp,
-                        onClick = onClick,
-                        onLongClick = onLongClick,
-                    )
-                    ContinueWatchingSectionStyle.Poster -> ContinueWatchingPosterCard(
-                        item = item,
-                        layout = layout,
-                        useEpisodeThumbnails = useEpisodeThumbnails,
-                        blurNextUp = blurNextUp,
-                        onClick = onClick,
-                        onLongClick = onLongClick,
-                    )
-                }
+                ContinueWatchingTile(item, style, layout, useEpisodeThumbnails, blurNextUp, onClick, onLongClick, onRemove)
             }
         }
     }
 }
+
+@Composable
+internal fun ContinueWatchingTile(
+    item: ContinueWatchingItem,
+    style: ContinueWatchingSectionStyle,
+    layout: ContinueWatchingLayout,
+    useEpisodeThumbnails: Boolean,
+    blurNextUp: Boolean,
+    onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)?,
+    onRemove: (() -> Unit)? = null,
+) {
+    val heroTarget = if (LocalPersistentHeroSelection.current == null || (onClick == null && onLongClick == null)) {
+        Modifier
+    } else {
+        persistentHeroTarget(item.toPersistentHeroPreview())
+    }
+    when (style) {
+        ContinueWatchingSectionStyle.Card ->
+            ContinueWatchingCard(item, useEpisodeThumbnails, blurNextUp, onClick, onLongClick, onRemove, heroTarget)
+        ContinueWatchingSectionStyle.Wide ->
+            ContinueWatchingWideCard(item, layout, useEpisodeThumbnails, blurNextUp, onClick, onLongClick, onRemove, heroTarget)
+        ContinueWatchingSectionStyle.Poster ->
+            ContinueWatchingPosterCard(item, layout, useEpisodeThumbnails, blurNextUp, onClick, onLongClick, onRemove, heroTarget)
+    }
+}
+
+@Composable
+private fun ContinueWatchingTopStartControls(
+    showShuffle: Boolean,
+    onRemove: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    if (!showShuffle && onRemove == null) return
+    Row(
+        modifier = modifier.padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onRemove != null) ContinueWatchingRemoveButton(onRemove)
+        if (showShuffle) ShuffleBadge()
+    }
+}
+
+@Composable
+private fun ContinueWatchingRemoveButton(onRemove: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.70f))
+            .clickable(onClick = onRemove),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Close,
+            contentDescription = stringResource(Res.string.cw_action_remove),
+            tint = Color.White,
+            modifier = Modifier.size(14.dp),
+        )
+    }
+}
+
+internal fun ContinueWatchingItem.toPersistentHeroPreview(): MetaPreview = MetaPreview(
+    id = parentMetaId,
+    type = parentMetaType,
+    name = title,
+    poster = poster,
+    banner = background,
+    logo = logo,
+)
 
 @Composable
 fun ContinueWatchingStylePreview(
@@ -678,6 +749,8 @@ private fun ContinueWatchingCard(
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
+    onRemove: (() -> Unit)?,
+    heroTarget: Modifier,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
     val cardMetrics = remember(posterCardStyle.widthDp, posterCardStyle.cornerRadiusDp) {
@@ -698,6 +771,7 @@ private fun ContinueWatchingCard(
         useEpisodeThumbnails = useEpisodeThumbnails,
         preferBackdropForNextUp = preferBackdropForNextUp,
     )
+    val glow = rememberArtworkGlowState(imageUrl, item.fallbackUrlForArtwork(imageUrl))
     val shouldBlurArtwork = item.shouldBlurContinueWatchingArtwork(
         blurUnwatchedEpisodes = blurNextUp,
         useEpisodeThumbnails = useEpisodeThumbnails,
@@ -715,7 +789,8 @@ private fun ContinueWatchingCard(
 
     Box(
         modifier = Modifier
-            .nuvioFocusBorder(RoundedCornerShape(cardMetrics.cornerRadius))
+            .posterGlow(glow, RoundedCornerShape(cardMetrics.cornerRadius))
+            .then(heroTarget)
             .posterCardClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -765,9 +840,14 @@ private fun ContinueWatchingCard(
                     },
                 contentScale = ContentScale.Crop,
                 desktopAnimation = rememberAnimatedArtworkAnimation(),
+                onSuccess = { result -> glow?.painter = result.painter },
             )
         }
-        if (item.shufflePlayback) ShuffleBadge(Modifier.align(Alignment.TopStart).padding(8.dp))
+        ContinueWatchingTopStartControls(
+            showShuffle = item.shufflePlayback,
+            onRemove = onRemove,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -898,12 +978,21 @@ private fun ContinueWatchingWideCard(
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
+    onRemove: (() -> Unit)?,
+    heroTarget: Modifier,
 ) {
     val cornerRadius = rememberPosterCardStyleUiState().cornerRadiusDp.dp
+    val artworkUrl = item.continueWatchingArtworkUrl(useEpisodeThumbnails)
+    val glow = rememberArtworkGlowState(artworkUrl, item.fallbackUrlForArtwork(artworkUrl))
     Row(
         modifier = Modifier
-            .nuvioFocusBorder(RoundedCornerShape(cornerRadius))
-            .posterCardClickable(onClick = onClick, onLongClick = onLongClick)
+            .posterGlow(glow, RoundedCornerShape(cornerRadius))
+            .then(heroTarget)
+            .posterCardClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                zoomCornerRadius = cornerRadius,
+            )
             .width(layout.wideCardWidth)
             .height(layout.wideCardHeight)
             .clip(RoundedCornerShape(cornerRadius))
@@ -914,20 +1003,27 @@ private fun ContinueWatchingWideCard(
                 shape = RoundedCornerShape(cornerRadius),
             ),
     ) {
-        val artworkUrl = item.continueWatchingArtworkUrl(useEpisodeThumbnails)
         val shouldBlurArtwork = item.shouldBlurContinueWatchingArtwork(
             blurUnwatchedEpisodes = blurNextUp,
             useEpisodeThumbnails = useEpisodeThumbnails,
             artworkUrl = artworkUrl,
         )
-        ArtworkPanel(
-            imageUrl = artworkUrl,
-            width = layout.widePosterStripWidth,
-            blurred = shouldBlurArtwork,
-            fallbackUrl = item.fallbackUrlForArtwork(artworkUrl),
-            contentScale = if (item.isCloudLibraryItem()) ContentScale.Fit else ContentScale.Crop,
-            modifier = Modifier.fillMaxHeight(),
-        )
+        Box(modifier = Modifier.fillMaxHeight()) {
+            ArtworkPanel(
+                glow = glow,
+                imageUrl = artworkUrl,
+                width = layout.widePosterStripWidth,
+                blurred = shouldBlurArtwork,
+                fallbackUrl = item.fallbackUrlForArtwork(artworkUrl),
+                contentScale = if (item.isCloudLibraryItem()) ContentScale.Fit else ContentScale.Crop,
+                modifier = Modifier.fillMaxHeight(),
+            )
+            ContinueWatchingTopStartControls(
+                showShuffle = false,
+                onRemove = onRemove,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxHeight()
@@ -1028,9 +1124,12 @@ private fun ContinueWatchingPosterCard(
     blurNextUp: Boolean,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
+    onRemove: (() -> Unit)?,
+    heroTarget: Modifier,
 ) {
     val cornerRadius = rememberPosterCardStyleUiState().cornerRadiusDp.dp
     val imageUrl = item.continueWatchingPosterArtworkUrl(useEpisodeThumbnails)
+    val glow = rememberArtworkGlowState(imageUrl, item.fallbackUrlForArtwork(imageUrl))
     Column(
         modifier = Modifier
             .desktopPosterHoverScale()
@@ -1041,13 +1140,14 @@ private fun ContinueWatchingPosterCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .let { if (isDesktop) it.aspectRatio(0.675f) else it.height(layout.posterCardHeight) }
-                .nuvioFocusBorder(RoundedCornerShape(cornerRadius))
+                .posterGlow(glow, RoundedCornerShape(cornerRadius))
                 .clip(RoundedCornerShape(cornerRadius))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .nuvioCardDepth(
                     shape = RoundedCornerShape(cornerRadius),
                     surface = NuvioCardDepthSurface.ContinueWatching,
                 )
+                .then(heroTarget)
                 .posterCardClickable(
                     onClick = onClick,
                     onLongClick = onLongClick,
@@ -1075,9 +1175,14 @@ private fun ContinueWatchingPosterCard(
                         .then(if (shouldBlurArtwork) Modifier.blur(18.dp) else Modifier),
                     contentScale = if (item.isCloudLibraryItem()) ContentScale.Fit else ContentScale.Crop,
                     desktopAnimation = rememberAnimatedArtworkAnimation(),
+                    onSuccess = { result -> glow?.painter = result.painter },
                 )
             }
-            if (item.shufflePlayback) ShuffleBadge(Modifier.align(Alignment.TopStart).padding(8.dp))
+            ContinueWatchingTopStartControls(
+                showShuffle = item.shufflePlayback,
+                onRemove = onRemove,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
             if (item.progressFraction <= 0f && item.seasonNumber != null && item.episodeNumber != null) {
                 Box(
                     modifier = Modifier
@@ -1169,6 +1274,7 @@ private fun ArtworkPanel(
     fallbackUrl: String? = null,
     contentScale: ContentScale = ContentScale.Crop,
     modifier: Modifier = Modifier,
+    glow: PosterGlowState? = null,
 ) {
     Box(
         modifier = modifier
@@ -1188,6 +1294,7 @@ private fun ArtworkPanel(
                     .then(if (blurred) Modifier.blur(18.dp) else Modifier),
                 contentScale = contentScale,
                 desktopAnimation = rememberAnimatedArtworkAnimation(),
+                onSuccess = { result -> glow?.painter = result.painter },
             )
         }
     }

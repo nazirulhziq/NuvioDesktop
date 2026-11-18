@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,7 +35,7 @@ internal fun subtitleFontLabel(id: String, fonts: List<SubtitleFont>? = null): S
     "serif" -> stringResource(Res.string.subtitle_font_serif)
     "mono" -> stringResource(Res.string.subtitle_font_mono)
     "default" -> stringResource(Res.string.subtitle_font_default)
-    else -> (fonts ?: remember(id) { SubtitleFonts.installed() }).find { it.id == id }?.name
+    else -> if (id in SubtitleFontOptions) id else (fonts ?: remember(id) { SubtitleFonts.installed() }).find { it.id == id }?.name
         ?: stringResource(Res.string.subtitle_font_default)
 }
 
@@ -48,17 +50,22 @@ internal fun SubtitleFontPicker(selectedId: String, onSelect: (String) -> Unit, 
             onSelect(it.id)
         }
     }
-    DialogSurface(onDismissRequest = onDismiss, title = stringResource(Res.string.subtitle_font)) {
+    DialogSurface(
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.subtitle_font),
+        modifier = Modifier.heightIn(max = 560.dp),
+    ) {
         Column(
-            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth().weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()).padding(4.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            BuiltInSubtitleFonts.forEach { id ->
+            SubtitleFontOptions.forEach { id ->
                 DialogOption(
                     text = subtitleFontLabel(id, fonts),
                     selected = selectedId == id,
                     onClick = { onSelect(id) },
-                    leading = { Text("Aa", fontFamily = rememberSubtitleFontFamily(id)) },
+                    leading = { Text("Aa", fontFamily = getSubtitleFontFamily(id)) },
                 )
             }
             fonts.forEach { font ->
@@ -73,13 +80,13 @@ internal fun SubtitleFontPicker(selectedId: String, onSelect: (String) -> Unit, 
                     IconButton(onClick = {
                         SubtitleFonts.remove(font.id)
                         fonts = SubtitleFonts.installed()
-                        if (selectedId == font.id) onSelect("default")
+                        if (selectedId == font.id) onSelect("")
                     }) {
                         Icon(Icons.Rounded.DeleteOutline, stringResource(Res.string.subtitle_font_remove, font.name))
                     }
                 }
             }
-            if (selectedId !in BuiltInSubtitleFonts && fonts.none { it.id == selectedId }) {
+            if (selectedId.startsWith("custom-") && fonts.none { it.id == selectedId }) {
                 Text(stringResource(Res.string.subtitle_font_missing), style = MaterialTheme.typography.bodySmall)
             }
             Text(
@@ -100,4 +107,25 @@ internal fun SubtitleFontPicker(selectedId: String, onSelect: (String) -> Unit, 
             DialogButton(text = stringResource(Res.string.action_done), onClick = onDismiss)
         }
     }
+}
+
+internal fun SubtitleStyleState.selectFont(id: String): SubtitleStyleState = when {
+    id.startsWith("custom-") -> copy(importedFontId = id)
+    id in SubtitleFontOptions -> copy(fontName = id, importedFontId = null)
+    else -> copy(importedFontId = null)
+}
+
+@Composable
+internal fun SubtitleFontImportControl(style: SubtitleStyleState, onStyleChanged: (SubtitleStyleState) -> Unit) {
+    var showPicker by remember { mutableStateOf(false) }
+    com.nuvio.app.core.ui.DialogButton(
+        text = stringResource(Res.string.subtitle_font_import),
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { showPicker = true },
+    )
+    if (showPicker) SubtitleFontPicker(
+        selectedId = style.importedFontId ?: style.fontName,
+        onSelect = { onStyleChanged(style.selectFont(it)) },
+        onDismiss = { showPicker = false },
+    )
 }

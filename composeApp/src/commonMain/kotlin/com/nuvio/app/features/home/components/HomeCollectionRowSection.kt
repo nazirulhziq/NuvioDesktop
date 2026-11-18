@@ -1,5 +1,7 @@
 package com.nuvio.app.features.home.components
 
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,6 +17,18 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.focus.onFocusChanged
+import com.nuvio.app.core.ui.collectIsRemoteHoveredAsState
+import com.nuvio.app.core.ui.isRemoteKeyboardNavigationActive
+import com.nuvio.app.core.ui.onViewportVisibilityChanged
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -30,11 +44,14 @@ import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.desktopCatalogShelfPosterBaseWidthDp
 import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.nuvioCardDepth
-import com.nuvio.app.core.ui.nuvioFocusBorder
 import com.nuvio.app.core.ui.posterCardClickable
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.rememberArtworkGlowState
+import com.nuvio.app.core.ui.posterGlow
+import com.nuvio.app.core.ui.LocalPosterGlowImageState
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionFolder
+import com.nuvio.app.features.collection.collectionFolderCardKey
 import com.nuvio.app.features.home.PosterShape
 
 @Composable
@@ -42,8 +59,10 @@ fun HomeCollectionRowSection(
     collection: Collection,
     modifier: Modifier = Modifier,
     sectionPadding: Dp? = null,
+    useGutterLayout: Boolean = false,
     animateGifs: Boolean = true,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
+    onViewAllClick: (() -> Unit)? = null,
 ) {
     if (collection.folders.isEmpty()) return
 
@@ -52,8 +71,10 @@ fun HomeCollectionRowSection(
             collection = collection,
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
+            useGutterLayout = useGutterLayout,
             animateGifs = animateGifs,
             onFolderClick = onFolderClick,
+            onViewAllClick = onViewAllClick,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -61,8 +82,10 @@ fun HomeCollectionRowSection(
                 collection = collection,
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
+                useGutterLayout = useGutterLayout,
                 animateGifs = animateGifs,
                 onFolderClick = onFolderClick,
+                onViewAllClick = onViewAllClick,
             )
         }
     }
@@ -73,8 +96,10 @@ private fun HomeCollectionRowSectionContent(
     collection: Collection,
     modifier: Modifier,
     sectionPadding: Dp,
+    useGutterLayout: Boolean,
     animateGifs: Boolean,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)?,
+    onViewAllClick: (() -> Unit)?,
 ) {
     NuvioShelfSection(
         title = collection.title,
@@ -82,7 +107,10 @@ private fun HomeCollectionRowSectionContent(
         modifier = modifier,
         headerHorizontalPadding = sectionPadding,
         rowContentPadding = PaddingValues(horizontal = sectionPadding),
-        key = { folder -> "collection_${collection.id}_folder_${folder.id}" },
+        useGutterLayout = useGutterLayout,
+        onViewAllClick = onViewAllClick,
+        showRowNavigationControls = true,
+        key = { folder -> collectionFolderCardKey(collection.id, folder.id) },
     ) { folder ->
         CollectionFolderCard(
             folder = folder,
@@ -93,13 +121,25 @@ private fun HomeCollectionRowSectionContent(
 }
 
 @Composable
-private fun CollectionFolderCard(
+internal fun CollectionFolderCard(
     folder: CollectionFolder,
     modifier: Modifier = Modifier,
     animateGifs: Boolean = true,
     onClick: (() -> Unit)? = null,
+    fillMaxWidth: Boolean = false,
 ) {
+    val animationSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsRemoteHoveredAsState()
+    var focused by remember { mutableStateOf(false) }
+    var imageVisible by remember { mutableStateOf(false) }
+    val shouldPlay = animateGifs && LocalScreenActive.current && imageVisible &&
+        (animationSettings.alwaysAnimateCollectionCards || hovered ||
+            (focused && isRemoteKeyboardNavigationActive))
     val posterCardStyle = rememberPosterCardStyleUiState()
+    val imageUrl = collectionFolderCardImageUrl(folder)
+    val glow = rememberArtworkGlowState(imageUrl, folder.coverImageUrl)
+    SideEffect { glow?.focused = focused }
     val basePosterWidthDp = desktopCatalogShelfPosterBaseWidthDp(posterCardStyle.widthDp)
     val isLandscapeMode = posterCardStyle.catalogLandscapeModeEnabled
     val shape = if (isLandscapeMode) PosterShape.Landscape else folder.posterShape
@@ -121,23 +161,33 @@ private fun CollectionFolderCard(
         }
     }
 
-    val shapeCorner = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
     Column(
         modifier = Modifier
-            .nuvioFocusBorder(shapeCorner)
-            .posterCardClickable(onClick = onClick, onLongClick = null)
+            .hoverable(interactionSource)
+            .onFocusChanged {
+                focused = it.hasFocus
+                glow?.focused = it.hasFocus
+            }
             .then(modifier)
-            .width(cardWidth),
+            .then(if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.width(cardWidth)),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        val imageUrl = collectionFolderCardImageUrl(folder)
+        val shapeCorner = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(aspectRatio)
+                .posterGlow(glow, shapeCorner)
+                .onViewportVisibilityChanged { imageVisible = it }
                 .nuvioCardDepth(
                     shape = shapeCorner,
                     surface = NuvioCardDepthSurface.Posters,
+                )
+                .posterCardClickable(
+                    onClick = onClick,
+                    onLongClick = null,
+                    zoomImageUrl = imageUrl,
+                    zoomCornerRadius = posterCardStyle.cornerRadiusDp.dp,
                 ),
             shape = shapeCorner,
             colors = CardDefaults.cardColors(
@@ -153,16 +203,17 @@ private fun CollectionFolderCard(
             ) {
                 when {
                     !imageUrl.isNullOrBlank() -> {
-                        CollectionCardRemoteImage(
-                            imageUrl = imageUrl,
-                            staticImageUrl = firstNonBlank(folder.coverImageUrl),
-                            contentDescription = folder.title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                            animateIfPossible = animateGifs &&
-                                isAnimatedCollectionFolderImage(folder, imageUrl) &&
-                                LocalScreenActive.current,
-                        )
+                        CompositionLocalProvider(LocalPosterGlowImageState provides glow) {
+                            CollectionCardRemoteImage(
+                                imageUrl = imageUrl,
+                                staticImageUrl = firstNonBlank(folder.coverImageUrl),
+                                contentDescription = folder.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                                animateIfPossible = shouldPlay &&
+                                    isAnimatedCollectionFolderImage(folder, imageUrl),
+                            )
+                        }
                     }
                     !folder.coverEmoji.isNullOrBlank() -> {
                         Text(

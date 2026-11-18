@@ -1,5 +1,8 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.navigationGlassSource
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -55,7 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.format.extractReleaseYearForDisplay
 import com.nuvio.app.core.ui.ArtworkBackdrop
 import com.nuvio.app.core.ui.NuvioTokens
@@ -119,14 +122,15 @@ fun TabletDetailBackdrop(
             onHeroTrailerReady = onHeroTrailerReady,
             onHeroTrailerFinished = onHeroTrailerFinished,
         )
-        if (!cinematic) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = scrollProgress() * 0.86f }
-                    .background(backgroundColor),
-            )
-        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = scrollProgress() * if (cinematic) 0.36f else 0.86f
+                }
+                .navigationGlassSource(zIndex = 0.5f)
+                .background(backgroundColor),
+        )
     }
 }
 
@@ -179,7 +183,7 @@ private fun BackdropArtwork(
             AsyncImage(
                 model = imageUrl,
                 contentDescription = meta.name,
-                modifier = artworkModifier,
+                modifier = artworkModifier.navigationGlassSource(),
                 alignment = BiasAlignment(0f, BackdropVerticalBias),
                 contentScale = ContentScale.Crop,
                 onSuccess = { state ->
@@ -220,6 +224,7 @@ private fun BackdropArtwork(
         if (!cinematic) Box(
             modifier = Modifier
                 .fillMaxSize()
+                .navigationGlassSource(zIndex = 0.5f)
                 .drawWithCache {
                     val sideFade = Brush.horizontalGradient(
                         colorStops = arrayOf(
@@ -347,6 +352,7 @@ fun TabletDetailHero(
                         Spacer(modifier = Modifier.height(space.s12))
                         DetailRatingsRow(
                             ratings = meta.externalRatings,
+                            imdbId = meta.imdbId ?: meta.id,
                             modifier = Modifier.widthIn(max = 520.dp),
                         )
                     }
@@ -399,7 +405,7 @@ fun TabletDetailHero(
             Surface(
                 onClick = onHeroTrailerMuteToggle,
                 enabled = heroTrailerReady,
-                modifier = Modifier
+                modifier = (Modifier
                     .align(Alignment.TopEnd)
                     .padding(LocalVerticalBarPadding.current)
                     .padding(
@@ -407,7 +413,7 @@ fun TabletDetailHero(
                         end = horizontalPadding,
                     )
                     .size(40.dp)
-                    .graphicsLayer { alpha = trailerAlpha },
+                    .graphicsLayer { alpha = trailerAlpha }).remoteNavigationTarget(shape = CircleShape),
                 shape = CircleShape,
                 color = colorScheme.surfaceVariant.copy(alpha = 0.82f),
                 contentColor = colorScheme.onSurface,
@@ -464,7 +470,7 @@ private fun TabletHeroMetaRow(meta: MetaDetails, showImdbRating: Boolean) {
             DetailHeroMetaBadge(text = rating)
         }
         if (validImdbRating != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            ClickableRatingBadge(url = formatImdbTitleUrl(meta.imdbId ?: meta.id)) {
                 ImdbRatingSourceLabel(storeTextStyle = itemStyle)
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(

@@ -76,6 +76,7 @@ enum class MetaScreenBackgroundMode {
 }
 
 data class MetaScreenSettingsUiState(
+    val showMetadataInfo: Boolean = false,
     val items: List<MetaScreenSectionItem> = emptyList(),
     val backgroundMode: MetaScreenBackgroundMode = MetaScreenBackgroundMode.Default,
     val cinematicBackground: Boolean = MetaScreenBackgroundMode.Default.usesBackdropBackground,
@@ -91,18 +92,21 @@ data class MetaScreenSettingsUiState(
 enum class MetaEpisodeCardStyle {
     Horizontal,
     List,
+    Enhanced,
     ;
 
     companion object {
         fun parse(raw: String?): MetaEpisodeCardStyle? = when (raw?.lowercase()) {
             "horizontal" -> Horizontal
             "list" -> List
+            "enhanced" -> Enhanced
             else -> null
         }
 
         fun persist(style: MetaEpisodeCardStyle): String = when (style) {
             Horizontal -> "horizontal"
             List -> "list"
+            Enhanced -> "enhanced"
         }
     }
 }
@@ -110,7 +114,7 @@ enum class MetaEpisodeCardStyle {
 internal fun MetaScreenSectionItem.tabGroupForRendering(
     episodeCardStyle: MetaEpisodeCardStyle,
 ): Int? = if (
-    key == MetaScreenSectionKey.EPISODES && episodeCardStyle == MetaEpisodeCardStyle.List
+    key == MetaScreenSectionKey.EPISODES && (episodeCardStyle == MetaEpisodeCardStyle.List || episodeCardStyle == MetaEpisodeCardStyle.Enhanced)
 ) {
     null
 } else {
@@ -127,6 +131,7 @@ private data class StoredMetaScreenSectionPreference(
 
 @Serializable
 private data class StoredMetaScreenSettingsPayload(
+    val showMetadataInfo: Boolean = false,
     val items: List<StoredMetaScreenSectionPreference> = emptyList(),
     @SerialName("background_mode")
     val backgroundMode: String? = null,
@@ -215,6 +220,7 @@ object MetaScreenSettingsRepository {
     val uiState: StateFlow<MetaScreenSettingsUiState> = _uiState.asStateFlow()
 
     private var hasLoaded = false
+    private var showMetadataInfo = false
     private var preferences: MutableMap<MetaScreenSectionKey, StoredMetaScreenSectionPreference> = mutableMapOf()
     private var backgroundMode: MetaScreenBackgroundMode = MetaScreenBackgroundMode.Default
     private var heroTrailerPlayback: Boolean = false
@@ -236,6 +242,7 @@ object MetaScreenSettingsRepository {
                 json.decodeFromString<StoredMetaScreenSettingsPayload>(payload)
             }.getOrNull()
             if (parsed != null) {
+                showMetadataInfo = parsed.showMetadataInfo
                 backgroundMode = MetaScreenBackgroundMode.parse(parsed.backgroundMode)
                     ?: MetaScreenBackgroundMode.fromLegacyCinematic(parsed.cinematicBackground)
                 heroTrailerPlayback = parsed.heroTrailerPlayback
@@ -259,6 +266,7 @@ object MetaScreenSettingsRepository {
     }
 
     fun onProfileChanged() {
+        showMetadataInfo = false
         hasLoaded = false
         preferences.clear()
         backgroundMode = MetaScreenBackgroundMode.Default
@@ -275,6 +283,13 @@ object MetaScreenSettingsRepository {
 
     fun setCinematicBackground(enabled: Boolean) {
         setBackgroundMode(MetaScreenBackgroundMode.fromLegacyCinematic(enabled))
+    }
+
+    fun setShowMetadataInfo(enabled: Boolean) {
+        ensureLoaded()
+        showMetadataInfo = enabled
+        publish()
+        persist()
     }
 
     fun setBackgroundMode(mode: MetaScreenBackgroundMode) {
@@ -347,6 +362,7 @@ object MetaScreenSettingsRepository {
     }
 
     fun clearLocalState() {
+        showMetadataInfo = false
         hasLoaded = false
         preferences.clear()
         backgroundMode = MetaScreenBackgroundMode.Default
@@ -402,6 +418,7 @@ object MetaScreenSettingsRepository {
 
     fun resetToDefaults() {
         ensureLoaded()
+        showMetadataInfo = false
         preferences.clear()
         backgroundMode = MetaScreenBackgroundMode.Default
         heroTrailerPlayback = false
@@ -477,6 +494,7 @@ object MetaScreenSettingsRepository {
                     )
                 },
             backgroundMode = backgroundMode,
+            showMetadataInfo = showMetadataInfo,
             cinematicBackground = backgroundMode.usesBackdropBackground,
             heroTrailerPlayback = heroTrailerPlayback,
             tabLayout = tabLayout,
@@ -492,6 +510,7 @@ object MetaScreenSettingsRepository {
         MetaScreenSettingsStorage.savePayload(
             json.encodeToString(
                 StoredMetaScreenSettingsPayload(
+                    showMetadataInfo = showMetadataInfo,
                     items = preferences.values.sortedBy { it.order },
                     backgroundMode = MetaScreenBackgroundMode.persist(backgroundMode),
                     cinematicBackground = backgroundMode.usesBackdropBackground,

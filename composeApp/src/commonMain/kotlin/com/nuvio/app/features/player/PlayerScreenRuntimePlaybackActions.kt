@@ -29,6 +29,11 @@ internal fun PlayerScreenRuntime.finishTimelineScrub(positionMs: Long) {
     lastManualSkipSeekPositions = playbackSnapshot.positionMs to positionMs
     isScrubbingTimeline = false
     scrubbingPositionMs = positionMs.takeIf { playbackSnapshot.isLoading }
+    if (pausedForTimelineScrub) {
+        resumingAfterTimelineScrubForPresence = true
+        pausedForTimelineScrub = false
+        playerController?.play()
+    }
 }
 
 internal fun PlayerScreenRuntime.updatePlaybackSnapshot(
@@ -36,6 +41,9 @@ internal fun PlayerScreenRuntime.updatePlaybackSnapshot(
     playbackKey: PlaybackKey = activePlaybackKey,
 ): Boolean {
     if (playbackKey != activePlaybackKey) return false
+    if (!snapshot.isPaused || snapshot.isEnded || !shouldPlay) {
+        resumingAfterTimelineScrubForPresence = false
+    }
     val reported = if (partyRateNudge != null) snapshot.copy(playbackSpeed = partyBaseRate()) else snapshot
     playbackSnapshot = if (reported.durationMs <= 0L && playbackSnapshotKey == playbackKey) {
         reported.copy(durationMs = playbackSnapshot.durationMs)
@@ -132,6 +140,9 @@ internal fun PlayerScreenRuntime.currentLaunch(launch: PlayerLaunch): PlayerLaun
         torrentFilename = activeTorrentFilename,
         torrentTrackers = activeTorrentTrackers,
         sourceFilename = activeSourceFilename,
+        mediaContentType = mediaClassification.type,
+        classificationHint = mediaClassification.toHint(),
+        stream = activeStream,
         initialPositionMs = positionMs ?: activeInitialPositionMs,
         initialProgressFraction = activeInitialProgressFraction.takeIf { positionMs == null },
     )
@@ -188,6 +199,7 @@ private fun PlayerScreenRuntime.resetTrackSelectionState() {
     selectedSubtitleIndex = -1
     selectedAddonSubtitleId = null
     useCustomSubtitles = false
+    importedSubtitles = emptyList()
 }
 
 internal fun PlayerScreenRuntime.resetAddonSubtitlesIfSourceChanged() {
@@ -576,7 +588,6 @@ internal fun PlayerScreenRuntime.maybeFailoverPlaybackEngine(
     )
     return true
 }
-
 internal fun PlayerScreenRuntime.openStreamInfo() {
     refreshTracks()
     val controller = playerController

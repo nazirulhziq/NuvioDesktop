@@ -44,8 +44,13 @@ data class HomeCatalogSettingsUiState(
     val heroEnabled: Boolean = true,
     val showCatalogType: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
+    val appInterface: AppInterface = AppInterface.Default,
+    val posterGutterSize: PosterGutterSize = PosterGutterSize.Narrow,
+    val alwaysAnimateCollectionCards: Boolean = false,
     val items: List<HomeCatalogSettingsItem> = emptyList(),
 ) {
+    val scrollPostersLayoutEnabled: Boolean get() = appInterface == AppInterface.ScrollPosters
+
     val signature: String
         get() = buildString {
             append(heroEnabled)
@@ -53,6 +58,10 @@ data class HomeCatalogSettingsUiState(
             append(showCatalogType)
             append('|')
             append(hideUnreleasedContent)
+            append('|')
+            append(appInterface.key)
+            append('|')
+            append(posterGutterSize.key)
             append('|')
             append(
                 items.joinToString(separator = "|") { item ->
@@ -73,6 +82,9 @@ internal data class HomeCatalogSettingsSnapshot(
     val heroEnabled: Boolean,
     val showCatalogType: Boolean,
     val hideUnreleasedContent: Boolean,
+    val appInterface: AppInterface = AppInterface.Default,
+    val posterGutterSize: PosterGutterSize = PosterGutterSize.Narrow,
+    val alwaysAnimateCollectionCards: Boolean = false,
     val preferences: Map<String, HomeCatalogPreference>,
 )
 
@@ -90,6 +102,10 @@ private data class StoredHomeCatalogSettingsPayload(
     val heroEnabled: Boolean = true,
     val showCatalogType: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
+    val appInterface: String? = null,
+    val scrollPostersLayoutEnabled: Boolean? = null,
+    val posterGutterSize: String = PosterGutterSize.Narrow.key,
+    val alwaysAnimateCollectionCards: Boolean = false,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
 )
 
@@ -103,11 +119,14 @@ object HomeCatalogSettingsRepository {
 
     private val _uiState = MutableStateFlow(HomeCatalogSettingsUiState())
     val uiState: StateFlow<HomeCatalogSettingsUiState> = _uiState.asStateFlow()
+    val settings: StateFlow<HomeCatalogSettingsUiState> get() = uiState
 
     private val emptySnapshot = HomeCatalogSettingsSnapshot(
         heroEnabled = true,
         showCatalogType = true,
         hideUnreleasedContent = false,
+        appInterface = AppInterface.Default,
+        alwaysAnimateCollectionCards = false,
         preferences = emptyMap(),
     )
     private val snapshotRef = atomic(emptySnapshot)
@@ -127,6 +146,9 @@ object HomeCatalogSettingsRepository {
     private var heroEnabled = true
     private var showCatalogType = true
     private var hideUnreleasedContent = false
+    private var appInterface = AppInterface.Default
+    private var posterGutterSize = PosterGutterSize.Narrow
+    private var alwaysAnimateCollectionCards = false
 
     fun onProfileChanged() {
         hasLoaded = false
@@ -134,6 +156,9 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         showCatalogType = true
         hideUnreleasedContent = false
+        appInterface = AppInterface.Default
+        posterGutterSize = PosterGutterSize.Narrow
+        alwaysAnimateCollectionCards = false
         definitions = emptyList()
         collectionDefinitions = emptyList()
         snapshotRef.value = emptySnapshot
@@ -153,6 +178,9 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         showCatalogType = true
         hideUnreleasedContent = false
+        appInterface = AppInterface.Default
+        posterGutterSize = PosterGutterSize.Narrow
+        alwaysAnimateCollectionCards = false
         snapshotRef.value = emptySnapshot
         lastPersistedPayload = null
         _uiState.value = HomeCatalogSettingsUiState()
@@ -221,7 +249,7 @@ object HomeCatalogSettingsRepository {
 
     fun setHeroEnabled(enabled: Boolean) {
         ensureLoaded()
-        if (heroEnabled == enabled) return
+        if (appInterface == AppInterface.PersistentHero || heroEnabled == enabled) return
         heroEnabled = enabled
         publish()
         persist()
@@ -246,6 +274,32 @@ object HomeCatalogSettingsRepository {
         persist()
         HomeRepository.applyCurrentSettings()
         HomeCatalogSettingsSyncService.triggerPush()
+    }
+
+    fun setAlwaysAnimateCollectionCards(enabled: Boolean) {
+        ensureLoaded()
+        if (alwaysAnimateCollectionCards == enabled) return
+        alwaysAnimateCollectionCards = enabled
+        publish()
+        persist()
+    }
+
+    // Desktop layout preferences are local to the active profile and never trigger account sync.
+    fun setPosterGutterSize(size: PosterGutterSize) {
+        ensureLoaded()
+        if (posterGutterSize == size) return
+        posterGutterSize = size
+        publish()
+        persist()
+    }
+
+    fun setAppInterface(value: AppInterface) {
+        ensureLoaded()
+        if (appInterface == value) return
+        appInterface = value
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
     }
 
     fun setHeroSourceEnabled(key: String, enabled: Boolean) {
@@ -277,6 +331,7 @@ object HomeCatalogSettingsRepository {
         heroEnabled = true
         showCatalogType = true
         hideUnreleasedContent = false
+        alwaysAnimateCollectionCards = false
         preferences = emptyMap()
         normalizePreferences()
         publish()
@@ -329,6 +384,9 @@ object HomeCatalogSettingsRepository {
             heroEnabled = parsedPayload.heroEnabled
             showCatalogType = parsedPayload.showCatalogType
             hideUnreleasedContent = parsedPayload.hideUnreleasedContent
+            appInterface = AppInterface.fromStored(parsedPayload.appInterface, parsedPayload.scrollPostersLayoutEnabled)
+            posterGutterSize = PosterGutterSize.fromKey(parsedPayload.posterGutterSize)
+            alwaysAnimateCollectionCards = parsedPayload.alwaysAnimateCollectionCards
             preferences = parsedPayload.items.associateBy { it.key }
             publish()
             return
@@ -395,6 +453,9 @@ object HomeCatalogSettingsRepository {
             heroEnabled = heroEnabled,
             showCatalogType = showCatalogType,
             hideUnreleasedContent = hideUnreleasedContent,
+            appInterface = appInterface,
+            posterGutterSize = posterGutterSize,
+            alwaysAnimateCollectionCards = alwaysAnimateCollectionCards,
             preferences = preferences.mapValues { (_, value) ->
                 HomeCatalogPreference(
                     customTitle = value.customTitle,
@@ -441,6 +502,9 @@ object HomeCatalogSettingsRepository {
             heroEnabled = heroEnabled,
             showCatalogType = showCatalogType,
             hideUnreleasedContent = hideUnreleasedContent,
+            appInterface = appInterface,
+            posterGutterSize = posterGutterSize,
+            alwaysAnimateCollectionCards = alwaysAnimateCollectionCards,
             items = items,
         )
         if (_uiState.value != nextState) _uiState.value = nextState
@@ -452,6 +516,10 @@ object HomeCatalogSettingsRepository {
                 heroEnabled = heroEnabled,
                 showCatalogType = showCatalogType,
                 hideUnreleasedContent = hideUnreleasedContent,
+                appInterface = appInterface.key,
+                scrollPostersLayoutEnabled = appInterface == AppInterface.ScrollPosters,
+                posterGutterSize = posterGutterSize.key,
+                alwaysAnimateCollectionCards = alwaysAnimateCollectionCards,
                 items = preferences.values.sortedBy { it.order },
             ),
         )

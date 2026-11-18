@@ -3,6 +3,9 @@ package com.nuvio.app.features.player
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.autosync.AutoSyncPlayerController
 import com.nuvio.app.features.autosync.AutoSyncPreferencesRepository
 import com.nuvio.app.features.autosync.AutoSyncSubtitleCandidate
@@ -49,6 +52,15 @@ internal fun PlayerScreenRuntime.configureAutoSyncController(
 @Composable
 internal fun PlayerScreenRuntime.BindAutoSyncRuntimeEffects() {
     val activeController = playerController
+    val automaticSyncEnabled by remember {
+        AutoSyncPreferencesRepository.ensureLoaded()
+        AutoSyncPreferencesRepository.preferredSubtitleAutoSyncOnStart
+    }.collectAsStateWithLifecycle()
+    LaunchedEffect(activeController, automaticSyncEnabled) {
+        if (!automaticSyncEnabled) {
+            (activeController as? AutoSyncPlayerController)?.cancelForManualSubtitleDelay()
+        }
+    }
     DisposableEffect(activeController) {
         // Runs once playerController is set, which Nuvio only does for the live playback key.
         activeController?.let { configureAutoSyncController(it) }
@@ -65,13 +77,13 @@ internal fun PlayerScreenRuntime.BindAutoSyncRuntimeEffects() {
         preferredSubtitleSelectionApplied = false
         refreshTracks()
     }
-    LaunchedEffect(playerController, externalSubtitles) {
+    LaunchedEffect(playerController, externalSubtitles, engineStreamSubtitles) {
         val controller = playerController ?: return@LaunchedEffect
         SubtitleRepository.addonSubtitles.collect { repositorySubtitles ->
             controller.setAutoSyncSubtitleCandidates(
                 mergeStreamAndAddonSubtitles(
                     repositorySubtitles,
-                    externalSubtitles,
+                    externalSubtitles + engineStreamSubtitles,
                 ).toAutoSyncCandidates(),
             )
         }

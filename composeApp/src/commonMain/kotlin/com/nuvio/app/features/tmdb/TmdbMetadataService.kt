@@ -691,6 +691,50 @@ object TmdbMetadataService {
         }
     }
 
+    /** A single details request; never fills or reads the full-enrichment cache. */
+    internal suspend fun enrichForShuffle(meta: MetaDetails, fallbackId: String, settings: TmdbSettings, onFailure: () -> Unit = {}): MetaDetails {
+        if (!settings.enabled) return meta
+        val mediaType = normalizeMetaType(meta.type)
+        val tmdbId = TmdbService.ensureTmdbId(meta.id, mediaType, fallbackImdbId = meta.imdbId)
+            ?: TmdbService.ensureTmdbId(fallbackId, mediaType, fallbackImdbId = meta.imdbId) ?: return meta
+        val details = fetch<TmdbDetailsResponse>("$mediaType/$tmdbId", mapOf("language" to normalizeTmdbLanguage(settings.language)))
+            ?: return meta.also { onFailure() }
+        val enrichment = TmdbEnrichment(
+            localizedTitle = listOf(details.title, details.name).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotBlank) },
+            description = details.overview?.trim()?.takeIf(String::isNotBlank),
+            genres = details.genres.mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) },
+            backdrop = buildImageUrl(details.backdropPath, "w1280"), poster = buildImageUrl(details.posterPath, "w500"), logo = null,
+            people = emptyList(), director = emptyList(), writer = emptyList(),
+            releaseInfo = details.releaseDate ?: details.firstAirDate, lastAirDate = details.lastAirDate,
+            rating = details.voteAverage, runtimeMinutes = details.runtime ?: details.episodeRunTime.firstOrNull(),
+            ageRating = null, status = details.status,
+            countries = details.productionCountries.mapNotNull { it.iso31661 }.ifEmpty { details.originCountry },
+            language = details.originalLanguage, productionCompanies = emptyList(), networks = emptyList(),
+            isAnimation = details.genres.mapNotNull { it.id }.takeIf { it.isNotEmpty() }?.contains(16),
+        )
+        val updated = applyEnrichment(meta, enrichment, emptyMap(), settings.copy(
+            useCredits = false, useProductions = false, useNetworks = false, useEpisodes = false,
+            useSeasonPosters = false, useMoreLikeThis = false, useCollections = false, useTrailers = false,
+        ))
+        return updated.copy(
+            releaseInfo = updated.releaseInfo ?: enrichment.releaseInfo.takeIf { settings.useBasicInfo },
+            seasonCount = details.numberOfSeasons ?: updated.seasonCount,
+            provenance = updated.provenance.copy(knownIds = updated.provenance.knownIds + ("TMDB" to tmdbId)),
+        )
+    }
+
+    /** Optional logo lookup is only used for the selected card, not every candidate. */
+    internal suspend fun completeShuffleArtwork(meta: MetaDetails, fallbackId: String): MetaDetails {
+        TmdbSettingsRepository.ensureLoaded()
+        val settings = TmdbSettingsRepository.snapshot()
+        if (!settings.enabled || !settings.useArtwork || meta.logo != null) return meta
+        val mediaType = normalizeMetaType(meta.type)
+        val tmdbId = meta.provenance.knownIds["TMDB"]
+            ?: TmdbService.ensureTmdbId(fallbackId, mediaType, fallbackImdbId = meta.imdbId) ?: return meta
+        val language = normalizeTmdbLanguage(settings.language)
+        val images = fetch<TmdbImagesResponse>("$mediaType/$tmdbId/images", mapOf("include_image_language" to tmdbImageLanguages(language)))
+        return meta.copy(logo = buildImageUrl(images?.logos.orEmpty().selectBestLocalizedImagePath(language), "w500"))
+    }
     suspend fun enrichMeta(
         meta: MetaDetails,
         fallbackItemId: String,
@@ -730,12 +774,15 @@ object TmdbMetadataService {
             enrichmentDeferred.await() to episodeDeferred?.await()
         }
 
-        return applyEnrichment(
+        val updated = applyEnrichment(
             meta = meta,
             enrichment = enrichment,
             episodeMap = episodeMap.orEmpty(),
             settings = settings,
         )
+        return updated.copy(provenance = updated.provenance.copy(
+            knownIds = updated.provenance.knownIds + ("TMDB" to tmdbId),
+        ))
     }
 
     suspend fun fetchStandaloneMeta(
@@ -775,6 +822,15 @@ object TmdbMetadataService {
             id = id,
             type = type,
             name = enrichment.localizedTitle ?: "TMDB $tmdbId",
+            provenance = com.nuvio.app.features.details.MetadataProvenance(
+                sourceName = "TMDB",
+                sourceId = "tmdb",
+                requestedId = id,
+                lookupId = id,
+                fetchedAtMs = com.nuvio.app.features.watchprogress.WatchProgressClock.nowEpochMs(),
+                usedFallback = true,
+                knownIds = mapOf("TMDB" to tmdbId.toString()),
+            ),
             poster = enrichment.poster,
             background = enrichment.backdrop,
             logo = enrichment.logo,
@@ -783,9 +839,15 @@ object TmdbMetadataService {
             lastAirDate = enrichment.lastAirDate,
             status = enrichment.status,
             imdbRating = enrichment.rating?.formatRating(),
+            tmdbScore = enrichment.rating?.takeIf { it in 0.0..10.0 },
             ageRating = enrichment.ageRating,
             runtime = enrichment.runtimeMinutes?.formatRuntime(),
             genres = enrichment.genres,
+            classificationHints = com.nuvio.app.features.details.MetaClassificationHints(
+                isAnimation = enrichment.isAnimation,
+                country = enrichment.countries.joinToString(", ").takeIf(String::isNotBlank),
+                language = enrichment.language,
+            ),
             director = enrichment.director,
             writer = enrichment.writer,
             cast = enrichment.people,
@@ -809,6 +871,18 @@ object TmdbMetadataService {
         if (enrichment == null && episodeMap.isEmpty()) return meta
 
         var updated = meta
+
+        if (enrichment != null && settings.enabled) {
+            updated = updated.copy(tmdbScore = enrichment.rating?.takeIf { it in 0.0..10.0 } ?: updated.tmdbScore)
+            updated = updated.copy(classificationHints = com.nuvio.app.features.details.MetaClassificationHints(
+                isAnimation = enrichment.isAnimation ?: meta.classificationHints?.isAnimation
+                    ?: true.takeIf { meta.genres.any { it.trim().equals("animation", true) } },
+                isAnime = meta.classificationHints?.isAnime == true || meta.genres.any { it.trim().equals("anime", true) },
+                country = enrichment.countries.joinToString(", ").takeIf(String::isNotBlank)
+                    ?: meta.classificationHints?.country ?: meta.country,
+                language = enrichment.language ?: meta.classificationHints?.language ?: meta.language,
+            ))
+        }
 
         if (enrichment != null && settings.useArtwork) {
             updated = updated.copy(
@@ -922,7 +996,9 @@ object TmdbMetadataService {
             updated = updated.copy(trailers = enrichment.trailers)
         }
 
-        return updated
+        return if (updated != meta) updated.copy(provenance = updated.provenance.copy(
+            enrichmentSources = updated.provenance.enrichmentSources + "TMDB",
+        )) else updated
     }
 
     private suspend fun fetchEnrichment(
@@ -1051,6 +1127,7 @@ object TmdbMetadataService {
             originalTitle = details.originalTitle ?: details.originalName,
             description = description,
             genres = genres,
+            isAnimation = details.genres.mapNotNull { it.id }.takeIf { it.isNotEmpty() }?.contains(16),
             backdrop = buildImageUrl(details.backdropPath, "w1280"),
             logo = buildImageUrl(images?.logos.orEmpty().selectBestLocalizedImagePath(normalizedLanguage), "w500"),
             poster = buildImageUrl(details.posterPath, "w500"),
@@ -1190,6 +1267,33 @@ object TmdbMetadataService {
             episodeCache[cacheKey] = merged
         }
         merged
+    }
+
+    internal suspend fun fetchEpisodeRatings(
+        tmdbId: Int,
+        seasonNumbers: List<Int>,
+    ): Map<Pair<Int, Int>, Double> = withContext(Dispatchers.Default) {
+        if (tmdbId <= 0) return@withContext emptyMap()
+        val seasons = seasonNumbers.distinct().filter { it >= 0 }.sorted()
+        if (seasons.isEmpty()) return@withContext emptyMap()
+
+        val pairs = coroutineScope {
+            seasons.map { season ->
+                async {
+                    val details = fetch<TmdbSeasonDetailsResponse>(
+                        endpoint = "tv/$tmdbId/season/$season",
+                        query = mapOf("language" to "en-US"),
+                    ) ?: return@async emptyMap()
+
+                    details.episodes.mapNotNull { episode ->
+                        val episodeNumber = episode.episodeNumber ?: return@mapNotNull null
+                        val rating = episode.voteAverage?.takeIf { it > 0.0 } ?: return@mapNotNull null
+                        (season to episodeNumber) to rating
+                    }.toMap()
+                }
+            }.awaitAll()
+        }
+        pairs.fold(emptyMap()) { result, seasonRatings -> result + seasonRatings }
     }
 
     private suspend inline fun <reified T> fetch(
@@ -1439,6 +1543,7 @@ internal data class TmdbEnrichment(
     val collectionItems: List<MetaPreview> = emptyList(),
     val moreLikeThis: List<MetaPreview> = emptyList(),
     val trailers: List<MetaTrailer> = emptyList(),
+    val isAnimation: Boolean? = null,
 ) {
     fun hasContent(): Boolean =
         localizedTitle != null ||
@@ -1904,6 +2009,7 @@ private fun TmdbVideoResult.toMetaTrailer(
 @Serializable
 private data class TmdbNamedItem(
     val name: String? = null,
+    val id: Int? = null,
 )
 
 @Serializable
@@ -2091,6 +2197,7 @@ private data class TmdbEpisodeResponse(
     @SerialName("air_date") val airDate: String? = null,
     val runtime: Int? = null,
     @SerialName("episode_number") val episodeNumber: Int? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
 )
 
 // ─── Person Detail Models ───

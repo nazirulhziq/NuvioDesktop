@@ -1,5 +1,7 @@
 package com.nuvio.app.features.plugins
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.core.ui.NuvioIconActionButton
 import com.nuvio.app.core.ui.NuvioInfoBadge
 import com.nuvio.app.core.ui.NuvioInputField
@@ -43,6 +46,7 @@ import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.features.plugins.runtime.PluginRuntime
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.action_refresh_all
 import nuvio.composeapp.generated.resources.plugins_badge_disabled
 import nuvio.composeapp.generated.resources.plugins_badge_enabled
 import nuvio.composeapp.generated.resources.plugins_badge_providers
@@ -105,6 +109,9 @@ fun PluginsSettingsPageContent(
     val repositoryNameByUrl = remember(sortedRepos) {
         sortedRepos.associate { it.manifestUrl to it.name }
     }
+    val repositoryByUrl = remember(sortedRepos) {
+        sortedRepos.associateBy { it.manifestUrl }
+    }
     val sortedScrapers = remember(uiState.scrapers, repositoryNameByUrl) {
         uiState.scrapers.sortedWith(
             compareBy<PluginScraper>(
@@ -163,7 +170,7 @@ fun PluginsSettingsPageContent(
                 Switch(
                     checked = uiState.pluginsEnabled,
                     onCheckedChange = { PluginRepository.setPluginsEnabled(it) },
-                )
+                 modifier = Modifier.remoteNavigationTarget())
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -192,7 +199,7 @@ fun PluginsSettingsPageContent(
                 Switch(
                     checked = uiState.groupStreamsByRepository,
                     onCheckedChange = { PluginRepository.setGroupStreamsByRepository(it) },
-                )
+                 modifier = Modifier.remoteNavigationTarget())
             }
         }
 
@@ -246,7 +253,19 @@ fun PluginsSettingsPageContent(
             }
         }
 
-        NuvioSectionLabel(stringResource(Res.string.plugins_section_installed_repos))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NuvioSectionLabel(stringResource(Res.string.plugins_section_installed_repos))
+            if (sortedRepos.isNotEmpty()) {
+                NuvioActionLabel(
+                    text = stringResource(Res.string.action_refresh_all),
+                    onClick = { PluginRepository.refreshAll() },
+                )
+            }
+        }
         if (sortedRepos.isEmpty()) {
             NuvioSurfaceCard {
                 Text(
@@ -294,6 +313,30 @@ fun PluginsSettingsPageContent(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Switch(
+                            checked = repo.enabled,
+                            onCheckedChange = { PluginRepository.toggleRepository(repo.manifestUrl, it) },
+                         modifier = Modifier.remoteNavigationTarget())
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            NuvioInfoBadge(text = stringResource(Res.string.plugins_badge_providers, repo.scraperCount))
+                            if (!repo.enabled) {
+                                NuvioInfoBadge(text = stringResource(Res.string.plugins_badge_disabled))
+                            }
+                            if (repo.isRefreshing) {
+                                NuvioInfoBadge(text = stringResource(Res.string.plugins_badge_refreshing))
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             NuvioIconActionButton(
                                 icon = Icons.Rounded.Refresh,
@@ -307,16 +350,6 @@ fun PluginsSettingsPageContent(
                                 tint = MaterialTheme.colorScheme.error,
                                 onClick = { PluginRepository.removeRepository(repo.manifestUrl) },
                             )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        NuvioInfoBadge(text = stringResource(Res.string.plugins_badge_providers, repo.scraperCount))
-                        if (repo.isRefreshing) {
-                            NuvioInfoBadge(text = stringResource(Res.string.plugins_badge_refreshing))
                         }
                     }
                     repo.errorMessage?.let { errorMessage ->
@@ -347,6 +380,8 @@ fun PluginsSettingsPageContent(
                 val repositoryName = repositoryNameByUrl[scraper.repositoryUrl]
                     ?: scraper.repositoryUrl.fallbackRepositoryLabel(repoFallbackLabel)
 
+                val isRepoEnabled = repositoryByUrl[scraper.repositoryUrl]?.enabled ?: true
+
                 NuvioSurfaceCard {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -360,7 +395,7 @@ fun PluginsSettingsPageContent(
                             Icon(
                                 imageVector = Icons.Rounded.Extension,
                                 contentDescription = null,
-                                tint = if (scraper.enabled) Color(0xFF68B76A) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (scraper.enabled && isRepoEnabled) Color(0xFF68B76A) else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -400,7 +435,7 @@ fun PluginsSettingsPageContent(
                                             configuringLayout = layout
                                         }
                                     }
-                                }) {
+                                }, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                                     Icon(
                                         imageVector = Icons.Rounded.Settings,
                                         contentDescription = "Provider settings",
@@ -411,8 +446,8 @@ fun PluginsSettingsPageContent(
                             Switch(
                                 checked = scraper.enabled,
                                 onCheckedChange = { PluginRepository.toggleScraper(scraper.id, it) },
-                                enabled = scraper.manifestEnabled,
-                            )
+                                enabled = scraper.manifestEnabled && isRepoEnabled,
+                             modifier = Modifier.remoteNavigationTarget())
                         }
                     }
 
@@ -423,7 +458,7 @@ fun PluginsSettingsPageContent(
                     ) {
                         NuvioInfoBadge(text = scraper.supportedTypes.joinToString(" | "))
                         NuvioInfoBadge(text = stringResource(Res.string.plugins_provider_version, scraper.version))
-                        if (!scraper.manifestEnabled) {
+                        if (!scraper.manifestEnabled || !isRepoEnabled) {
                             NuvioInfoBadge(text = stringResource(Res.string.plugins_provider_disabled_by_repo))
                         }
                     }

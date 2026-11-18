@@ -1,5 +1,12 @@
 package com.nuvio.app.features.profiles
 
+import com.nuvio.app.core.ui.LocalSurfaceStyle
+import com.nuvio.app.core.ui.DarkGlassSurfaceColor
+import com.nuvio.app.features.settings.SurfaceStyle
+
+import com.nuvio.app.core.ui.LocalFrostedGlassEnabled
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -27,7 +34,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
@@ -56,6 +63,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.FrostedGlassTokens
+import com.nuvio.app.core.ui.frostedGlassShadow
+import com.nuvio.app.core.ui.frostedGlassBorder
 import com.nuvio.app.core.ui.nuvio
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -106,22 +116,38 @@ internal fun ProfilePopupContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .onGloballyPositioned { panelBounds = it.boundsInParent() }
-                    .shadow(12.dp, shape)
-                    .clip(shape)
                     .then(
-                        if (hazeState != null) {
-                            Modifier.hazeEffect(hazeState) {
-                                blurRadius = 24.dp
-                                backgroundColor = Color(0xFF1C1C1E)
-                                tints = listOf(HazeTint(Color(0xFF1C1C1E).copy(alpha = 0.55f)))
-                                fallbackTint = HazeTint(Color(0xFF1C1C1E).copy(alpha = 0.94f))
-                                noiseFactor = 0f
-                            }
+                        if (LocalSurfaceStyle.current == SurfaceStyle.DarkGlass) {
+                            Modifier
+                        } else if (LocalFrostedGlassEnabled.current && hazeState != null) {
+                            Modifier.frostedGlassShadow(shape, 12.dp)
                         } else {
-                            Modifier.background(tokens.colors.background)
+                            Modifier.shadow(12.dp, shape)
                         },
                     )
-                    .border(0.5.dp, tokens.colors.borderDefault, shape)
+                    .clip(shape)
+                    .then(
+                        if (LocalFrostedGlassEnabled.current && hazeState != null) {
+                            Modifier
+                                .hazeEffect(hazeState) {
+                                    blurRadius = FrostedGlassTokens.PanelBlurRadius
+                                    noiseFactor = FrostedGlassTokens.NoiseFactor
+                                    inputScale = FrostedGlassTokens.PanelInputScale
+                                    backgroundColor = tokens.colors.background
+                                    tints = listOf(HazeTint(FrostedGlassTokens.PanelTintColor))
+                                    fallbackTint = HazeTint(FrostedGlassTokens.FallbackColor)
+                                }
+                        } else {
+                            Modifier.background(if (LocalSurfaceStyle.current == SurfaceStyle.DarkGlass) DarkGlassSurfaceColor else if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.FallbackColor else tokens.colors.surfacePopover.copy(alpha = 1f))
+                        },
+                    )
+                    .then(
+                        if (LocalFrostedGlassEnabled.current) {
+                            Modifier.frostedGlassBorder(shape)
+                        } else {
+                            Modifier.border(0.5.dp, tokens.colors.borderDefault, shape)
+                        },
+                    )
                     .padding(12.dp),
             ) {
                 AnimatedContent(
@@ -137,7 +163,7 @@ internal fun ProfilePopupContent(
                     label = "profile_popup_content",
                 ) { lockedProfile ->
                     Column(
-                        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                        Modifier.fillMaxWidth().nuvioVerticalScroll(rememberScrollState()),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         if (lockedProfile != null) {
@@ -216,7 +242,7 @@ private fun ProfilePopupItem(
         modifier.graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(tokens.shapes.compactCard)
             .background(if (isHovered) tokens.colors.accent.copy(alpha = 0.14f) else Color.Transparent)
-            .selectable(selected = isActive, onClick = onClick)
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).selectable(selected = isActive, onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

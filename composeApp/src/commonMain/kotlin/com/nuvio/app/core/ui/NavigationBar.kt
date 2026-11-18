@@ -1,5 +1,8 @@
 package com.nuvio.app.core.ui
 
+import com.nuvio.app.features.settings.SurfaceStyle
+
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -40,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -172,20 +176,33 @@ fun NuvioNavigationBar(
         contentAlignment = Alignment.BottomCenter,
     ) {
         // The floating pill
+        val pillShape = RoundedCornerShape(NuvioTokens.Radius.full)
         val pillModifier = Modifier
             .padding(horizontal = horizontalPadding)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(NuvioTokens.Radius.full))
             .then(
-                if (hazeState != null) {
+                if (LocalFrostedGlassEnabled.current && hazeState != null) {
+                    Modifier.frostedGlassShadow(pillShape, 6.dp)
+                } else {
+                    Modifier
+                },
+            )
+            .clip(pillShape)
+            .then(if (LocalFrostedGlassEnabled.current) Modifier.frostedGlassBorder(pillShape) else Modifier)
+            .then(
+                if (LocalFrostedGlassEnabled.current && hazeState != null) {
                     Modifier.hazeEffect(state = hazeState) {
-                        blurRadius = 24.dp
+                        blurRadius = FrostedGlassTokens.BlurRadius
+                        noiseFactor = FrostedGlassTokens.NoiseFactor
+                        tints = emptyList()
+                        fallbackTint = HazeTint(FrostedGlassTokens.FallbackColor)
+                        inputScale = FrostedGlassTokens.InputScale
                     }
                 } else {
                     Modifier
                 },
             )
-            .background(Color(0xFF1C1C1E).copy(alpha = if (hazeState != null) 0.55f else 0.82f))
+            .background(if (LocalSurfaceStyle.current == SurfaceStyle.DarkGlass) DarkGlassSurfaceColor else if (LocalFrostedGlassEnabled.current) (if (hazeState?.areas?.isNotEmpty() == true) FrostedGlassTokens.TintColor else FrostedGlassTokens.FallbackColor) else MaterialTheme.nuvio.colors.surfacePopover.copy(alpha = 1f))
 
         Box(modifier = pillModifier) {
             Row(
@@ -259,7 +276,7 @@ private class NuvioNavigationBarScopeImpl(
         val tokens = MaterialTheme.nuvio
         val palette = MaterialTheme.themePalette
         val iconColor by animateColorAsState(
-            targetValue = if (selected) tokens.colors.accent else tokens.colors.textMuted,
+            targetValue = if (selected) tokens.colors.accent else if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textMuted,
             label = "nav_icon_color",
         )
         // Selected item gets a pill-shaped highlight using accent at low opacity
@@ -270,14 +287,12 @@ private class NuvioNavigationBarScopeImpl(
         )
 
         with(rowScope) {
-            val navItemShape = RoundedCornerShape(NuvioTokens.Radius.full)
             Column(
                 modifier = modifier
                     .weight(1f)
-                    .clip(navItemShape)
+                    .clip(RoundedCornerShape(NuvioTokens.Radius.full))
                     .background(selectedBgColor)
-                    .nuvioFocusBorder(navItemShape)
-                    .selectable(
+                    .remoteNavigationTarget(shape = RoundedCornerShape(NuvioTokens.Radius.full)).selectable(
                         selected = selected,
                         enabled = true,
                         role = Role.Tab,
@@ -311,7 +326,7 @@ private class NuvioNavigationBarScopeImpl(
         val tokens = MaterialTheme.nuvio
         val palette = MaterialTheme.themePalette
         val iconColor by animateColorAsState(
-            targetValue = if (selected) tokens.colors.accent else tokens.colors.textMuted,
+            targetValue = if (selected) tokens.colors.accent else if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textMuted,
             label = "nav_icon_color",
         )
         val selectedBgColor by animateColorAsState(
@@ -321,14 +336,12 @@ private class NuvioNavigationBarScopeImpl(
         )
 
         with(rowScope) {
-            val navItemShape = RoundedCornerShape(NuvioTokens.Radius.full)
             Column(
                 modifier = modifier
                     .weight(1f)
-                    .clip(navItemShape)
+                    .clip(RoundedCornerShape(NuvioTokens.Radius.full))
                     .background(selectedBgColor)
-                    .nuvioFocusBorder(navItemShape)
-                    .selectable(
+                    .remoteNavigationTarget(shape = RoundedCornerShape(NuvioTokens.Radius.full)).selectable(
                         selected = selected,
                         enabled = true,
                         role = Role.Tab,
@@ -365,19 +378,17 @@ private class NuvioNavigationBarScopeImpl(
             label = "nav_bg_color",
         )
         val iconColor by animateColorAsState(
-            targetValue = if (selected) tokens.colors.accent else tokens.colors.textMuted,
+            targetValue = if (selected) tokens.colors.accent else if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textMuted,
             label = "nav_icon_color",
         )
 
         with(rowScope) {
-            val navItemShape = RoundedCornerShape(NuvioTokens.Radius.full)
             Column(
                 modifier = modifier
                     .weight(1f)
-                    .clip(navItemShape)
+                    .clip(RoundedCornerShape(NuvioTokens.Radius.full))
                     .background(selectedBgColor)
-                    .nuvioFocusBorder(navItemShape)
-                    .selectable(
+                    .remoteNavigationTarget(shape = RoundedCornerShape(NuvioTokens.Radius.full)).selectable(
                         selected = selected,
                         enabled = true,
                         role = Role.Tab,
@@ -470,7 +481,7 @@ private class NuvioClassicNavigationBarScopeImpl(
         val tokens = MaterialTheme.nuvio
         val palette = MaterialTheme.themePalette
         val iconColor by animateColorAsState(
-            targetValue = if (selected) tokens.colors.accent else tokens.colors.textMuted,
+            targetValue = if (selected) tokens.colors.accent else if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textMuted,
             label = "classic_nav_icon_color",
         )
         with(rowScope) {
@@ -480,7 +491,7 @@ private class NuvioClassicNavigationBarScopeImpl(
                     .fillMaxWidth()
                     .weight(1f, fill = false)
                     .clip(tokens.components.navItemShape)
-                    .selectable(
+                    .remoteNavigationTarget(shape = tokens.components.navItemShape).selectable(
                         selected = selected,
                         enabled = true,
                         role = Role.Tab,
@@ -508,7 +519,7 @@ private class NuvioClassicNavigationBarScopeImpl(
         val tokens = MaterialTheme.nuvio
         val palette = MaterialTheme.themePalette
         val iconColor by animateColorAsState(
-            targetValue = if (selected) tokens.colors.accent else tokens.colors.textMuted,
+            targetValue = if (selected) tokens.colors.accent else if (LocalFrostedGlassEnabled.current) FrostedGlassTokens.SecondaryContentColor else tokens.colors.textMuted,
             label = "classic_nav_icon_color",
         )
         with(rowScope) {
@@ -518,7 +529,7 @@ private class NuvioClassicNavigationBarScopeImpl(
                     .fillMaxWidth()
                     .weight(1f, fill = false)
                     .clip(tokens.components.navItemShape)
-                    .selectable(
+                    .remoteNavigationTarget(shape = tokens.components.navItemShape).selectable(
                         selected = selected,
                         enabled = true,
                         role = Role.Tab,
@@ -550,7 +561,7 @@ private class NuvioClassicNavigationBarScopeImpl(
                     .fillMaxWidth()
                     .weight(1f, fill = false)
                     .clip(tokens.components.navItemShape)
-                    .selectable(
+                    .remoteNavigationTarget(shape = tokens.components.navItemShape).selectable(
                         selected = selected,
                         enabled = true,
                         role = Role.Tab,

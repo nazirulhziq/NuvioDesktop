@@ -6,6 +6,7 @@ import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
 import org.jetbrains.compose.resources.stringResource
 
@@ -42,9 +43,10 @@ internal fun LazyListScope.playbackSettingsContent(
             SettingsPage.PlaybackAudio -> PlaybackAudioSettings(isTablet, settings)
             SettingsPage.PlaybackSubtitles -> PlaybackSubtitleSettings(isTablet, settings)
             SettingsPage.PlaybackVideo -> PlaybackVideoSettings(isTablet, settings)
-            SettingsPage.PlaybackBuffer -> if (!isIos) PlaybackBufferSettings(isTablet, settings)
-            SettingsPage.PlaybackP2p -> if (P2pSettingsRepository.isVisible) PlaybackP2pSettings(isTablet)
+            SettingsPage.PlaybackBuffer -> if (isDesktop) PlaybackBufferSetting(isTablet) else if (!isIos) PlaybackBufferSettings(isTablet, settings)
+            SettingsPage.PlaybackP2p -> if (!isDesktop && P2pSettingsRepository.isVisible) PlaybackP2pSettings(isTablet)
             else -> Unit
         }
     }
+    if (isDesktop && page != SettingsPage.Playback) codeineXOSettingsContent(isTablet = isTablet, section = page)
 }

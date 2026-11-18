@@ -3,6 +3,8 @@ package com.nuvio.app.features.player
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.nuvio.app.features.streams.StreamBadge
+import com.nuvio.app.features.streams.StreamSubtitle
+import kotlinx.coroutines.flow.StateFlow
 
 interface PlayerEngineController {
     val playbackEngine: AndroidPlaybackEngine? get() = null
@@ -25,6 +27,15 @@ interface PlayerEngineController {
     fun selectAudioTrack(index: Int)
     fun selectSubtitleTrack(index: Int)
     fun setSubtitleUri(url: String)
+    /** Subtitles the engine split off the current stream to start it faster; offered like the stream's own. */
+    val engineStreamSubtitles: StateFlow<List<StreamSubtitle>>? get() = null
+    val supportsSecondarySubtitles: Boolean get() = false
+    suspend fun selectSecondarySubtitle(trackId: String?, url: String?): Boolean = false
+    fun applySecondarySubtitleStyle(style: SubtitleStyleState, delayMs: Int, useLibass: Boolean) {}
+    suspend fun prepareSecondarySubtitleAutoSync(url: String, language: String): SecondarySubtitleSyncResult? = null
+    fun loadSecondarySubtitlePreference(key: String): String? = null
+    fun saveSecondarySubtitlePreference(key: String, value: String) {}
+    fun setAudioUri(url: String) {}
     fun clearExternalSubtitle()
     fun clearExternalSubtitleAndSelect(trackIndex: Int)
     fun applySubtitleStyle(style: SubtitleStyleState, useLibass: Boolean = false) {}
@@ -53,6 +64,7 @@ interface PlayerEngineController {
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}
     fun updateNowPlayingMetadata(info: PlayerNowPlayingInfo) {}
     fun clearNowPlayingInfo() {}
+    fun requestKeyboardFocus() {}
 
     /** Optional barrier for platforms that must release native resources before their route is removed. */
     fun releaseBeforeNavigation(
@@ -67,6 +79,8 @@ interface PlayerEngineController {
     suspend fun getChapters(): List<PlayerChapter> = emptyList()
 }
 
+data class SecondarySubtitleSyncResult(val retimedPath: String?)
+
 enum class PlayerControlsAction {
     ToggleChrome,
     RevealLockedOverlay,
@@ -75,8 +89,12 @@ enum class PlayerControlsAction {
     KeyboardTogglePlayback,
     SeekBack,
     KeyboardSeekBack,
+    KeyboardSeek10Back,
     SeekForward,
     KeyboardSeekForward,
+    KeyboardSeek10Forward,
+    KeyboardFineSeekBack,
+    KeyboardFineSeekForward,
     KeyboardVolumeDown,
     KeyboardVolumeUp,
     PictureInPicture,
@@ -92,16 +110,24 @@ enum class PlayerControlsAction {
     VideoSettings,
     DoubleTapSeekBack,
     DoubleTapSeekForward,
+    Minimize,
+    Expand,
 }
+
+data class PlayerControlSubtitleFonts(
+    val label: String = "Font",
+    val importLabel: String = "Import font",
+    val importHint: String = "",
+    val importError: String = "",
+    val doneLabel: String = "Done",
+    val removeLabel: String = "Remove {name}",
+    val importFailed: Boolean = false,
+    val items: List<PlayerControlSubtitleFont> = emptyList(),
+)
 
 data class PlayerControlSubtitleFont(
     val id: String,
     val label: String,
-)
-
-data class PlayerControlChapter(
-    val startMs: Long,
-    val title: String,
 )
 
 data class PlayerControlInfoItem(
@@ -118,8 +144,81 @@ data class PlayerControlInfoSection(
     val items: List<PlayerControlInfoItem> = emptyList(),
 )
 
+data class PlayerControlChapter(
+    val startMs: Long,
+    val title: String,
+)
+
+@kotlinx.serialization.Serializable
+data class PlaybackStatsMetadata(
+    val providerLogo: String? = null,
+    val streamDescription: String? = null,
+    val playbackEngine: String? = null,
+    val serverSummary: String? = null,
+    val audioLanguage: String? = null,
+    val subtitleName: String? = null,
+    val subtitleLanguage: String? = null,
+    val subtitleSource: String? = null,
+    val languageLabel: String = "Language",
+    val engineLabel: String = "Player engine",
+    val serverLabel: String = "Server",
+    val descriptionLabel: String = "Description",
+    val subtitleSourceLabel: String = "Source",
+)
+
+data class PlayerControlPlaybackState(
+    val isPlaying: Boolean = false,
+    val isEnded: Boolean = false,
+    val isLoading: Boolean = false,
+)
+
+data class PlayerChapterControls(
+    val chapters: List<PlayerControlChapter> = emptyList(),
+    val chapterTitleEnabled: Boolean = true,
+    val chaptersLabel: String = "Chapters",
+    val chaptersPanelTitle: String = "Chapters",
+    val chapterRemainingTemplate: String = "{time} left",
+)
+
+/**
+ * Localized texts for the player's on-screen toast messages. Kept in their own class because PlayerControlsState's
+ * constructor is close to the JVM limit of 255 parameter slots.
+ */
+data class PlayerToastLabels(
+    val playing: String = "Playing",
+    val paused: String = "Paused",
+    val on: String = "On",
+    val off: String = "Off",
+    val audio: String = "Audio",
+    val subtitles: String = "Subtitles",
+    val noAudioTracks: String = "No audio tracks available",
+    val noSubtitles: String = "No subtitles available",
+)
+
 data class PlayerControlsState(
     val title: String = "",
+    val mediaContentType: MediaContentType = MediaContentType.UNKNOWN,
+    val playerUiMode: String = "codeine_xo",
+    val seekPreviewEnabled: Boolean = false,
+    val seekPreviewWhileDragging: Boolean = true,
+    val seekPreviewWhileHovering: Boolean = true,
+    val seekPreviewWhileKeyboardSeeking: Boolean = true,
+    val seekPreviewThumbnailCount: Int = 5,
+    val seekPreviewVttUrl: String = "",
+    val seekrApiKey: String = "",
+    val seekrImdbId: String = "",
+    val seekrTmdbId: Int = 0,
+    val seekrSeason: Int = 0,
+    val seekrEpisode: Int = 0,
+    val showSeekbarWhileSeeking: Boolean = true,
+    val showRemainingTime: Boolean = false,
+    val showPlaybackTimeOverlay: Boolean = false,
+    val eyeFilterEnabled: Boolean = false,
+    val eyeFilterColor: String = "#000000",
+    val eyeFilterOpacity: Float = 0.35f,
+    val showTorrentStatsOverlay: Boolean = true,
+    val torrentStatsText: String = "",
+    val playbackStats: PlayerPlaybackStats? = null,
     val episodeText: String = "",
     val streamTitle: String = "",
     val providerName: String = "",
@@ -141,6 +240,7 @@ data class PlayerControlsState(
     val externalPlayerLabel: String = "External",
     val playLabel: String = "Play",
     val pauseLabel: String = "Pause",
+    val toastLabels: PlayerToastLabels = PlayerToastLabels(),
     val closeLabel: String = "Close player",
     val mutedLabel: String = "",
     val volumeLevelLabelFormat: String = "",
@@ -153,6 +253,7 @@ data class PlayerControlsState(
     val pipPlaceholderTitle: String = "",
     val pipRestoreLabel: String = "",
     val pipWindowTitle: String = "",
+    val minimizeLabel: String = "Mini player",
     val playbackErrorTitle: String = "Playback error",
     val playbackErrorMessage: String = "",
     val playbackErrorActionLabel: String = "Go back",
@@ -205,19 +306,7 @@ data class PlayerControlsState(
     val colorLabel: String = "Color",
     val textOpacityLabel: String = "Text Opacity",
     val outlineColorLabel: String = "Outline Color",
-    val fontLabel: String = "Font",
-    val backgroundColorLabel: String = "Background Color",
-    val backgroundOpacityLabel: String = "Background opacity",
-    val fontImportLabel: String = "Import font",
-    val fontImportHint: String = "",
-    val fontImportError: String = "",
-    val doneLabel: String = "Done",
-    val fontRemoveLabel: String = "Remove {name}",
-    val subtitleFontImportFailed: Boolean = false,
-    val shadowLabel: String = "Drop shadow",
-    val shadowOpacityLabel: String = "Shadow opacity",
-    val shadowSizeLabel: String = "Shadow size",
-    val subtitleFonts: List<PlayerControlSubtitleFont> = emptyList(),
+    val fontPicker: PlayerControlSubtitleFonts = PlayerControlSubtitleFonts(),
     val noSubtitleLinesFoundLabel: String = "No subtitle lines found",
     val resetDefaultsLabel: String = "Reset Defaults",
     val onLabel: String = "On",
@@ -243,8 +332,7 @@ data class PlayerControlsState(
     val themeTextMutedColor: String = "rgba(255, 255, 255, .60)",
     val themeBorderDefaultColor: String = "rgba(255, 255, 255, .12)",
     val themeDangerColor: String = "#e5484d",
-    val isPlaying: Boolean = false,
-    val isLoading: Boolean = false,
+    val playback: PlayerControlPlaybackState = PlayerControlPlaybackState(),
     val isLocked: Boolean = false,
     val lockedOverlayVisible: Boolean = false,
     val controlsVisible: Boolean = true,
@@ -269,6 +357,8 @@ data class PlayerControlsState(
     val nextEpisodeStatus: String = "",
     val nextEpisodeActionLabel: String = "Play",
     val nextEpisodePlayable: Boolean = false,
+    val nextEpisodeIsFiller: Boolean = false,
+    val nextEpisodeIsMixed: Boolean = false,
     val showSubmitIntro: Boolean = false,
     val showVideoSettings: Boolean = false,
     val showSources: Boolean = false,
@@ -280,11 +370,19 @@ data class PlayerControlsState(
     val sourceIsLoading: Boolean = false,
     val sourceFilters: List<PlayerControlFilterItem> = emptyList(),
     val sourceItems: List<PlayerControlSourceItem> = emptyList(),
+    val sourceReleaseDate: String = "",
+    val sourceRating: String = "",
+    val sourceIsFiller: Boolean = false,
+    val sourceIsMixed: Boolean = false,
     val episodeItems: List<PlayerControlEpisodeItem> = emptyList(),
     val episodeSeasons: List<PlayerControlSeasonItem> = emptyList(),
     val episodeStreamsVisible: Boolean = false,
     val episodeStreamsIsLoading: Boolean = false,
     val selectedEpisodeLabel: String = "",
+    val selectedEpisodeReleaseDate: String = "",
+    val selectedEpisodeRating: String = "",
+    val selectedEpisodeIsFiller: Boolean = false,
+    val selectedEpisodeIsMixed: Boolean = false,
     val episodeStreamFilters: List<PlayerControlFilterItem> = emptyList(),
     val episodeStreamItems: List<PlayerControlSourceItem> = emptyList(),
     val blurUnwatchedEpisodes: Boolean = false,
@@ -303,7 +401,7 @@ data class PlayerControlsState(
     val isLoadingAddonSubtitles: Boolean = false,
     val selectedAddonSubtitleId: String = "",
     val useCustomSubtitles: Boolean = false,
-    val subtitleStyle: SubtitleStyleState = SubtitleStyleState.DEFAULT,
+    val subtitleAppearance: PlayerControlSubtitleAppearance = PlayerControlSubtitleAppearance(),
     val subtitleDelayMs: Int = 0,
     val hasSelectedAddonSubtitle: Boolean = false,
     val subtitleAutoSyncCapturedPositionMs: Long = -1L,
@@ -315,16 +413,44 @@ data class PlayerControlsState(
     val submitIntroSuccessToken: Long = 0L,
     val notificationMessage: String = "",
     val notificationToken: Long = 0L,
+    val animeUpscalerEnabled: Boolean = false,
+    val animeUpscalerModeIndex: Int = 0,
+    val animeUpscalerOption: AnimeUpscalerOption = AnimeUpscalerOption.OFF,
+    val svpMotionOption: SvpMotionOption = SvpMotionOption.AUTO,
+    val animeUpscalerActive: Boolean = false,
+    val isAutoBypassed: Boolean = false,
+    val svpMode: String = "auto",
+    val svpActive: Boolean = false,
+    val svpProfile: String = "",
+    val svpAvailable: Boolean = true,
+    val audioNightModeEnabled: Boolean = false,
     val party: PlayerControlPartyState = PlayerControlPartyState(),
     val badges: List<StreamBadge> = emptyList(),
-    val chapters: List<PlayerControlChapter> = emptyList(),
-    val chapterTitleEnabled: Boolean = true,
-    val chaptersLabel: String = "Chapters",
-    val chaptersPanelTitle: String = "Chapters",
-    val chapterRemainingTemplate: String = "{time} left",
+    val chapterControls: PlayerChapterControls = PlayerChapterControls(),
     val autoSyncedLabel: String = "Auto synced",
-    val streamInfoLabel: String = "Stream info",
-    val streamInfoSections: List<PlayerControlInfoSection> = emptyList(),
+    val playbackStatsMetadata: PlaybackStatsMetadata? = null,
+) {
+    val isPlaying: Boolean get() = playback.isPlaying
+    val isEnded: Boolean get() = playback.isEnded
+    val isLoading: Boolean get() = playback.isLoading
+    val subtitleStyle: SubtitleStyleState get() = subtitleAppearance.style
+    val customSubtitleStyleLabel: String get() = subtitleAppearance.customStyleLabel
+    val customSubtitleStylingEnabled: Boolean get() = subtitleAppearance.customStylingEnabled
+}
+
+data class PlayerControlSubtitleAppearance(
+    val style: SubtitleStyleState = SubtitleStyleState.DEFAULT,
+    val customStyleLabel: String = "Use custom styling",
+    val customStylingEnabled: Boolean = true,
+    val slots: PlayerControlSubtitleSlots = PlayerControlSubtitleSlots(),
+)
+
+data class PlayerControlSubtitleSlots(
+    val supported: Boolean = false,
+    val secondarySelected: Boolean = false,
+    val secondaryActive: Boolean = false,
+    val primaryLabel: String = "",
+    val secondaryLabel: String = "",
 )
 
 data class PlayerControlFilterItem(
@@ -372,10 +498,13 @@ data class PlayerControlEpisodeItem(
     val overview: String = "",
     val thumbnail: String = "",
     val released: String = "",
+    val rating: String = "",
     val season: Int = 0,
     val episode: Int = 0,
     val isCurrent: Boolean = false,
     val isWatched: Boolean = false,
+    val isFiller: Boolean = false,
+    val isMixed: Boolean = false,
 )
 
 data class PlayerControlAddonSubtitleItem(

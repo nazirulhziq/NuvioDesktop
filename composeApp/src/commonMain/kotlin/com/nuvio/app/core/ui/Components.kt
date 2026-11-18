@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -8,10 +9,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,11 +28,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -43,6 +48,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,44 +80,57 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.nuvio.app.isDesktop
+import dev.chrisbanes.haze.HazeState
 import com.nuvio.app.navigation.LocalNativeNavigationBarHidden
 import com.nuvio.app.navigation.LocalUseNativeNavigation
+
+private val LocalScreenHeaderInset = staticCompositionLocalOf { false }
 
 @Composable
 fun NuvioScreen(
     modifier: Modifier = Modifier,
-    horizontalPadding: Dp = MaterialTheme.nuvio.spacing.screenHorizontal,
+    horizontalPadding: Dp? = null,
     topPadding: Dp? = null,
+    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(MaterialTheme.nuvio.spacing.listGap),
     listState: LazyListState = rememberLazyListState(),
-    @Suppress("UNUSED_PARAMETER") autoHidesNativeTabBar: Boolean = false,
+    backgroundColor: Color = MaterialTheme.nuvio.colors.background,
+    sidebarContentInset: Dp = 0.dp,
     content: LazyListScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val scrollViewportModifier = if (isDesktop) {
-        com.nuvio.app.controller.RegisterControllerVerticalScroll(lazyListState = listState)
-    } else {
-        Modifier
-    }
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(tokens.colors.background),
+            .then(
+                if (backgroundColor != Color.Transparent) {
+                    Modifier.background(backgroundColor)
+                } else {
+                    Modifier
+                }
+            ),
     ) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .then(scrollViewportModifier),
-            contentPadding = PaddingValues(
-                start = horizontalPadding,
-                top = topPadding ?: tokens.spacing.screenTop + statusBarTop + nuvioPlatformExtraTopPadding,
-                end = horizontalPadding,
-                bottom = nuvioSafeBottomPadding(tokens.spacing.screenBottom),
-            ).withVerticalBar(),
-            verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
-            content = content,
-        )
+        val pagePadding = horizontalPadding ?: if (isDesktop) {
+            desktopPageHorizontalPaddingForWidth((maxWidth - sidebarContentInset).coerceAtLeast(0.dp).value)
+        } else tokens.spacing.screenHorizontal
+        if (backgroundColor != Color.Transparent) {
+            // A sibling source for controls inside the scrolling content source.
+            Box(Modifier.matchParentSize().navigationGlassSource(zIndex = -1f).background(backgroundColor))
+        }
+        CompositionLocalProvider(LocalScreenHeaderInset provides true) {
+            NuvioLazyColumn(
+                state = listState,
+                modifier = Modifier.remoteNavigationViewport(listState).remoteNavigationGroup().fillMaxSize().navigationGlassSource(zIndex = 1f),
+                contentPadding = PaddingValues(
+                    start = sidebarContentInset + pagePadding,
+                    top = topPadding ?: if (isDesktop) 0.dp else tokens.spacing.screenTop + statusBarTop + nuvioPlatformExtraTopPadding,
+                    end = pagePadding,
+                    bottom = nuvioSafeBottomPadding(tokens.spacing.screenBottom),
+                ).withVerticalBar(),
+                verticalArrangement = verticalArrangement,
+                content = content,
+            )
+        }
         NuvioDesktopVerticalScrollbar(
             state = listState,
             modifier = Modifier
@@ -139,10 +159,11 @@ fun NuvioSurfaceCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    Surface(
+    SettingsAwareSurface(
         modifier = modifier.fillMaxWidth(),
         color = tokens.colors.surface,
         shape = tokens.shapes.card,
+        border = BorderStroke(tokens.borders.hairline, tokens.colors.borderSubtle),
         tonalElevation = tonalElevation.dp,
         shadowElevation = tokens.elevation.flat,
     ) {
@@ -161,6 +182,10 @@ fun NuvioScreenHeader(
     includeStatusBarPadding: Boolean = true,
     topPadding: Dp? = null,
     onBack: (() -> Unit)? = null,
+    backButtonKeyboardNavigationEnabled: Boolean = true,
+    showFullscreenAction: Boolean = true,
+    backButtonBackgroundOnly: Boolean = false,
+    showBackWithDesktopSidebar: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
@@ -179,10 +204,18 @@ fun NuvioScreenHeader(
         )
         return
     }
-    val resolvedTopPadding = topPadding ?: if (includeStatusBarPadding) statusBarTop else NuvioTokens.Space.none
-    Box(
+    val insetByScreen = LocalScreenHeaderInset.current
+    val resolvedTopPadding = topPadding ?: if (isDesktop) {
+        (if (includeStatusBarPadding) statusBarTop else 0.dp) + desktopTopBarTopPadding
+    } else if (includeStatusBarPadding) statusBarTop else NuvioTokens.Space.none
+    BoxWithConstraints(
         modifier = modifier.fillMaxWidth(),
     ) {
+        val headerButtonSize = if (isDesktop) desktopTopBarHeight(maxWidth) else desktopBackButtonSize
+        val headerIconSize = if (isDesktop) desktopTopBarActionIconSize(maxWidth) else desktopBackButtonIconSize
+        val horizontalInset = if (isDesktop && onBack != null && !insetByScreen) {
+            desktopPageHorizontalPaddingForWidth(maxWidth.value)
+        } else 0.dp
         Row(
             modifier = Modifier
                 .matchParentSize()
@@ -192,21 +225,35 @@ fun NuvioScreenHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = horizontalInset)
                 .padding(top = resolvedTopPadding, bottom = NuvioTokens.Space.s4),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom,
+            verticalAlignment = if (isDesktop && onBack != null) Alignment.Top else Alignment.Bottom,
         ) {
             Row(
                 modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
             ) {
-                if (onBack != null) {
-                    IconButton(onClick = onBack) {
+                if (onBack != null && isDesktop) {
+                    NuvioBackButton(
+                        onClick = onBack,
+                        usePageStyle = true,
+                        keyboardNavigationEnabled = backButtonKeyboardNavigationEnabled,
+                        backgroundOnly = backButtonBackgroundOnly,
+                        showWithDesktopSidebar = showBackWithDesktopSidebar,
+                    )
+                } else if (onBack != null && (!LocalDesktopSidebarActive.current || showBackWithDesktopSidebar)) {
+                    IconButton(onClick = onBack, modifier = (if (isDesktop) Modifier
+                        .size(desktopBackButtonSize)
+                    else Modifier).navigationGlass(backgroundOnly = backButtonBackgroundOnly).then(if (backButtonKeyboardNavigationEnabled) {
+                        Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)
+                    } else Modifier.excludeFromRemoteNavigation())) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = stringResource(Res.string.action_back),
-                            tint = tokens.colors.textPrimary,
+                            tint = frostedGlassSecondaryContentColor(if (isDesktop) MaterialTheme.colorScheme.onBackground else tokens.colors.textPrimary),
+                            modifier = if (isDesktop) Modifier.size(desktopBackButtonIconSize) else Modifier,
                         )
                     }
                 }
@@ -226,14 +273,21 @@ fun NuvioScreenHeader(
                 }
             }
             Row(
+                modifier = if (isDesktop) Modifier.align(Alignment.Top) else Modifier,
                 horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s2),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FullscreenActionButton(
-                    buttonSize = 48.dp,
-                    iconSize = 24.dp,
-                    contentColor = tokens.colors.textPrimary,
-                )
+                if (showFullscreenAction) {
+                    FullscreenActionButton(
+                        modifier = if (isDesktop) Modifier
+                            .align(Alignment.Top)
+                            .offset(y = statusBarTop + desktopTopBarTopPadding - resolvedTopPadding)
+                        else Modifier,
+                        buttonSize = if (isDesktop) headerButtonSize else 48.dp,
+                        iconSize = if (isDesktop) headerIconSize else 24.dp,
+                        contentColor = tokens.colors.textPrimary,
+                    )
+                }
                 actions()
             }
         }
@@ -264,7 +318,7 @@ fun NuvioActionLabel(
         text = text,
         modifier = modifier.then(
             if (onClick != null) {
-                Modifier.clickable(onClick = onClick)
+                Modifier.remoteNavigationTarget().clickable(onClick = onClick)
             } else {
                 Modifier
             }
@@ -284,11 +338,11 @@ fun NuvioIconActionButton(
 ) {
     val tokens = MaterialTheme.nuvio
     IconButton(
-        modifier = modifier
+        modifier = (modifier
             .background(
                 color = tokens.colors.background.copy(alpha = 0.001f),
                 shape = tokens.shapes.avatar,
-            ),
+            )).remoteNavigationTarget(shape = tokens.shapes.avatar),
         onClick = onClick,
     ) {
         Icon(
@@ -310,24 +364,40 @@ fun NuvioBackButton(
     buttonSize: Dp = NuvioTokens.Space.s40,
     iconSize: Dp = NuvioTokens.Icon.md,
     contentDescription: String = stringResource(Res.string.action_back),
+    usePageStyle: Boolean = false,
+    keyboardNavigationEnabled: Boolean = true,
+    backgroundOnly: Boolean = false,
+    showWithDesktopSidebar: Boolean = false,
 ) {
     if (LocalUseNativeNavigation.current && !LocalNativeNavigationBarHidden.current) return
-    val effectiveContainerColor = if (isDesktop && !showContainerOnDesktop) Color.Transparent else containerColor
+    if (LocalDesktopSidebarActive.current && !showWithDesktopSidebar) return
+    val desktopPageStyle = isDesktop && usePageStyle
+    val effectiveContainerColor = if (desktopPageStyle) desktopBackButtonContainerColor
+        else if (isDesktop && !showContainerOnDesktop) Color.Transparent else containerColor
+    val effectiveShape = if (desktopPageStyle) MaterialTheme.nuvio.shapes.avatar else shape
 
     Box(
         modifier = modifier
-            .size(buttonSize)
-            .clip(shape)
-            .background(effectiveContainerColor)
-            .nuvioFocusBorder(shape)
+            .size(if (desktopPageStyle) desktopBackButtonSize else buttonSize)
+            // Players use the original branch; only page navigation opts into glass.
+            .then(
+                if (usePageStyle) Modifier.navigationGlass(effectiveShape, backgroundOnly = backgroundOnly)
+                else Modifier.clip(effectiveShape).background(effectiveContainerColor),
+            )
+            .then(
+                if (keyboardNavigationEnabled) {
+                    Modifier.remoteNavigationTarget(shape = shape, role = RemoteNavigationRole.Back)
+                } else Modifier.excludeFromRemoteNavigation(),
+            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
             contentDescription = contentDescription,
-            tint = contentColor,
-            modifier = Modifier.size(iconSize),
+            tint = if (usePageStyle) frostedGlassSecondaryContentColor(if (desktopPageStyle) MaterialTheme.colorScheme.onBackground else contentColor)
+                else if (desktopPageStyle) MaterialTheme.colorScheme.onBackground else contentColor,
+            modifier = Modifier.size(if (desktopPageStyle) desktopBackButtonIconSize else iconSize),
         )
     }
 }
@@ -342,10 +412,10 @@ fun NuvioPrimaryButton(
     val tokens = MaterialTheme.nuvio
     Button(
         onClick = onClick,
-        modifier = modifier
+        interactionSource = rememberRemoteInteractionSource(),
+        modifier = (modifier
             .fillMaxWidth()
-            .height(NuvioTokens.Space.s48 + NuvioTokens.Space.s4)
-            .nuvioFocusBorder(tokens.shapes.button),
+            .height(NuvioTokens.Space.s48 + NuvioTokens.Space.s4)).remoteNavigationTarget(shape = tokens.shapes.button),
         enabled = enabled,
         shape = tokens.shapes.button,
         colors = ButtonDefaults.buttonColors(
@@ -378,12 +448,31 @@ fun NuvioInputField(
     shape: Shape = MaterialTheme.nuvio.shapes.compactCard,
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
     trailingContent: (@Composable (() -> Unit))? = null,
+    useGlass: Boolean = false,
+    glassBackdropState: HazeState? = null,
+    enabled: Boolean = true,
 ) {
     val tokens = MaterialTheme.nuvio
+    var isEditing by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(NuvioTokens.Radius.lg)
+    val interactionSource = remember { MutableInteractionSource() }
     OutlinedTextField(
+        enabled = enabled,
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
+        readOnly = isRemoteKeyboardNavigationActive && !isEditing,
+        modifier = modifier.fillMaxWidth()
+            .then(
+                if (useGlass) Modifier.navigationGlass(
+                    shape = shape,
+                    hazeState = glassBackdropState ?: LocalNavigationGlassState.current,
+                    backgroundOnly = glassBackdropState == null,
+                )
+                    .navigationGlassFeedback(interactionSource, shape)
+                else Modifier,
+            )
+            .remoteNavigationTarget(textField = true, onEditingChange = { isEditing = it }),
+        interactionSource = interactionSource,
         singleLine = true,
         shape = shape,
         placeholder = {
@@ -398,8 +487,8 @@ fun NuvioInputField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = tokens.colors.borderFocus,
             unfocusedBorderColor = tokens.colors.borderDefault,
-            focusedContainerColor = tokens.colors.surfaceCard,
-            unfocusedContainerColor = tokens.colors.surfaceCard,
+            focusedContainerColor = if (useGlass) Color.Transparent else tokens.colors.surfaceCard,
+            unfocusedContainerColor = if (useGlass) Color.Transparent else tokens.colors.surfaceCard,
             cursorColor = tokens.colors.accent,
         ),
     )

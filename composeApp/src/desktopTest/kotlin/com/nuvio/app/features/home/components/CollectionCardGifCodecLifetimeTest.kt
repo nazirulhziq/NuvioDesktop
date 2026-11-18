@@ -30,7 +30,7 @@ class CollectionCardGifCodecLifetimeTest {
                     }
                     retained += codec
                     cache["codec-lifetime-fixture-$index"] = holderConstructor.newInstance(
-                        codec, listOf(200L, 200L), 2, 2, 2, 2, false,
+                        codec, listOf(200L, 200L), 2, 2,
                     )
                 }
                 assertEquals(15, cache.size)

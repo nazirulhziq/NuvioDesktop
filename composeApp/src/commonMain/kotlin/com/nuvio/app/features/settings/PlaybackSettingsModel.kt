@@ -27,7 +27,7 @@ internal fun visiblePlaybackSections(
     p2pVisible: Boolean,
 ): List<PlaybackSection> = PlaybackSection.entries.filter { section ->
     when (section) {
-        PlaybackSection.Buffer -> !ios && !isDesktop && engine != AndroidPlaybackEngine.Libmpv
+        PlaybackSection.Buffer -> !ios && (isDesktop || engine != AndroidPlaybackEngine.Libmpv)
         PlaybackSection.P2p -> p2pVisible
         else -> true
     }

@@ -1,12 +1,25 @@
 package com.nuvio.app
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.navigationGlassSource
+import com.nuvio.app.core.ui.SettingsSurfaceStyle
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.home.components.HomeInteractiveGradientBackground
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import com.nuvio.app.core.ui.PlatformBackHandler
+import com.nuvio.app.core.ui.LocalScreenActive
 import com.nuvio.app.features.collection.CollectionEditorPage
 import com.nuvio.app.features.collection.CollectionEditorScreen
+import com.nuvio.app.features.collection.CollectionFolderBrowserScreen
 import com.nuvio.app.features.collection.CollectionManagementScreen
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.FolderDetailRepository
@@ -17,8 +30,10 @@ import com.nuvio.app.navigation.AppRoute
 import com.nuvio.app.navigation.CollectionEditorPageRoute
 import com.nuvio.app.navigation.CollectionEditorRoute
 import com.nuvio.app.navigation.CollectionsRoute
+import com.nuvio.app.navigation.CollectionFoldersRoute
 import com.nuvio.app.navigation.FolderDetailRoute
 import com.nuvio.app.navigation.NuvioNavigator
+import com.nuvio.app.navigation.OnboardingRoute
 import com.nuvio.app.navigation.PartyRoute
 import com.nuvio.app.navigation.SettingsPageRoute
 import nuvio.composeapp.generated.resources.Res
@@ -32,7 +47,16 @@ internal fun SettingsDestination(
     content: @Composable (onBack: () -> Unit) -> Unit,
 ) {
     val onBack = rememberGuardedPopBackStack(navController, route)
-    content(onBack)
+    PlatformBackHandler(enabled = true, onBack = onBack)
+    val auraEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
+    Box(Modifier.fillMaxSize()) {
+        if (auraEnabled) {
+            HomeInteractiveGradientBackground(Modifier.fillMaxSize())
+        } else {
+            Box(Modifier.fillMaxSize().navigationGlassSource(zIndex = -1f).background(MaterialTheme.nuvio.colors.background))
+        }
+        SettingsSurfaceStyle { content(onBack) }
+    }
 }
 
 @Composable
@@ -60,6 +84,9 @@ internal fun SettingsRootDestination(
         },
         onCheckForUpdatesClick = onCheckForUpdates,
         onTestUpdateBannerClick = onTestUpdateBanner,
+        onOnboardingClick = {
+            navController.navigate(OnboardingRoute(isReviewMode = true))
+        },
     )
 }
 
@@ -82,6 +109,34 @@ internal fun CollectionsDestination(
                 CollectionEditorRoute(
                     collectionId = collectionId,
                     title = editorTitle.ifBlank { newCollectionTitle },
+                ),
+            )
+        },
+    )
+}
+
+@Composable
+internal fun CollectionFoldersDestination(
+    route: CollectionFoldersRoute,
+    navController: NuvioNavigator,
+) {
+    val onBack = rememberGuardedPopBackStack(navController, route)
+    CollectionFolderBrowserScreen(
+        collectionId = route.collectionId,
+        title = route.title,
+        onBack = onBack,
+        onFolderClick = { collectionId, folderId ->
+            val folderTitle = CollectionRepository.collections.value
+                .firstOrNull { it.id == collectionId }
+                ?.folders
+                ?.firstOrNull { it.id == folderId }
+                ?.title
+                .orEmpty()
+            navController.navigate(
+                FolderDetailRoute(
+                    collectionId = collectionId,
+                    folderId = folderId,
+                    title = folderTitle.ifBlank { route.title },
                 ),
             )
         },
@@ -150,14 +205,20 @@ internal fun FolderDestination(
     route: FolderDetailRoute,
     navController: NuvioNavigator,
     onCatalogClick: (HomeCatalogSection) -> Unit,
+    onPosterLongClick: ((com.nuvio.app.features.home.MetaPreview) -> Unit)? = null,
 ) {
     val onBack = rememberGuardedPopBackStack(navController, route)
-    LaunchedEffect(route.collectionId, route.folderId) {
-        FolderDetailRepository.initialize(route.collectionId, route.folderId)
+    val active = LocalScreenActive.current
+    LaunchedEffect(active, route.collectionId, route.folderId) {
+        if (active) FolderDetailRepository.initialize(route.collectionId, route.folderId)
     }
     FolderDetailScreen(
+        collectionId = route.collectionId,
+        folderId = route.folderId,
+        title = route.title,
         onBack = onBack,
         onCatalogClick = onCatalogClick,
         onPosterClick = rememberOpenMeta(navController),
+        onPosterLongClick = onPosterLongClick,
     )
 }

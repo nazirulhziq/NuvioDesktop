@@ -1,5 +1,7 @@
 package com.nuvio.app.features.profiles
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,7 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 
 @Composable
 internal fun AvatarPicker(
@@ -76,7 +78,7 @@ private fun AvatarChoiceItem(
                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                 shape = CircleShape,
             )
-            .clickable(onClick = onClick),
+            .remoteNavigationTarget(shape = CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         AsyncImage(

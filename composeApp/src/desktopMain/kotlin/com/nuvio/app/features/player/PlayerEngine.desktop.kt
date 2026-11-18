@@ -27,6 +27,7 @@ import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.AppPresenceState
@@ -36,6 +37,7 @@ import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerPictureInPicture
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
+import com.nuvio.app.features.player.desktop.NativeTransitionShield
 import com.nuvio.app.features.player.desktop.desktopFullscreenChanges
 import com.nuvio.app.features.autosync.AutoSyncMpvCoordinator
 import com.nuvio.app.features.autosync.DesktopAutoSyncMpvPlatform
@@ -76,6 +78,7 @@ actual fun PlatformPlayerSurface(
     ) {
         NativePlayerSurface(
             sourceUrl = sourceUrl,
+            sourceAudioUrl = sourceAudioUrl,
             sourceAvailable = sourceAvailable,
             sourceHeaders = sourceHeaders,
             externalSubtitles = externalSubtitles,
@@ -85,6 +88,7 @@ actual fun PlatformPlayerSurface(
             initialPositionMs = initialPositionMs ?: 0L,
             initialPositionRequestKey = initialPositionRequestKey,
             playerControlsState = playerControlsState,
+            useNativeController = useNativeController,
             onPlayerControlsAction = onPlayerControlsAction,
             onPlayerControlsEvent = onPlayerControlsEvent,
             onPlayerControlsScrubChange = onPlayerControlsScrubChange,
@@ -109,6 +113,7 @@ actual fun PlatformPlayerSurface(
 @Composable
 private fun NativePlayerSurface(
     sourceUrl: String,
+    sourceAudioUrl: String? = null,
     sourceAvailable: Boolean,
     sourceHeaders: Map<String, String>,
     externalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle>,
@@ -118,6 +123,7 @@ private fun NativePlayerSurface(
     initialPositionMs: Long,
     initialPositionRequestKey: String?,
     playerControlsState: PlayerControlsState,
+    useNativeController: Boolean = true,
     onPlayerControlsAction: (PlayerControlsAction) -> Boolean,
     onPlayerControlsEvent: (String, Double) -> Boolean,
     onPlayerControlsScrubChange: (Long) -> Boolean,
@@ -175,9 +181,18 @@ private fun NativePlayerSurface(
     val playerSettings by PlayerSettingsRepository.uiState.collectAsState()
     val decoderPriority = playerSettings.decoderPriority
     val nvidiaRtxSuperResolutionEnabled = playerSettings.nvidiaRtxSuperResolutionEnabled
-    val nvidiaRtxHdrEnabled = playerSettings.nvidiaRtxHdrEnabled
+    val animeUpscalerOption = playerSettings.animeUpscalerOption
+    val animeUpscalerMode = playerSettings.animeUpscalerMode
+    val svpMotionOption = playerSettings.svpMotionOption
+    val audioNightModeEnabled = playerSettings.audioNightModeEnabled
+    val playerUiScale = playerSettings.playerUiScale
 
     SideEffect {
+        if (!sourceAvailable || !controller.isAttachedTo(sourceUrl, playbackHeaders)) {
+            onSnapshot(PlayerPlaybackSnapshot(isLoading = true))
+        }
+        // Publish early for navigation's release barrier, but keep track restoration gated on
+        // a loaded snapshot belonging to this source.
         onControllerReady(readyController)
     }
 
@@ -213,7 +228,7 @@ private fun NativePlayerSurface(
         )
     }
 
-    DisposableEffect(controller, sourceAvailable, sourceUrl, playbackHeaders) {
+    DisposableEffect(controller) {
         onDispose { controller.dispose() }
     }
 
@@ -230,14 +245,26 @@ private fun NativePlayerSurface(
         onDispose { uninstall?.invoke() }
     }
 
+    LaunchedEffect(host, useNativeController) {
+        if (!useNativeController) {
+            host.setControlsVisible(false)
+        }
+    }
+
+    LaunchedEffect(controller, sourceAudioUrl) {
+        if (!sourceAudioUrl.isNullOrBlank()) {
+            controller.setAudioUri(sourceAudioUrl)
+        }
+    }
+
     LaunchedEffect(
         controller,
         sourceAvailable,
         sourceUrl,
+        sourceAudioUrl,
         playbackHeaders,
         decoderPriority,
         nvidiaRtxSuperResolutionEnabled,
-        nvidiaRtxHdrEnabled,
         hostFirstFullSizePaintComplete.value,
         initialPositionMs,
         initialPositionRequestKey,
@@ -248,18 +275,17 @@ private fun NativePlayerSurface(
         delay(16L)
         controller.attach(
             sourceUrl = sourceUrl,
+            sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = playbackHeaders,
             playWhenReady = playWhenReady,
             initialPositionMs = initialPositionMs,
             decoderPriority = decoderPriority,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
-            nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             onError = { message -> latestOnError.value(message) },
         )
         initialPositionRequestKey?.let { key ->
             latestOnInitialPositionHandled.value(key, initialPositionMs > 0L)
         }
-        onControllerReady(readyController)
     }
 
     LaunchedEffect(controller, sourceAvailable, playWhenReady) {
@@ -275,9 +301,26 @@ private fun NativePlayerSurface(
         controller.setResizeMode(resizeMode)
     }
 
-    LaunchedEffect(controller, controlsState) {
-        controller.updateControls(controlsState)
-        DesktopPlayerPictureInPicture.setWindowTitle(controlsState.pipWindowTitle)
+    LaunchedEffect(controller, playerSettings.playbackBufferPreset) {
+        controller.setPlaybackBufferPreset(playerSettings.playbackBufferPreset)
+    }
+
+    LaunchedEffect(controller, animeUpscalerOption, animeUpscalerMode, svpMotionOption, playerControlsState.mediaContentType) {
+        controller.setVideoEnhancements(
+            mediaContentType = playerControlsState.mediaContentType,
+            animeUpscalerOption = animeUpscalerOption,
+            animeUpscalerMode = animeUpscalerMode,
+            svpMotionOption = svpMotionOption,
+        )
+    }
+
+    LaunchedEffect(controller, audioNightModeEnabled) {
+        controller.setAudioNightMode(audioNightModeEnabled)
+    }
+
+    LaunchedEffect(controller, playerControlsState, playerUiScale) {
+        controller.updateControls(playerControlsState)
+        DesktopPlayerPictureInPicture.setWindowTitle(playerControlsState.pipWindowTitle)
     }
 
     LaunchedEffect(controller) {
@@ -299,15 +342,62 @@ private fun NativePlayerSurface(
         }
     }
 
-    LaunchedEffect(controller) {
+    // Do not label snapshots or tracks from the outgoing native handle as the new episode.
+    LaunchedEffect(controller, readyController, sourceAvailable, sourceUrl, playbackHeaders) {
         while (true) {
-            if (!controller.isReleasing) onSnapshot(controller.snapshot())
+            if (sourceAvailable && controller.isAttachedTo(sourceUrl, playbackHeaders)) {
+                onControllerReady(readyController)
+                onSnapshot(controller.snapshot())
+            }
             delay(250L)
         }
     }
 
     val pipChanges by DesktopPlayerPictureInPicture.changes.collectAsState()
     val isInPip = pipChanges >= 0 && DesktopPlayerPictureInPicture.isEnabled
+
+    val surfaceRevealReady = LocalPlayerSurfaceRevealReady.current
+    // The native window paints solid black from the moment it is shown, while mpv and the controls page are still
+    // starting. Keep it collapsed behind an app-drawn loading screen until the page reports its first painted frame.
+    val controlsPainted = remember(host, sourceUrl) { mutableStateOf(false) }
+    DisposableEffect(controller, controlsPainted) {
+        controller.onControlsPainted = { controlsPainted.value = true }
+        onDispose { controller.onControlsPainted = null }
+    }
+    LaunchedEffect(controlsPainted) {
+        // Never strand the video behind the placeholder if the page cannot report back.
+        delay(CONTROLS_PAINT_TIMEOUT_MS)
+        controlsPainted.value = true
+    }
+    // On Back the player shuts down before navigation; park the window at once so the frozen last frame is not
+    // left on screen meanwhile, and let the black player page fade away once the release completes.
+    val releasingForNavigation by controller.releasingForNavigation.collectAsState()
+    // Stop waiting for the page once there is no loading screen to show (loaded, failed, or turned off), so the
+    // handshake never holds back the picture or an error.
+    val revealWanted = !releasingForNavigation &&
+        surfaceRevealReady && (controlsPainted.value || !playerControlsState.showOpeningOverlay)
+    // Moving the parked window into view shows it black for a few frames while it repaints, and nothing inside the
+    // app window can cover it. Hold a screenshot of the loading screen above the app window across the move instead.
+    val revealShieldUp = remember(host) { mutableStateOf(false) }
+    LaunchedEffect(revealWanted) {
+        revealShieldUp.value = false
+        if (!revealWanted) return@LaunchedEffect
+        val shield = if (isInPip) null else NativeTransitionShield.cover(host)
+        var fading = false
+        try {
+            if (shield != null) delay(REVEAL_SHIELD_SETTLE_MS)
+            revealShieldUp.value = true
+            if (shield != null) {
+                delay(REVEAL_SHIELD_HOLD_MS)
+                shield.fadeOut(REVEAL_SHIELD_FADE_MS)
+                fading = true
+            }
+        } finally {
+            // Cancelled before the fade (closing, or a new source parked the window again): drop it at once.
+            if (!fading) shield?.dispose()
+        }
+    }
+    val surfaceRevealed = revealWanted && revealShieldUp.value
 
     Box(
         modifier = modifier
@@ -320,12 +410,35 @@ private fun NativePlayerSurface(
         CompositionLocalProvider(LocalDensity provides platformDensity) {
             SwingPanel(
                 factory = { host },
-                modifier = if (isInPip) {
+                // Docked, the player page is parked off-screen at full size, so the host keeps its size and the video
+                // comes back without a resize.
+                modifier = if (isInPip && !DesktopPlayerPictureInPicture.isDocked) {
                     Modifier
                         .align(Alignment.BottomEnd)
                         .requiredSize(1.dp)
                 } else if (hostFirstPaintComplete.value) {
-                    Modifier.fillMaxSize()
+                    Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (surfaceRevealed) Modifier else Modifier.layout { measurable, constraints ->
+                                // Full size so the player is created and starts loading right away (attach waits
+                                // for a full-size paint), but parked below the window with one row left on screen
+                                // so it still receives paints, until the controls page has drawn its overlay.
+                                val placeable = measurable.measure(constraints)
+                                layout(placeable.width, placeable.height) {
+                                    // The row is only needed for the host's first full-size paint, which unlocks
+                                    // the attach. After that, and while closing, keep it off screen too: the controls
+                                    // page is transparent until it draws its overlay, and the row would show the
+                                    // video along the bottom edge.
+                                    val parkedRow = if (
+                                        releasingForNavigation ||
+                                        controlsPainted.value ||
+                                        hostFirstFullSizePaintComplete.value
+                                    ) 0 else 1
+                                    placeable.place(0, (placeable.height - parkedRow).coerceAtLeast(0))
+                                }
+                            }
+                        )
                 } else {
                     Modifier
                         .align(Alignment.BottomEnd)
@@ -335,7 +448,27 @@ private fun NativePlayerSurface(
             )
         }
 
-        // Placeholder overlay shown when video has moved to PiP window
+        // The app-level loading cover stands in for the controls page until it has painted. It mirrors that page: no
+        // loading screen when the loading overlay is turned off, and it drops at once while closing. The docked or
+        // PiP player stays out of it, so it never hides another title's loading screen.
+        PublishPlaybackLoadingCover(
+            owner = PlaybackLoadingCoverOwner.PlayerSurface,
+            mode = when {
+                isInPip -> null
+                releasingForNavigation || surfaceRevealed -> PlaybackLoadingCoverMode.Revealed
+                playerControlsState.showOpeningOverlay -> PlaybackLoadingCoverMode.Show
+                else -> null
+            },
+            artwork = playerControlsState.openingArtwork,
+            logo = playerControlsState.openingLogo,
+            title = playerControlsState.openingTitle,
+            message = playerControlsState.openingMessage,
+            progress = playerControlsState.openingProgress,
+            onBack = { latestOnPlayerControlsAction.value(PlayerControlsAction.Back) },
+        )
+
+        // Placeholder overlay shown when video has moved to PiP window. The docked mini player only shows this page
+        // for the moment it takes to move the video back on expand, so keep it plain black then.
         if (isInPip) {
             Box(
                 modifier = Modifier
@@ -343,7 +476,7 @@ private fun NativePlayerSurface(
                     .background(Color.Black),
                 contentAlignment = Alignment.Center,
             ) {
-                Column(
+                if (!DesktopPlayerPictureInPicture.isDocked) Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                     modifier = Modifier.padding(24.dp),
@@ -414,3 +547,13 @@ private class DesktopStubPlayerController : PlayerEngineController {
     override fun clearExternalSubtitle() = Unit
     override fun clearExternalSubtitleAndSelect(trackIndex: Int) = Unit
 }
+
+private const val CONTROLS_PAINT_TIMEOUT_MS = 5_000L
+
+/** Time for the reveal shield window to reach the screen before the player window moves under it. */
+private const val REVEAL_SHIELD_SETTLE_MS = 50L
+
+/** How long the shield stays fully up once the player window is in view, while its controls page repaints. */
+private const val REVEAL_SHIELD_HOLD_MS = 250L
+
+private const val REVEAL_SHIELD_FADE_MS = 150

@@ -1,5 +1,9 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.SettingsAwareSurface
+
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,7 +20,6 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -263,10 +266,10 @@ private fun ContinueWatchingStyleOption(
     isTablet: Boolean,
     onClick: () -> Unit,
 ) {
-    Surface(
+    SettingsAwareSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .remoteNavigationTarget(shape = RoundedCornerShape(12.dp)).clickable(onClick = onClick),
         color = if (selected) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
         } else {

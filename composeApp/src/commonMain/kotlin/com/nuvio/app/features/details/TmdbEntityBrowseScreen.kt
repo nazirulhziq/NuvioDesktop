@@ -1,5 +1,7 @@
 package com.nuvio.app.features.details
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
@@ -38,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.nuvio.app.core.ui.navigationGlass
+import com.nuvio.app.core.ui.navigationGlassSource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -47,9 +51,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.nuvio.app.controller.RegisterControllerVerticalScroll
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
+import com.nuvio.app.core.ui.desktopBackButtonTopPadding
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioDesktopVerticalScrollbar
 import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
@@ -121,6 +125,7 @@ fun TmdbEntityBrowseScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         Crossfade(
+            modifier = Modifier.fillMaxSize().navigationGlassSource(zIndex = 1f),
             targetState = uiState,
             label = "EntityBrowseCrossfade",
         ) { state ->
@@ -144,12 +149,13 @@ fun TmdbEntityBrowseScreen(
             if (isDesktop) {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     NuvioBackButton(
+                        usePageStyle = true,
                         onClick = onBack,
                         modifier = Modifier
                             .windowInsetsPadding(WindowInsets.statusBars)
                             .padding(
                                 start = desktopPageHorizontalPaddingForWidth(maxWidth.value),
-                                top = 32.dp,
+                                top = desktopBackButtonTopPadding,
                             )
                             .align(Alignment.TopStart),
                         containerColor = Color.Transparent,
@@ -161,10 +167,10 @@ fun TmdbEntityBrowseScreen(
             } else {
                 IconButton(
                     onClick = onBack,
-                    modifier = Modifier
+                    modifier = (Modifier
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(start = 4.dp, top = 4.dp)
-                        .align(Alignment.TopStart),
+                        .align(Alignment.TopStart)).navigationGlass().remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -241,13 +247,11 @@ private fun EntityBrowseContent(
                 }
             } else {
                 val scrollState = rememberScrollState()
-                val scrollViewportModifier = RegisterControllerVerticalScroll(scrollState = scrollState)
                 Box(modifier = Modifier.fillMaxSize()) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .then(scrollViewportModifier)
-                            .verticalScroll(scrollState)
+                            .nuvioVerticalScroll(scrollState)
                             .windowInsetsPadding(WindowInsets.statusBars)
                             .padding(top = 56.dp),
                     ) {
@@ -328,7 +332,6 @@ private fun WideEntityBrowseContent(
             }
         } else {
             val scrollState = rememberScrollState()
-            val scrollViewportModifier = RegisterControllerVerticalScroll(scrollState = scrollState)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -337,8 +340,7 @@ private fun WideEntityBrowseContent(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .then(scrollViewportModifier)
-                        .verticalScroll(scrollState)
+                        .nuvioVerticalScroll(scrollState)
                         .padding(start = 40.dp, bottom = 40.dp),
                     verticalArrangement = Arrangement.spacedBy(34.dp),
                 ) {
@@ -377,7 +379,7 @@ private fun EntityIdentitySidebar(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
+                .nuvioVerticalScroll(scrollState)
                 .padding(
                     start = 40.dp,
                     end = 36.dp,
@@ -655,7 +657,7 @@ private fun EntityBrowseSkeleton() {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
+            .nuvioVerticalScroll(rememberScrollState())
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(top = 56.dp),
     ) {
@@ -717,7 +719,7 @@ private fun EntityBrowseError(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
-            ) {
+             modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.material3.ButtonDefaults.shape)) {
                 Text(stringResource(Res.string.action_retry))
             }
         }

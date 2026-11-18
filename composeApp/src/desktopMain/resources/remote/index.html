@@ -1,0 +1,3209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NuvioCodeineXO Remote">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#181825">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>NuvioCodeineXO Remote</title>
+<link rel="stylesheet" href="/cuppa.css">
+<script type="module">
+  import { animate, stagger } from '/motion.mjs';
+  window.motion = { animate, stagger };
+</script>
+<script>
+  // The cuppa theme: flavor (Auto follows the phone), accent and corner radius, set before first paint.
+  (() => {
+    const ALL_FLAVORS = ['latte', 'frappe', 'macchiato', 'mocha'];
+    const RADII = { tight: 0.55, apple: 1, soft: 1.5 };
+    const dark = matchMedia('(prefers-color-scheme: dark)');
+    const get = (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch (_) { return fallback; } };
+    window.theme = {
+      ACCENTS: ['rosewater', 'flamingo', 'pink', 'mauve', 'red', 'peach', 'yellow', 'green', 'teal', 'sky', 'blue', 'lavender'],
+      set(key, value) { try { localStorage.setItem(key, value); } catch (_) {} this.apply(); },
+      apply() {
+        const flavor = get('ui-flavor', 'auto'), accent = get('ui-accent', 'lavender'), radius = get('ui-radius', 'apple');
+        const shown = flavor === 'auto' ? (dark.matches ? 'macchiato' : 'latte') : (flavor === 'light' || flavor === 'latte' ? 'latte' : 'macchiato');
+        const root = document.documentElement;
+        ALL_FLAVORS.forEach((f) => root.classList.toggle(f, f === shown));
+        root.style.setProperty('--accent', `var(--ctp-${accent})`);
+        root.style.setProperty('--r-scale', RADII[radius] || 1);
+        document.querySelectorAll('[data-flavor]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.flavor === flavor));
+        document.querySelectorAll('[data-radius]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.radius === radius));
+        document.querySelectorAll('[data-accent]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.accent === accent));
+      },
+    };
+    theme.apply();
+    dark.addEventListener('change', () => theme.apply());
+  })();
+</script>
+<style>
+  /* The remote's own pieces: the page shell, the D-pad, the player bar. Tokens only, from cuppa.css. */
+  html, body { min-height: 100%; }
+  body { background: transparent; /* html paints the page colour, so the blurred artwork can sit between */
+    max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; user-select: none; -webkit-user-select: none;
+    touch-action: manipulation; overscroll-behavior: none;
+    padding: calc(env(safe-area-inset-top) + 12px) max(16px, env(safe-area-inset-right))
+      calc(env(safe-area-inset-bottom) + 84px) max(16px, env(safe-area-inset-left)); min-height: 100dvh; }
+  header { display: flex; align-items: center; gap: 10px; }
+  header h1 { flex: 1; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status { flex: none; width: 16px; height: 16px; display: grid; place-items: center; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ctp-green); }
+  .status.on .spin-ring, .status:not(.on) .dot { display: none; }
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 36px; }
+  .line { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .ic { width: 24px; height: 24px; fill: currentColor; flex: none; }
+
+  /* D-pad */
+  .dpad { position: relative; width: min(80vw, 55dvh, 320px); aspect-ratio: 1; border-radius: 50%; }
+  .dpad button { position: absolute; display: grid; place-items: center; color: var(--ctp-subtext1); transition: color 0.15s;
+    touch-action: none; user-select: none; -webkit-touch-callout: none; }
+  .dpad button.pressed { color: var(--ctp-text); }
+  .dpad .line { width: 36px; height: 36px; }
+  .dpad .arrow { width: 34%; height: 34%; }
+  .dpad .arrow.pressed::before { content: ""; position: absolute; inset: 10%; border-radius: 50%; pointer-events: none;
+    background: var(--glass-sheen), var(--glass-accent); box-shadow: var(--glass-selected-rim); }
+  .dpad .arrow .line { position: relative; }
+  .up { top: 0; left: 33%; } .down { bottom: 0; left: 33%; } .left { left: 0; top: 33%; } .right { right: 0; top: 33%; }
+  .dpad .ok { width: 38%; height: 38%; left: 31%; top: 31%; border-radius: 50%; color: var(--ctp-text); font-size: 20px; font-weight: 600;
+    transition: transform 0.15s var(--ease), background-color 0.15s; }
+  .dpad .ok.pressed { transform: scale(0.95); background-color: var(--glass-accent); box-shadow: var(--glass-selected-rim); }
+  .trackpad { width: 100%; height: min(59dvh, 400px); display: grid; place-items: center;
+    padding: 16px; text-align: center; touch-action: none; -webkit-touch-callout: none; }
+  .trackpad[hidden] { display: none; }
+  .trackpad > span { pointer-events: none; }
+
+  /* Browsing: Home's hero and rows, Search, and the sidebar as a tab bar. */
+  .browse { justify-content: flex-start; align-items: stretch; gap: 26px; width: 100%; }
+  .bottom-controls { position: fixed; z-index: 5; left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right)); bottom: calc(env(safe-area-inset-bottom) + 10px);
+    display: flex; justify-content: center; pointer-events: none; }
+  .bottom-bar { --bottom-tab-width: clamp(44px, 16vw, 60px); position: relative; display: flex; gap: 8px; }
+  .tabbar, .action-pill { display: flex; gap: 2px; padding: 6px; pointer-events: auto;
+    border-radius: 9999px; }
+  /* Keep the tabs' space during playback so the Back pill stays in place. */
+  body:has(#player:not([hidden]), #remote[data-playing]:not([hidden])) .tabbar { visibility: hidden; }
+  .tab { min-width: var(--bottom-tab-width); height: 52px; padding-inline: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; border-radius: 9999px; font-size: 11px; font-weight: 500; color: var(--ctp-subtext1); transition: background-color 0.2s, color 0.2s; }
+  .tab :is(.line, .ic) { width: 22px; height: 22px; }
+  .tab:active:not(:disabled) { background-color: var(--glass-active); }
+  /* Back answers at once: it lights up and its arrow nudges, the page starts to leave, and the arrow pulses
+     until the PC has gone back. */
+  [data-back] svg { transition: transform 0.18s var(--ease); }
+  [data-back]:active svg { transform: translateX(-4px); }
+  [data-back].pending { background-color: var(--glass-accent); box-shadow: var(--glass-selected-rim); color: var(--ctp-text); }
+  [data-back].pending svg { animation: back-pulse 0.7s var(--ease) infinite; }
+  @keyframes back-pulse { 50% { transform: translateX(-4px); } }
+  main.leaving { opacity: 0.5; transform: translateX(16px); pointer-events: none;
+    transition: opacity 0.18s var(--ease), transform 0.18s var(--ease); }
+  @media (prefers-reduced-motion: reduce) { [data-back].pending svg { animation: none; } main.leaving { transform: none; } }
+  .playback-pill { position: absolute; bottom: 0; }
+  #next-episode-pill { left: 0; }
+  #skip-segment-pill { left: 50%; transform: translateX(-50%); max-width: calc(100% - 2 * (var(--bottom-tab-width) + 20px)); }
+  #skip-segment { min-width: 0; font-size: 13px; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+  .pc-note { text-align: center; }
+
+  .hero-strip, .row-scroll { display: flex; gap: 14px; overflow-x: auto; scrollbar-width: none;
+    margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
+  .hero-strip { scroll-snap-type: x mandatory; }
+  .row-scroll { -webkit-overflow-scrolling: touch; }
+  .hero-strip::-webkit-scrollbar, .row-scroll::-webkit-scrollbar { display: none; }
+  .artwork-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; opacity: 0;
+    transition: opacity 0.35s var(--ease); }
+  .artwork-backdrop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scale(1.25);
+    filter: blur(56px) saturate(1.35); }
+  body:has(#home:not([hidden])) #home-backdrop,
+  body:has(:is(#details, #player):not([hidden])) #media-backdrop { opacity: 0.42; }
+  .latte body:has(#home:not([hidden])) #home-backdrop,
+  .latte body:has(:is(#details, #player):not([hidden])) #media-backdrop { opacity: 0.29; }
+  /* Keep the hero and its loading skeleton the same height. */
+  :root { --hero-h: clamp(380px, 64dvh, 125vw); }
+  .hero-card { position: relative; flex: 0 0 100%; scroll-snap-align: start; display: flex; flex-direction: column; justify-content: flex-end;
+    height: var(--hero-h);
+    overflow: hidden; border-radius: var(--r-card); background: var(--ctp-surface0); text-align: left; }
+  .hero-card img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .hero-card .shade { position: absolute; inset: 0;
+    background: linear-gradient(to top, color-mix(in srgb, var(--ctp-crust) 92%, transparent) 10%, transparent 65%); }
+  .hero-card .info { position: relative; padding: 24px 20px 22px; display: flex; flex-direction: column; gap: 12px; }
+  .hero-card .logo { max-width: 75%; max-height: 72px; object-fit: contain; object-position: left bottom; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 9999px; white-space: nowrap;
+    font-size: 12.5px; font-weight: 600; color: var(--ctp-text); background: color-mix(in srgb, var(--ctp-crust) 55%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ctp-text) 16%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  .pill.badge { letter-spacing: 0.04em; }
+  .pill .sep { width: 1px; height: 12px; background: currentColor; opacity: 0.45; }
+  .pill img { height: 14px; width: auto; max-width: 34px; display: block; }
+  .pill.rating b { font-weight: 700; }
+  .hero-card .desc { font-size: 15px; color: var(--ctp-subtext1); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+  .hero-card .btn { align-self: flex-start; margin-top: 4px; }
+
+  .hero-dots { display: flex; justify-content: center; gap: 6px; margin-top: -10px; }
+  .hero-dots i { width: 6px; height: 6px; border-radius: 9999px; background: color-mix(in srgb, var(--ctp-text) 30%, transparent);
+    transition: width 0.25s var(--ease), background-color 0.25s; }
+  .hero-dots i.on { width: 20px; background: var(--ctp-text); }
+
+  /* Home's hero fades into the blurred backdrop at the top and bottom. */
+  #home .hero-strip { margin-inline: -16px; padding-inline: 0; scroll-padding-inline: 0; gap: 0; }
+  #home .hero-card { border-radius: 0; background: transparent; }
+  #home .hero-card :is(img.bg, .shade) {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 78%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 78%, transparent); }
+  #home .hero-card .info { padding: 0 20px 44px; }
+
+  .rows { display: flex; flex-direction: column; gap: 30px; }
+  /* A row's header: its title, and "View All" when the row has more than the phone shows. */
+  .row-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .row-head .row-title { flex: 1; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* "View All": the whole catalog as a grid, loading more as it scrolls, like the PC. */
+  .grid-page { gap: 18px; }
+  .catalog-head { display: flex; align-items: center; gap: 12px; padding-top: 4px; }
+  .catalog-head h2 { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+  /* Tiles take the grid's columns here, not the fixed widths they have in Home's rows. */
+  .grid-page .catalog-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 12px; }
+  .grid-page .catalog-grid.landscape { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
+  .grid-page .catalog-grid > .tile { width: auto; min-width: 0; max-width: none; }
+  .grid-page .catalog-grid .name { font-size: 12.5px; }
+  /* A folder's tabs, like the PC's: they scroll sideways when there are many. */
+  .folder-tabs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+  .folder-tabs::-webkit-scrollbar { display: none; }
+  .folder-tabs .btn { flex: none; }
+  .row-note { min-height: 64px; display: flex; align-items: center; }
+  .tile .year { font-size: 12px; color: var(--ctp-subtext0); margin-top: -4px; }
+  /* Search before you type, like the PC: recent searches, then Discover with its pickers. */
+  .recent-list { display: flex; flex-direction: column; gap: 8px; }
+  .search-box.recent { padding: 0; gap: 0; overflow: hidden; }
+  .recent > button { height: 100%; display: flex; align-items: center; color: var(--ctp-text); font-size: 16px; }
+  .recent > button:first-child { flex: 1; min-width: 0; padding-inline: 16px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent > button:last-child { width: 48px; justify-content: center; color: var(--ctp-subtext0); }
+  .discover-pickers { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding: 2px 16px; }
+  .discover-pickers::-webkit-scrollbar { display: none; }
+  .picker { flex: none; appearance: none; -webkit-appearance: none; height: 36px; max-width: 62vw; padding: 0 32px 0 14px; border-radius: 9999px;
+    font: inherit; font-size: 14px; font-weight: 600; color: var(--ctp-text); text-overflow: ellipsis;
+    border: 1px solid color-mix(in srgb, var(--ctp-text) 16%, transparent); background: color-mix(in srgb, var(--ctp-surface0) 70%, transparent)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239399b2' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center; }
+  .picker:disabled { opacity: 0.45; }
+  .picker:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #search-start { display: flex; flex-direction: column; gap: 26px; }
+  #search-rows:empty { display: none; }
+  #search-start section { display: flex; flex-direction: column; gap: 12px; }
+  #search-start .row-title { margin: 0; }
+  #recent-section .row-head { margin-bottom: 0; }
+  /* Library: Saved (rows or grids, sorted like the PC) and Cloud (each item's playable files). */
+  #library { gap: 16px; }
+  #library-views { align-self: flex-start; }
+  .library-part { display: flex; flex-direction: column; gap: 16px; }
+  .cloud-item summary { list-style: none; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+  .cloud-item summary::-webkit-details-marker { display: none; }
+  .cloud-item .name { font-weight: 600; overflow-wrap: anywhere; }
+  .cloud-files { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .cloud-files .btn { justify-content: space-between; height: auto; min-height: 44px; padding-block: 8px; white-space: normal; text-align: left; }
+  .cloud-files .btn span:first-child { overflow-wrap: anywhere; }
+  /* Shuffle, like the PC: its filters as one form, actions, progress, and the picked title as a hero. */
+  #shuffle { gap: 16px; }
+  #shuffle p { margin: 0; }
+  #shuffle.is-loading > :not(#shuffle-skeleton), #shuffle:not(.is-loading) > #shuffle-skeleton { display: none; }
+  .shuffle-skeleton { display: flex; flex-direction: column; gap: 16px; }
+  .shuffle-skeleton .sk-form { height: 420px; border-radius: var(--r-card); }
+  .shuffle-toggles .row { padding-inline: 0; }
+  .shuffle-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
+  .shuffle-form > * { grid-column: 1 / -1; }
+  .shuffle-form > .field.half { grid-column: auto; }
+  .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .field-label { font-size: 13px; font-weight: 600; color: var(--ctp-subtext0); }
+  .field .picker { width: 100%; max-width: none; }
+  .shuffle-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .shuffle-feedback { display: flex; align-items: center; gap: 10px; }
+  .shuffle-feedback:empty { display: none; }
+  .shuffle-result-actions { display: flex; gap: 10px; }
+  .shuffle-result-actions .btn { flex: 1; }
+  .catalog-status { display: flex; justify-content: center; align-items: center; gap: 10px; min-height: 64px; }
+  @media (min-width: 480px) { .grid-page .catalog-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .row-title { margin: 0 0 12px; font-size: 20px; font-weight: 600; }
+  .tile { flex: none; display: flex; flex-direction: column; gap: 8px; text-align: left; transition: transform 0.15s var(--ease); }
+  .tile .art { position: relative; overflow: hidden; border-radius: calc(var(--r-ctl) + 2px); background: var(--ctp-surface0); }
+  .tile .art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile.poster { width: 34vw; max-width: 140px; }
+  .tile.poster .art { aspect-ratio: 2 / 3; }
+  .tile.landscape { width: 70vw; max-width: 300px; }
+  .tile.landscape .art { aspect-ratio: 16 / 9; }
+  .tile .name { font-size: 13px; color: var(--ctp-subtext1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .time-left { position: absolute; top: 8px; right: 8px; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    background: color-mix(in srgb, var(--ctp-crust) 80%, transparent); }
+  .tile .resume { position: absolute; left: 0; right: 0; bottom: 0; padding: 32px 14px 12px;
+    background: linear-gradient(to top, color-mix(in srgb, var(--ctp-crust) 90%, transparent), transparent); }
+  .tile .resume small { display: block; font-size: 12px; font-weight: 600; color: var(--accent); }
+  .tile .resume b { display: block; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :is(.tile, .hero-card) .bar { height: 4px; margin-top: 6px; border-radius: 9999px; background: color-mix(in srgb, var(--ctp-text) 25%, transparent); overflow: hidden; }
+  :is(.tile, .hero-card) .bar i { display: block; height: 100%; background: var(--accent); }
+
+  .search-box { display: flex; align-items: center; gap: 10px; height: 48px; padding-inline: 14px; border-radius: var(--r-ctl);
+    color: var(--ctp-subtext0); }
+  .search-box:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Clear: only while there is text; the browser's own clear button is hidden so there is one. */
+  .search-clear { flex: none; width: 32px; height: 32px; margin-right: -6px; border-radius: 9999px; color: var(--ctp-subtext0); }
+  .search-clear:active { background-color: var(--glass-active); }
+  .search-box input:placeholder-shown + .search-clear { display: none; }
+  .search-box input::-webkit-search-cancel-button { display: none; }
+  .search-box input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--ctp-text); font: inherit; font-size: 17px; }
+  @media (min-width: 640px) and (orientation: landscape), (min-width: 760px) {
+    :root { --hero-h: clamp(320px, 60dvh, 43vw); }
+    .tile.poster { width: 140px; }
+    .tile.landscape { width: 280px; }
+  }
+
+  /* Nothing pops in: items added to these lists, and these parts when they are shown, fade and rise into place.
+     setChildren() keeps unchanged items where they are, so updates from the PC only animate what is new. */
+  :is(#home-rows, #search-rows, #catalog-grid, #folder-rows, #folder-grid, #folder-tabs, #discover-grid, #recent-list,
+      #library-rows, #library-cloud, #s-list, #s-addons, #d-pills, #d-seasons, #d-episodes, #shuffle-feedback,
+      #shuffle-result, #card-menu-actions, #hero-strip, .catalog-grid, .catalog-status) > *,
+  :is(#next-episode-pill, #skip-segment-pill, #s-resume, #shuffle-cancel, #pc-note, #search-empty,
+      #home-empty, #sleep-chip, #recent-section, #search-start, #library-saved, #library-cloud) {
+    transition: opacity 0.28s var(--ease), translate 0.28s var(--ease);
+  }
+  @starting-style {
+    :is(#home-rows, #search-rows, #catalog-grid, #folder-rows, #folder-grid, #folder-tabs, #discover-grid, #recent-list,
+        #library-rows, #library-cloud, #s-list, #s-addons, #d-pills, #d-seasons, #d-episodes, #shuffle-feedback,
+        #shuffle-result, #card-menu-actions, #hero-strip, .catalog-grid, .catalog-status) > *,
+    :is(#next-episode-pill, #skip-segment-pill, #s-resume, #shuffle-cancel, #pc-note, #search-empty,
+        #home-empty, #sleep-chip, #recent-section, #search-start, #library-saved, #library-cloud) {
+      opacity: 0; translate: 0 6px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition-duration: 0s !important; } }
+
+  /* An image still loading after a moment shimmers, then fades in; cached ones just show, with no flash. */
+  .tile .art img, .hero-card img.bg { transition: opacity 0.3s var(--ease); }
+  .tile .art img.pending, .hero-card img.bg.pending { opacity: 0; }
+  .tile .art:has(> img.pending)::after, .hero-card:has(> img.bg.pending)::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-100%); animation: shimmer 1.4s infinite;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ctp-text) 9%, transparent), transparent); }
+
+  /* Details and Sources */
+  .stream-filter { display: flex; align-items: center; gap: 8px; }
+  .stream-filter .chips { flex: 1; min-width: 0; margin-inline: 0; padding-inline: 0; }
+  .stream-filter .btn { flex: none; }
+  .grow { flex: 1; }
+  .detail-hero, .stream-hero { position: relative; overflow: hidden; border-radius: var(--r-card); background: var(--ctp-surface0); }
+  .detail-hero { display: flex; align-items: flex-end; min-height: min(calc((100vw - 32px) * 0.75), 46dvh, 336px); }
+  /* The stream picker's card and the playing card are one card: same shape and shadow, and the same
+     view-transition name, so starting playback moves it from one screen to the other. */
+  .stream-hero { aspect-ratio: 16 / 9; max-height: 46dvh; box-shadow: var(--card-shadow); view-transition-name: now-card; }
+  #player .hero { view-transition-name: now-card; }
+  ::view-transition-group(now-card) { animation-duration: 0.45s; animation-timing-function: var(--ease); }
+  /* Every page switch is one view transition, so the old and new page move together and there is never a blank
+     frame: going deeper slides forward, going back slides back, and tabs cross-fade. The header, tab bar and
+     backdrops have their own names, so they stay put instead of sliding with the page. */
+  header { view-transition-name: app-header; }
+  .bottom-controls { view-transition-name: app-bar; }
+  #home-backdrop { view-transition-name: home-backdrop; }
+  #media-backdrop { view-transition-name: media-backdrop; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.28s; animation-timing-function: var(--ease); }
+  html[data-nav="push"]::view-transition-old(root) { animation-name: page-out-left; }
+  html[data-nav="push"]::view-transition-new(root) { animation-name: page-in-right; }
+  html[data-nav="pop"]::view-transition-old(root) { animation-name: page-out-right; }
+  html[data-nav="pop"]::view-transition-new(root) { animation-name: page-in-left; }
+  @keyframes page-in-right { from { opacity: 0; transform: translateX(36px); } }
+  @keyframes page-in-left { from { opacity: 0; transform: translateX(-36px); } }
+  @keyframes page-out-left { to { opacity: 0; transform: translateX(-36px); } }
+  @keyframes page-out-right { to { opacity: 0; transform: translateX(36px); } }
+  .detail-hero > img, .stream-hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .detail-hero .shade, .stream-hero .shade { position: absolute; inset: 0;
+    background: linear-gradient(to top, color-mix(in srgb, var(--ctp-crust) 92%, transparent) 8%, transparent 70%); }
+  .detail-hero .info, .stream-hero .info { padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+  .detail-hero .info { position: relative; min-width: 0; }
+  #d-pills { display: contents; }
+  #d-pills .pill { max-width: 100%; min-height: 28px; height: auto; padding-block: 4px; white-space: normal; overflow-wrap: anywhere; }
+  .stream-hero .info { position: absolute; left: 0; right: 0; bottom: 0; }
+  .detail-hero .logo, .stream-hero .logo { max-width: 75%; max-height: 80px; object-fit: contain; object-position: left bottom; }
+  .stream-hero .logo { max-height: 56px; }
+  .meta-line { font-size: 13px; color: var(--ctp-subtext1); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+  .detail-actions { display: flex; gap: 10px; }
+  .detail-actions .btn-filled { flex: 1; }
+  .detail-actions .btn-filled .ic { width: 18px; height: 18px; }
+  .episodes { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  [data-card-menu], [data-card-menu] img { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  #card-menu-actions .destructive { color: var(--ctp-red); }
+  #d-filler { margin-bottom: 12px; }
+  .episode { display: flex; gap: 12px; text-align: left; padding: 8px; border-radius: var(--r-card); background: var(--ctp-base);
+    transition: transform 0.15s var(--ease); }
+  .episode .thumb { position: relative; flex: none; width: 40%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--r-ctl); background: var(--ctp-surface0); }
+  .episode .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .episode .thumb .blurred { filter: blur(12px); }
+  .episode[aria-current="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+  .episode .thumb .code { position: absolute; left: 6px; bottom: 6px; padding: 1px 6px; border-radius: 6px; font-size: 12px; font-weight: 700;
+    background: color-mix(in srgb, var(--ctp-crust) 80%, transparent); }
+  .episode .copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .episode .copy b { font-size: 15px; }
+  .episode .copy p { margin: 0; font-size: 13px; color: var(--ctp-subtext0); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .episode .copy small { font-size: 12px; color: var(--ctp-subtext0); }
+  .stream-list { display: flex; flex-direction: column; gap: 10px; }
+  .stream-list .addon { margin: 8px 4px 0; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ctp-subtext0); }
+  .stream-card { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 14px 16px; border-radius: var(--r-card);
+    background: var(--ctp-base); transition: transform 0.15s var(--ease); }
+  .stream-card:active { background: var(--ctp-surface0); }
+  .stream-card b { font-size: 16px; }
+  .stream-card .sub { white-space: pre-line; font-size: 13px; color: var(--ctp-subtext1); }
+  .stream-card .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* Loading: skeletons shaped like the page while it loads, spinners for actions */
+  .home-skeleton, .detail-skeleton { display: flex; flex-direction: column; gap: 14px; }
+  .sk-row { display: flex; gap: 12px; overflow: hidden; }
+  .sk-hero { height: var(--hero-h); border-radius: var(--r-card); }
+  .sk-title { width: 45%; height: 20px; margin-top: 8px; }
+  .sk-wide { flex: 0 0 70%; aspect-ratio: 16 / 9; }
+  .sk-poster { flex: 0 0 34%; aspect-ratio: 2 / 3; }
+  .sk-detail { aspect-ratio: 4 / 3; max-height: 46dvh; border-radius: var(--r-card); }
+  .sk-line { height: 14px; } .sk-line.short { width: 60%; }
+  .sk-button { height: 44px; }
+  .sk-chip { width: 96px; height: 32px; border-radius: 9999px; }
+  .sk-episode { height: 92px; border-radius: var(--r-card); }
+  #details.is-loading > :not(#d-skeleton) { display: none; }
+  #details:not(.is-loading) #d-skeleton { display: none; }
+  .addon-loading { display: flex; align-items: center; gap: 8px; }
+  .resume-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+    padding: 10px 12px; border-radius: var(--r-card); background: color-mix(in srgb, var(--ctp-base) 85%, transparent); }
+  .resume-bar > span { font-size: 15px; font-weight: 600; }
+  /* The switch fills the card; each side as wide as its own label, so it never runs off the screen. */
+  .resume-bar .seg { display: flex; width: 100%; }
+  .resume-bar .seg button { flex: 1 1 auto; min-width: 0; padding-inline: 10px; white-space: nowrap; }
+  /* Source names and details often hold file names with no spaces (…WEB.H265-SUPPLY.mkv): let them wrap anywhere. */
+  .stream-card, .stream { min-width: 0; max-width: 100%; }
+  .stream-card b, .stream-card .sub, .stream .top, .stream .sub { overflow-wrap: anywhere; word-break: break-word; }
+  .stream .top { flex-wrap: wrap; }
+
+  /* Playing screen: artwork first, then the controls, centred between the title bar and the Next / Back buttons,
+     with clear room above those buttons. */
+  body:has(#player:not([hidden])) { height: 100dvh; padding-bottom: calc(env(safe-area-inset-bottom) + 104px); }
+  #player { width: 100%; flex: 1 1 auto; min-height: 0; justify-content: safe center; gap: 24px; }
+
+  /* A natural shadow: a soft contact shadow close in, and a faint wide one, so it lifts without darkening the text below. */
+  /* It reaches about 16px, within the gap to whatever is below the card. */
+  :root { --card-shadow: 0 1px 2px color-mix(in srgb, var(--ctp-crust) 25%, transparent),
+      0 4px 10px -3px color-mix(in srgb, var(--ctp-crust) 40%, transparent),
+      0 10px 18px -10px color-mix(in srgb, var(--ctp-crust) 45%, transparent); }
+  .hero { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--r-card);
+    background: var(--ctp-surface0); box-shadow: var(--card-shadow); }
+  .hero > img#art { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity 0.5s var(--ease); }
+  .hero > img#art.on { opacity: 1; }
+  .hero .shade { position: absolute; inset: 0;
+    background: linear-gradient(to top, color-mix(in srgb, var(--ctp-crust) 85%, transparent), transparent 60%); }
+  .hero .logo { position: absolute; left: 16px; bottom: 16px; max-width: 75%; max-height: min(56px, 38%); object-position: left bottom;
+    object-fit: contain; filter: drop-shadow(0 2px 8px color-mix(in srgb, var(--ctp-crust) 80%, transparent)); }
+  .hero-title { position: absolute; left: 16px; right: 16px; bottom: 16px; margin: 0; color: var(--ctp-text); }
+  .meta { width: 100%; display: flex; flex-direction: column; gap: 4px; }
+  .ep-info { color: var(--accent); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .synopsis { text-align: left; color: var(--ctp-subtext1); display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3; overflow: hidden; }
+  .synopsis.open { -webkit-line-clamp: unset; }
+  /* ⓘ on the playing card, and the episode info it lays over the card on a dark background. */
+  .hero-info-toggle { position: absolute; top: 10px; right: 10px; z-index: 2; width: 36px; height: 36px; border-radius: 9999px;
+    display: grid; place-items: center; color: var(--ctp-text);
+    background: color-mix(in srgb, var(--ctp-crust) 55%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .hero-info-toggle .line { width: 20px; height: 20px; }
+  /* The sleep timer's time left, opposite the ⓘ; it steps aside while the info is laid over the card. */
+  .hero-sleep-chip { position: absolute; top: 10px; left: 10px; z-index: 2; height: 36px; padding: 0 14px 0 10px; border-radius: 9999px;
+    display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ctp-text);
+    background: color-mix(in srgb, var(--ctp-crust) 55%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .hero-sleep-chip .line { width: 18px; height: 18px; }
+  .hero:has(.hero-info:not([hidden])) .hero-sleep-chip { display: none; }
+  #sleep .sheet-body { display: flex; flex-direction: column; gap: 16px; }
+  #sleep .note { margin: 0; }
+  .hero-info-toggle[aria-expanded="true"] { background: var(--glass-accent); }
+  .hero-info { position: absolute; inset: 0; z-index: 1; padding: 16px 56px 16px 16px; overflow-y: auto; justify-content: center;
+    background: color-mix(in srgb, var(--ctp-crust) 84%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    animation: hero-info-in 0.2s var(--ease); }
+  .hero-info .synopsis { display: block; -webkit-line-clamp: unset; color: var(--ctp-subtext1); }
+  @keyframes hero-info-in { from { opacity: 0; } }
+
+  .controls { width: 100%; display: flex; flex-direction: column; gap: 16px; padding: 18px 18px 20px; border-radius: var(--r-card); }
+  .seek { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .seek-times { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ctp-subtext0); font-variant-numeric: tabular-nums; }
+  .transport { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: clamp(4px, 3vw, 16px); }
+  #seek-back { justify-self: end; }
+  .play { width: 72px; height: 72px; flex: none; border-radius: 50%; display: grid; place-items: center;
+    transition: transform 0.15s var(--ease); }
+  :is(.play, .skip):active:not(:disabled) { transform: scale(0.92); background-color: var(--glass-active); }
+  .play .ic { width: 30px; height: 30px; }
+  .skip { flex: none; width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; color: var(--ctp-text);
+    transition: transform 0.15s var(--ease); }
+  .skip .ic { width: 30px; height: 30px; }
+  .seek-step .ic { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .volume { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; column-gap: 10px; align-items: center; color: var(--ctp-subtext0); }
+  .volume .range { grid-column: 2; min-width: 0; }
+  .volume output { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+  .tools { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; width: 100%; }
+  .tool { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; color: var(--ctp-subtext0); white-space: nowrap; }
+  .tool > span { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%;
+    color: var(--ctp-text); transition: transform 0.15s var(--ease); }
+  .tool:active > span { transform: scale(0.92); background-color: var(--glass-active); }
+  .tool:disabled { opacity: 0.45; }
+  .tool .ic { width: 22px; height: 22px; }
+  .media, .deck { width: 100%; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  /* Nothing in it scrolls (the episode info is on the card), so nothing clips the card's shadow. */
+  .media { min-height: 0; gap: 14px; }
+  .deck { flex-shrink: 0; }
+  /* Both cards share their height at every screen size, so the card keeps its size between the two screens. */
+  .hero, .stream-hero { max-height: 36dvh; }
+
+  /* ─── Responsive ─── */
+  /* Small phones (iPhone SE, mini): tighter transport, the tools on two rows so the labels fit. */
+  @media (max-width: 374px) {
+    body { gap: 12px; }
+    .play { width: 64px; height: 64px; }
+    .skip { width: 44px; height: 44px; }
+    .controls { padding: 12px; }
+    .tools { gap: 0; }
+    .tool { font-size: 10px; letter-spacing: -0.01em; }
+    .tool > span { width: 40px; height: 40px; }
+  }
+  /* Short screens: keep the controls in view; the synopsis stays a tap away. */
+  @media (max-height: 740px) {
+    body { gap: 10px; }
+    .synopsis { -webkit-line-clamp: 2; }
+    #player, .deck { gap: 12px; }
+    .media { gap: 8px; }
+    .hero, .stream-hero { max-height: 28dvh; }
+    .controls { gap: 8px; padding: 12px; }
+    .play { width: 60px; height: 60px; }
+    .play .ic { width: 26px; height: 26px; }
+    .tool > span { width: 42px; height: 42px; }
+  }
+  @media (max-height: 600px) and (orientation: portrait) {
+    .synopsis { -webkit-line-clamp: 1; }
+    .hero, .stream-hero { max-height: 24dvh; }
+  }
+  /* Landscape phones and tablets: artwork on the left, controls on the right. */
+  @media (min-width: 640px) and (orientation: landscape), (min-width: 760px) {
+    body { max-width: 1040px; }
+    #player { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 1fr); align-content: end; align-items: end; gap: 24px; }
+    #player[hidden] { display: none; }
+    .deck { position: sticky; top: 12px; }
+    #remote { flex-direction: row; gap: 48px; }
+    .sheet { width: min(100vw, 640px); }
+  }
+  /* Landscape phones: very little height, so the artwork shrinks and the page header gets out of the way. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    body { gap: 10px; padding-top: calc(env(safe-area-inset-top) + 8px); }
+    .hero, .stream-hero { max-height: 46dvh; }
+    .synopsis { -webkit-line-clamp: 3; }
+    .controls { gap: 8px; padding: 12px; }
+    .play { width: 56px; height: 56px; }
+    .play .ic { width: 24px; height: 24px; }
+    .skip { width: 44px; height: 44px; }
+    .tool > span { width: 40px; height: 40px; }
+    .deck { gap: 12px; }
+    .dpad { width: min(48dvh, 300px); }
+    .sheet { max-height: 94dvh; }
+  }
+
+  /* Sheets: the player's panels */
+  .stream { display: flex; flex-direction: column; gap: 6px; }
+  .stream .top { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+  .stream .sub { white-space: pre-line; font-size: 15px; color: var(--ctp-subtext1); }
+  .stream[aria-checked="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+  .stream .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .stream img { height: 18px; }
+  .more { display: grid; grid-template-columns: 1fr 1fr; }
+  .more .row + .row::before { display: none; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 6px; margin: 0 2px; }
+  .swatch { width: 32px; height: 32px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px var(--ctp-surface1); }
+  .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ctp-base), 0 0 0 4px var(--ctp-text); }
+  .swatch:disabled { opacity: 0.4; }
+  .custom { position: relative; overflow: hidden; }
+  .custom input { position: absolute; inset: 0; opacity: 0; }
+  .row-stack { flex-direction: column; align-items: stretch; }
+  #desktop-layout { flex-wrap: wrap; }
+  .note { font-size: 13px; color: var(--ctp-subtext0); }
+</style>
+</head>
+<body>
+<header>
+  <h1 class="t-headline">NuvioCodeineXO</h1>
+  <span class="status" id="status" role="img" aria-label="Connecting"><span class="dot"></span><span class="spin-ring sm"></span></span>
+  <button class="btn btn-icon btn-gray" id="dpad-toggle" aria-label="Remote D-pad" aria-pressed="false"><svg class="line"><use href="#i-remote"/></svg></button>
+  <button class="btn btn-icon btn-gray" id="trackpad-toggle" aria-label="Trackpad" aria-pressed="false" data-enabled="<!-- trackpad enabled -->" hidden>
+    <svg class="line" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 15h18"/></svg>
+  </button>
+  <button class="btn btn-icon btn-gray" id="appearance-open" aria-label="Appearance">
+    <svg class="line" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a1.5 1.5 0 0 0 1.1-2.5 1.5 1.5 0 0 1 1.1-2.5H17a4 4 0 0 0 4-4c0-5-4-9-9-9Z"/><path d="M7.5 12h.01M9 8h.01M13 7h.01M17 10h.01"/></svg>
+  </button>
+</header>
+
+
+<!-- player icons -->
+
+<!-- The remote's own outline icons. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-seek-arrow" viewBox="0 0 24 24"><path d="M4.2 8.1a8.8 8.8 0 1 1 0 7.8M4.2 4v4.1h4.1"/></symbol>
+  <symbol id="i-seek-ten" viewBox="0 0 24 24"><path d="m8.2 10.3 1.6-1.1v5.6m3-4.2a1.6 1.6 0 0 1 3.2 0v2.8a1.6 1.6 0 0 1-3.2 0z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M16 8h.01M8 8h.01M8 16h.01M16 16h.01M12 12h.01"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></symbol>
+  <symbol id="i-layout-official" viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><rect x="13" y="13" width="8" height="7" rx="1.5"/></symbol>
+  <symbol id="i-layout-persistent_hero" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="9" rx="1.5"/><rect x="3" y="15" width="18" height="5" rx="1.5"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-remote" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="3"/><circle cx="12" cy="8.5" r="2.5"/><path d="M10 14.5h.01M14 14.5h.01M10 18h.01M14 18h.01"/></symbol>
+</svg>
+
+<!-- Browsing: Home's rows and Search on the phone; a tap opens the title on the PC. -->
+<div class="artwork-backdrop" id="home-backdrop" aria-hidden="true"></div>
+<div class="artwork-backdrop" id="media-backdrop" aria-hidden="true"></div>
+<main id="home" class="browse" hidden>
+  <!-- Until Home arrives: its shape, shimmering. -->
+  <div class="home-skeleton" id="home-skeleton">
+    <div class="skel sk-hero" id="home-hero-skeleton" hidden></div>
+    <div class="skel sk-title"></div>
+    <div class="sk-row"><div class="skel sk-wide"></div><div class="skel sk-wide"></div></div>
+    <div class="skel sk-title"></div>
+    <div class="sk-row"><div class="skel sk-poster"></div><div class="skel sk-poster"></div><div class="skel sk-poster"></div></div>
+  </div>
+  <div class="hero-strip" id="hero-strip" hidden></div>
+  <div class="hero-dots" id="hero-dots" aria-hidden="true"></div>
+  <div id="home-rows" class="rows"></div>
+  <div class="card t-sub text-sub" id="home-empty" hidden>Nothing on Home yet.</div>
+</main>
+
+<main id="catalog" class="browse grid-page" hidden>
+  <div class="catalog-head"><h2 class="t-title2" id="catalog-title"></h2></div>
+  <div class="catalog-grid" id="catalog-grid"></div>
+  <div class="catalog-status text-sub" id="catalog-status"></div>
+</main>
+
+<!-- A collection folder's page, like the PC's: rows with View All, or tabs over a grid. -->
+<main id="folder" class="browse grid-page" hidden>
+  <div class="catalog-head"><h2 class="t-title2" id="folder-title"></h2></div>
+  <div class="folder-tabs" id="folder-tabs" hidden></div>
+  <div id="folder-rows" class="rows"></div>
+  <div class="catalog-grid" id="folder-grid" hidden></div>
+  <div class="catalog-status text-sub" id="folder-status"></div>
+</main>
+
+<!-- The saved Library: a row per section, a tap opens the title on the PC. -->
+<main id="library" class="browse grid-page" hidden>
+  <div class="catalog-head">
+    <h2 class="t-title2" id="library-title">Library</h2>
+    <button class="btn btn-icon btn-gray" id="library-layout" aria-label="Layout"><svg class="line"><use href="#i-layout-official"/></svg></button>
+    <button class="btn btn-icon btn-gray" id="library-downloads" aria-label="Downloads">
+      <svg class="line" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+    </button>
+  </div>
+  <div class="seg" id="library-views">
+    <button data-view="saved" aria-pressed="true">Saved</button>
+    <button data-view="cloud" aria-pressed="false">Cloud</button>
+  </div>
+  <div id="library-saved" class="library-part">
+    <div class="discover-pickers">
+      <select class="picker" id="library-list" aria-label="List"></select>
+      <select class="picker" id="library-type" aria-label="Type"></select>
+      <select class="picker" id="library-sort" aria-label="Sort"></select>
+    </div>
+    <div id="library-rows" class="rows"></div>
+  </div>
+  <div id="library-cloud" class="library-part" hidden></div>
+  <div class="catalog-status text-sub" id="library-status"></div>
+</main>
+
+<!-- Shuffle, following the PC: its filters, Shuffle, and the picked title. -->
+<main id="shuffle" class="browse is-loading" hidden>
+  <!-- Until the PC's Shuffle arrives: its shape, shimmering. -->
+  <div class="shuffle-skeleton" id="shuffle-skeleton">
+    <h2 class="t-title2">Shuffle</h2>
+    <div class="skel sk-line"></div>
+    <div class="skel sk-form"></div>
+    <div class="skel sk-button"></div>
+  </div>
+  <div id="shuffle-result" hidden></div>
+  <div class="catalog-head"><h2 class="t-title2" id="shuffle-title"></h2></div>
+  <p class="text-sub" id="shuffle-subtitle"></p>
+  <div class="card shuffle-form" id="shuffle-form"></div>
+  <div class="shuffle-actions">
+    <button class="btn btn-filled" id="shuffle-pick"></button>
+    <button class="btn btn-gray" id="shuffle-reset"></button>
+    <button class="btn btn-gray" id="shuffle-cancel" hidden></button>
+  </div>
+  <div class="shuffle-feedback text-sub" id="shuffle-feedback"></div>
+  <p class="note" id="shuffle-hint"></p>
+</main>
+
+<main id="search" class="browse" hidden>
+  <label class="search-box">
+    <svg class="line"><use href="#i-search"/></svg>
+    <input id="search-input" type="search" enterkeyhint="search" autocomplete="off" placeholder="Search movies & shows" aria-label="Search">
+    <button class="search-clear" id="search-clear" type="button" aria-label="Clear search">✕</button>
+  </label>
+  <div id="search-rows" class="rows"></div>
+  <div class="card t-sub text-sub" id="search-empty" hidden></div>
+  <!-- Before you type, like the PC: recent searches, then Discover. -->
+  <div id="search-start">
+    <section id="recent-section" hidden>
+      <div class="row-head">
+        <h3 class="row-title">Recent searches</h3>
+        <button class="btn btn-sm btn-gray" id="recent-clear">Clear all</button>
+      </div>
+      <div class="recent-list" id="recent-list"></div>
+    </section>
+    <section class="grid-page">
+      <h3 class="row-title">Discover</h3>
+      <div class="discover-pickers">
+        <select class="picker" id="pick-type" aria-label="Type"></select>
+        <select class="picker" id="pick-catalog" aria-label="Catalog"></select>
+        <select class="picker" id="pick-genre" aria-label="Genre"></select>
+      </div>
+      <div class="text-sub" id="discover-source"></div>
+      <div class="catalog-grid" id="discover-grid"></div>
+      <div class="catalog-status text-sub" id="discover-status"></div>
+    </section>
+  </div>
+</main>
+
+<!-- A title's page, following the PC: tap Play, an episode, watched or library, as on the PC. -->
+<main id="details" class="browse is-loading" hidden>
+  <!-- While the title loads: its page's shape, shimmering. -->
+  <div class="detail-skeleton" id="d-skeleton">
+    <div class="skel sk-detail"></div>
+    <div class="skel sk-line"></div><div class="skel sk-line short"></div>
+    <div class="skel sk-button"></div>
+    <div class="sk-row"><div class="skel sk-chip"></div><div class="skel sk-chip"></div></div>
+    <div class="skel sk-episode"></div><div class="skel sk-episode"></div>
+  </div>
+  <div class="detail-hero">
+    <img id="d-bg" alt="">
+    <div class="shade"></div>
+    <div class="info">
+      <div id="d-title"></div>
+      <div id="d-pills"></div>
+    </div>
+  </div>
+  <button class="synopsis t-sub" id="d-desc" aria-label="Show the full synopsis"></button>
+  <div class="detail-actions">
+    <button class="btn btn-filled" id="d-play"><svg class="ic"><use href="#icon-play"/></svg><span id="d-play-label">Play</span></button>
+    <button class="btn btn-icon btn-gray" id="d-watched" aria-label="Watched" aria-pressed="false"><svg class="line" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></button>
+    <button class="btn btn-icon btn-gray" id="d-saved" aria-label="Library" aria-pressed="false"><svg class="line" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  </div>
+  <section id="d-episodes-section">
+    <div class="group-list" id="d-filler" hidden></div>
+    <h3 class="row-title">Seasons</h3>
+    <div class="chips" id="d-seasons"></div>
+    <div class="episodes" id="d-episodes"></div>
+  </section>
+</main>
+
+<!-- The sources for what is about to play, following the PC: tap one to play it. -->
+<main id="streams" class="browse" hidden>
+  <div class="stream-hero">
+    <img id="s-bg" alt="">
+    <div class="shade"></div>
+    <div class="info"><div id="s-title"></div><div class="meta-line" id="s-episode"></div></div>
+  </div>
+  <!-- With saved progress: resume or start over, like the PC's banner. -->
+  <div class="resume-bar" id="s-resume" hidden>
+    <span id="s-resume-label"></span>
+    <div class="seg">
+      <button id="s-resume-btn" aria-pressed="true">Resume</button>
+      <button id="s-start-btn" aria-pressed="false">Start from beginning</button>
+    </div>
+  </div>
+  <!-- Reload and addon filters. -->
+  <div class="stream-filter">
+    <button class="btn btn-sm btn-gray" id="s-reload">Reload</button>
+    <div class="chips" id="s-addons"></div>
+  </div>
+  <div id="s-list" class="stream-list"></div>
+  <div class="card t-sub text-sub" id="s-empty" hidden></div>
+</main>
+
+<main id="remote" hidden>
+  <div class="t-sub text-sub pc-note" id="pc-note" hidden></div>
+  <div class="dpad" id="dpad">
+    <button class="arrow up" data-key="up" aria-label="Up"><svg class="line" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+    <button class="arrow left" data-key="left" aria-label="Left"><svg class="line" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button class="ok" id="dpad-ok">OK</button>
+    <button class="arrow right" data-key="right" aria-label="Right"><svg class="line" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+    <button class="arrow down" data-key="down" aria-label="Down"><svg class="line" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+  </div>
+  <div class="card trackpad" id="trackpad" role="group" aria-label="Trackpad gestures" hidden>
+    <span class="t-sub text-sub">Tap to click · Two fingers to scroll in any direction or right-click · Tap, then touch again and move to drag</span>
+  </div>
+</main>
+
+<div class="bottom-controls">
+  <div class="bottom-bar">
+    <nav class="tabbar" aria-label="Desktop tabs">
+      <button class="tab" data-tab="home" aria-selected="true"><svg class="line"><use href="#i-home"/></svg>Home</button>
+      <button class="tab" data-tab="search" aria-selected="false"><svg class="line"><use href="#i-search"/></svg>Search</button>
+      <button class="tab" data-tab="shuffle" aria-selected="false"><svg class="line"><use href="#i-shuffle"/></svg>Shuffle</button>
+      <button class="tab" data-tab="library" aria-selected="false"><svg class="line"><use href="#i-library"/></svg>Library</button>
+    </nav>
+    <div class="action-pill playback-pill" id="next-episode-pill" hidden>
+      <button class="tab" id="next-episode" aria-label="Next episode"><svg class="ic" aria-hidden="true"><use href="#icon-skip-next"/></svg>Next</button>
+    </div>
+    <div class="action-pill playback-pill" id="skip-segment-pill" hidden>
+      <button class="tab" id="skip-segment"></button>
+    </div>
+    <div class="action-pill back-pill">
+      <button class="tab" data-back><svg class="line" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 14-5-5 5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Back</button>
+    </div>
+  </div>
+</div>
+
+<main id="player" hidden>
+  <!-- What's playing: the artwork and logo the player shows; ⓘ lays the episode and its synopsis over it, so the
+       card never moves when they arrive. -->
+  <section class="media">
+  <div class="hero">
+    <img id="art" alt="">
+    <div class="shade"></div>
+    <img class="logo" id="logo" alt="">
+    <h2 class="t-title2 hero-title" id="hero-title"></h2>
+    <button class="hero-sleep-chip" id="sleep-chip" aria-label="Sleep timer" hidden>
+      <svg class="line" aria-hidden="true"><use href="#i-moon"/></svg><span id="sleep-chip-label"></span>
+    </button>
+    <button class="hero-info-toggle" id="info-toggle" aria-label="Episode info" aria-expanded="false" hidden>
+      <svg class="line" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+    </button>
+    <div class="meta hero-info" id="hero-info" hidden>
+      <div class="t-foot ep-info" id="ep-info"></div>
+      <div class="t-headline" id="ep-title"></div>
+      <div class="synopsis t-sub" id="synopsis"></div>
+    </div>
+  </div>
+  </section>
+
+  <section class="deck">
+  <div class="controls">
+    <div class="seek">
+      <div class="seek-times"><span id="position">0:00</span><span id="duration">0:00</span></div>
+      <input class="range" type="range" id="seek" min="0" max="1" step="1000" value="0" aria-label="Seek">
+    </div>
+    <div class="transport">
+      <button class="skip seek-step" id="seek-back" aria-label="Back 10 seconds"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-seek-arrow"/><use href="#i-seek-ten"/></svg></button>
+      <button class="play" id="play" aria-label="Play / Pause"><svg class="ic"><use id="play-icon" href="#icon-play"/></svg></button>
+      <button class="skip seek-step" id="seek-forward" aria-label="Forward 10 seconds"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-seek-arrow" transform="translate(24 0) scale(-1 1)"/><use href="#i-seek-ten"/></svg></button>
+    </div>
+    <label class="volume">
+      <svg class="ic"><use href="#icon-volume-compact"/></svg>
+      <input class="range" type="range" id="volume" min="0" max="2" step="0.05" value="1" aria-label="Volume">
+      <output id="volume-label">100%</output>
+    </label>
+  </div>
+
+  <!-- The player's bar: each opens its panel on the PC and the same panel here. -->
+  <div class="tools">
+    <button class="tool" data-click="sources" data-panel="sources"><span><svg class="ic"><use href="#icon-source"/></svg></span>Sources</button>
+    <button class="tool" id="player-episodes" data-click="episodes" data-panel="episodes" hidden><span><svg class="ic"><use href="#icon-episodes"/></svg></span>Episodes</button>
+    <button class="tool" data-click="subtitles" data-panel="subtitles"><span><svg class="ic"><use href="#icon-subs"/></svg></span>Subtitles</button>
+    <button class="tool" data-click="audio" data-panel="audio"><span><svg class="ic"><use href="#icon-audio"/></svg></span>Audio</button>
+    <button class="tool" id="more-open"><span><svg class="ic" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></span>More</button>
+    <button class="tool" data-click="fullscreen"><span><svg class="ic"><use href="#icon-fullscreen"/></svg></span>Fullscreen</button>
+  </div>
+  </section>
+</main>
+
+<!-- More playback controls available on the phone. -->
+<dialog class="sheet" id="more" autofocus tabindex="-1">
+  <div class="sheet-head"><div class="grip"></div><div class="bar"><h2 class="t-title2">More playback controls</h2></div></div>
+  <div class="sheet-body">
+    <div class="group-list more">
+      <button class="row" data-click="speed" data-panel="speed"><svg class="ic"><use href="#icon-speed"/></svg>Playback speed</button>
+      <button class="row" data-click="aspect" data-stay><svg class="ic"><use href="#icon-aspect"/></svg><span class="copy">Aspect ratio<small id="aspect"></small></span></button>
+      <button class="row" data-click="enhance" data-panel="enhance"><svg class="ic"><use href="#icon-wand"/></svg>Enhance</button>
+      <button class="row" data-click="eyeFilter" data-panel="eyeFilter"><svg class="ic"><use href="#icon-eye"/></svg>Eye filter</button>
+      <button class="row" id="sleep-open"><svg class="line" aria-hidden="true"><use href="#i-moon"/></svg><span class="copy">Sleep timer<small id="sleep-state">Off</small></span></button>
+      <button class="row" data-click="chapters" data-panel="chapters" id="chapters-item" hidden><svg class="ic"><use href="#icon-chapters"/></svg>Chapters</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- The sleep timer runs on the PC (so it keeps going when the phone locks); the phone sets it and shows the time left. -->
+<dialog class="sheet" id="sleep" autofocus tabindex="-1">
+  <div class="sheet-head"><div class="grip"></div><div class="bar"><h2 class="t-title2">Sleep timer</h2><button class="btn btn-sm btn-plain" data-dismiss>Close</button></div></div>
+  <div class="sheet-body">
+    <p class="note" id="sleep-summary"></p>
+    <div class="group-list" id="sleep-pc"></div>
+    <div class="group-list" id="sleep-options"></div>
+    <button class="btn btn-gray" id="sleep-cancel" hidden>Cancel timer</button>
+  </div>
+</dialog>
+
+<dialog class="sheet" id="panel" autofocus tabindex="-1">
+  <div class="sheet-head"><div class="grip"></div>
+    <div class="bar">
+      <div><h2 class="t-title2" id="panel-title"></h2><div class="t-sub text-sub" id="panel-subtitle" hidden></div></div>
+      <span id="panel-actions"></span>
+      <button class="btn btn-sm btn-gray" id="panel-close" data-dismiss>Close</button>
+    </div>
+  </div>
+  <div class="sheet-body" id="panel-body"></div>
+</dialog>
+
+<dialog class="sheet" id="card-menu" aria-labelledby="card-menu-title" tabindex="-1">
+  <div class="sheet-head"><div class="grip"></div>
+    <div class="bar"><h2 class="t-title2" id="card-menu-title"></h2><button class="btn btn-sm btn-plain" data-dismiss>Close</button></div>
+  </div>
+  <div class="sheet-body">
+    <p class="t-sub text-sub" id="card-menu-description" hidden></p>
+    <div class="group-list" id="card-menu-actions"></div>
+  </div>
+</dialog>
+
+<!-- Appearance: desktop layout and the phone's theme. -->
+<dialog class="sheet" id="appearance" autofocus tabindex="-1">
+  <div class="sheet-head"><div class="grip"></div>
+    <div class="bar"><h2 class="t-title2">Appearance</h2><button class="btn btn-sm btn-plain" data-dismiss>Done</button></div>
+  </div>
+  <div class="sheet-body">
+    <div class="group-list">
+      <div class="row row-stack"><span class="t-sub text-sub" id="desktop-layout-label">Desktop layout</span>
+        <div class="chips" id="desktop-layout" role="group" aria-labelledby="desktop-layout-label">
+          <button class="chip" data-layout="official" aria-pressed="false" disabled>Official</button>
+          <button class="chip" data-layout="scroll_posters" aria-pressed="false" disabled>Scroll Posters</button>
+          <button class="chip" data-layout="persistent_hero" aria-pressed="false" disabled>Persistent Hero</button>
+        </div></div>
+      <div class="row row-stack"><span class="t-sub text-sub">Theme</span>
+        <div class="chips"><button class="chip" data-flavor="auto">Auto</button><button class="chip" data-flavor="latte">Light</button><button class="chip" data-flavor="macchiato">Dark</button></div></div>
+      <div class="row row-stack"><span class="t-sub text-sub">Corner radius</span>
+        <div class="chips"><button class="chip" data-radius="tight">Subtle</button><button class="chip" data-radius="apple">Classic</button><button class="chip" data-radius="soft">Pill</button></div></div>
+      <div class="row row-stack"><span class="t-sub text-sub">Accent</span><div class="swatches" id="accents"></div></div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let ws = null;
+  let retry = 500;
+
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onopen = () => { retry = 500; setStatus(true); };
+    ws.onclose = () => {
+      stopDpadPress();
+      cancelTrackpad();
+      $('card-menu').close();
+      closePlayerSheets();
+      state = { active: false };
+      pcRoute = 'tabs';
+      updateView();
+      setStatus(false);
+      showDesktopLayout(null);
+      setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 4000);
+    };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.k === 'player') showPlayer(msg);
+      if (msg.k === 'time') showTime(msg.position, msg.duration);
+      if (msg.k === 'home') {
+        showDesktopLayout(msg.desktopLayout);
+        showHome(msg);
+      }
+      if (msg.k === 'search') showSearch(msg);
+      if (msg.k === 'catalog') showCatalog(msg);
+      if (msg.k === 'folder') showFolder(msg);
+      if (msg.k === 'discover') showDiscover(msg);
+      if (msg.k === 'shuffle') showShuffle(msg);
+      if (msg.k === 'library') showLibrary(msg);
+      if (msg.k === 'sleep') showSleep(msg);
+      if (msg.k === 'route') {
+        const wasPlayerRoute = pcRoute === 'player';
+        if (pcRoute !== msg.route || activeDetailKey !== msg.detailKey) cancelTrackpad();
+        pcRoute = msg.route;
+        if (activeDetailKey !== msg.detailKey) {
+          activeDetailKey = msg.detailKey;
+          renderDetails();
+        }
+        updateView();
+        if (!wasPlayerRoute && pcRoute === 'player') renderPlayer({ active: false });
+        if (wasPlayerRoute && pcRoute !== 'player') closePlayerSheets();
+      }
+      if (msg.k === 'details') showDetails(msg);
+      if (msg.k === 'streams') showStreams(msg);
+      if (msg.k === 'cardMenu') showCardMenuActions(msg);
+    };
+  }
+
+  function setStatus(on) {
+    const status = $('status');
+    status.setAttribute('aria-label', on ? 'Connected' : 'Reconnecting');
+    status.classList.toggle('on', on);
+  }
+
+  function send(msg) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  }
+  const player = (type, value = 0) => send({ cmd: 'player', type, value });
+  const click = (target) => send({ cmd: 'click', target });
+
+  // ─── Sheets: native <dialog>; close with Close, a tap on the backdrop or a swipe down on the header ───
+  document.querySelectorAll('dialog.sheet').forEach((sheet) => {
+    sheet.addEventListener('click', (e) => { if (e.target === sheet || e.target.closest('[data-dismiss]')) sheet.close(); });
+    const head = sheet.querySelector('.sheet-head');
+    let startY = null;
+    head.addEventListener('pointerdown', (e) => { if (!e.target.closest('button')) { startY = e.clientY; head.setPointerCapture(e.pointerId); } });
+    head.addEventListener('pointermove', (e) => {
+      if (startY !== null) { sheet.style.transition = 'none'; sheet.style.transform = `translateY(${Math.max(0, e.clientY - startY)}px)`; }
+    });
+    head.addEventListener('pointerup', (e) => {
+      if (startY === null) return;
+      const dragged = e.clientY - startY;
+      startY = null;
+      sheet.style.transition = '';
+      sheet.style.transform = '';
+      if (dragged > 80) sheet.close();
+    });
+  });
+  // Opens a sheet with focus on the sheet itself, so its first item isn't outlined (the ring the list clipped).
+  function present(sheet) {
+    sheet.showModal();
+    sheet.focus({ preventScroll: true });
+    scheduleHomeHero();
+  }
+  let cardMenuPointerDown = false;
+  let cardMenuRequest = 0;
+  $('card-menu').addEventListener('pointerdown', () => { cardMenuPointerDown = true; });
+  $('card-menu').addEventListener('click', (event) => {
+    // Releasing the hold can send a click to the newly opened dialog.
+    if (event.detail !== 0 && !cardMenuPointerDown) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+    cardMenuPointerDown = false;
+  }, true);
+  $('appearance-open').addEventListener('click', () => present($('appearance')));
+
+  const desktopLayoutPills = $('desktop-layout').querySelectorAll('button');
+  function showDesktopLayout(layout) {
+    desktopLayoutPills.forEach((pill) => {
+      pill.disabled = !layout;
+      pill.setAttribute('aria-pressed', pill.dataset.layout === layout);
+    });
+  }
+  desktopLayoutPills.forEach((pill) => pill.addEventListener('click', () =>
+    send({ cmd: 'desktopLayout', value: pill.dataset.layout })));
+
+  // The accent swatches: one per Catppuccin accent, painted with that accent.
+  theme.ACCENTS.forEach((accent) => {
+    const swatch = document.createElement('button');
+    swatch.className = 'swatch';
+    swatch.dataset.accent = accent;
+    swatch.setAttribute('aria-label', accent);
+    swatch.style.setProperty('--swatch', `var(--ctp-${accent})`);
+    $('accents').append(swatch);
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-flavor],[data-radius],[data-accent]');
+    if (!b) return;
+    if (b.dataset.flavor) theme.set('ui-flavor', b.dataset.flavor);
+    if (b.dataset.radius) theme.set('ui-radius', b.dataset.radius);
+    if (b.dataset.accent) theme.set('ui-accent', b.dataset.accent);
+  });
+  theme.apply();
+
+  // ─── The player's bar ───
+  let state = { active: false };
+  let draggingVolume = false;
+  let draggingSeek = false;
+
+  function showPlayer(msg) {
+    const previous = state;
+    state = msg;
+    if (pcRoute !== 'player') return;
+    updateView();
+    renderPlayer(previous);
+  }
+
+  function closePlayerSheets() {
+    closeSheetFromPlayer();
+    $('more').close();
+    $('sleep').close();
+  }
+
+  function renderPlayer(previous) {
+    const msg = state;
+    const hasEpisodes = Boolean(msg.active && msg.episodes?.available && msg.episodes.items?.length);
+    $('player-episodes').hidden = !hasEpisodes;
+    if (!msg.active) { closePlayerSheets(); return; }
+    showMedia(msg);
+    $('play-icon').setAttribute('href', msg.playing ? '#icon-pause' : '#icon-play');
+    if (!draggingVolume) setRange($('volume'), msg.volume);
+    $('volume-label').textContent = Math.round(Number($('volume').value) * 100) + '%';
+    $('aspect').textContent = msg.aspect;
+    $('chapters-item').hidden = !msg.chapters.length;
+    $('skip-segment').textContent = msg.skipSegment?.label || '';
+    if (previous.active && previous.closeModalsToken !== msg.closeModalsToken) closeSheetFromPlayer();
+    if (msg.p2pConsent && !previous.p2pConsent) {
+      $('more').close();
+      openSheet('p2pConsent');
+      return;
+    }
+    if (!msg.p2pConsent && openPanel === 'p2pConsent') closeSheetFromPlayer();
+    if (openPanel === 'subtitles' &&
+        Boolean(previous.subtitles?.slots?.secondarySelected) !== Boolean(msg.subtitles.slots?.secondarySelected)) {
+      subtitleLanguage = msg.subtitles.language;
+      $('panel-body').scrollTop = 0;
+      const chips = $('panel-body').querySelector('.subtitle-languages');
+      if (chips) chips.scrollLeft = 0;
+    }
+    const openedEpisodeSources = msg.episodes?.streams && !previous.episodes?.streams;
+    if (openedEpisodeSources && !msg.p2pConsent && openPanel !== 'episodes') {
+      $('more').close();
+      openSheet('episodes');
+      return;
+    }
+    if (openPanel === 'episodes') {
+      if (!hasEpisodes || (previous.episodeInfo && previous.episodeInfo !== msg.episodeInfo)) {
+        closeSheetFromPlayer();
+        return;
+      }
+      if (Boolean(previous.episodes?.streams) !== Boolean(msg.episodes.streams)) {
+        playerSourceFilter = '';
+        $('panel-body').scrollTop = 0;
+      }
+    }
+    if (openPanel && (!['subtitles', 'episodes'].includes(openPanel) ||
+        JSON.stringify(previous[openPanel]) !== JSON.stringify(msg[openPanel]))) renderPanel();
+  }
+
+  // ─── Which screen: follow the desktop route, with an optional D-pad for browsing ───
+  const TAB_NAMES = { home: 'Home', search: 'Search', shuffle: 'Shuffle', library: 'Library' };
+  let browseTab = 'home';
+  let dpadMode = false;
+  let dpadPress = null;
+  let trackpadMode = false;
+  const trackpadAvailable = $('trackpad-toggle').dataset.enabled === 'true';
+  try { dpadMode = localStorage.getItem('nuvio_dpad') === '1'; } catch (_) {}
+
+  // The page the PC shows; the phone follows it into a title, its sources and the player.
+  let pcRoute = 'tabs';
+
+  // A tap that moves the PC (open a title, play, pick a source) spins on what was tapped until the PC gets there.
+  let busyTimer = null;
+  function markBusy(node) {
+    clearBusy();
+    node.classList.add('busy');
+    busyTimer = setTimeout(clearBusy, 12000);
+  }
+  function clearBusy() {
+    clearTimeout(busyTimer);
+    document.querySelectorAll('.busy').forEach((n) => n.classList.remove('busy'));
+  }
+  let lastView = '';
+
+  function setHidden(id, hidden) {
+    if ($(id).hidden !== hidden) $(id).hidden = hidden;
+  }
+
+  let wasPlaying = false;
+  let homeScroll = 0;
+  function restoreViewScroll(id, top) {
+    requestAnimationFrame(() => {
+      if (!$(id).hidden) scrollTo(0, top);
+    });
+  }
+
+  let viewKey = '';
+  function updateView(options) {
+    const key = `${pcRoute}|${browseTab}|${dpadMode}|${trackpadMode}`;
+    const switching = key !== viewKey;
+    viewKey = key;
+    // Apply player navigation immediately so a browser snapshot cannot delay the playback controls or Back.
+    if (pcRoute === 'player' || !$('player').hidden) {
+      pageTransition?.skipTransition();
+      applyView(options);
+      return;
+    }
+    if (!switching || pageTransition || !document.startViewTransition || homeHeroMotion.matches) {
+      if (switching) pageTransition?.skipTransition();
+      applyView(options);
+      return;
+    }
+    const before = shownPage();
+    const transition = document.startViewTransition(() => {
+      if (viewKey !== key) return;
+      applyView(options);
+      const depth = (PAGE_DEPTH[shownPage()] ?? 0) - (PAGE_DEPTH[before] ?? 0);
+      document.documentElement.dataset.nav = depth > 0 ? 'push' : depth < 0 ? 'pop' : 'fade';
+    });
+    pageTransition = transition;
+    transition.ready.catch(() => {});
+    const clear = () => { if (pageTransition === transition) pageTransition = null; };
+    transition.finished.then(clear, clear);
+  }
+
+  function applyView({ switchingTabs = false } = {}) {
+    const pageBefore = shownPage();
+    // A background or minimized controller can remain active after the desktop leaves the player route.
+    const playing = pcRoute === 'player';
+    const enteredPlayer = playing && !wasPlaying;
+    wasPlaying = playing;
+    // The PC moved on: whatever was spinning has arrived.
+    const view = `${playing}|${pcRoute}`;
+    if (view !== lastView) { clearBusy(); clearBackPending(); $('card-menu').close(); lastView = view; }
+    const playerVisible = playing && !trackpadMode;
+    const browsing = !playing && !dpadMode && !trackpadMode;
+    const onTabs = browsing && pcRoute === 'tabs';
+    const homeVisible = onTabs && browseTab === 'home';
+    const homeWasVisible = !$('home').hidden;
+    if (homeWasVisible && !homeVisible) homeScroll = scrollY;
+    // Pages the phone can't show (Shuffle, Library, Settings, a folder…) are driven with the D-pad.
+    const shuffleVisible = onTabs && browseTab === 'shuffle';
+    const libraryVisible = onTabs && browseTab === 'library';
+    // Every tab has a page here, so the D-pad is only for pages the phone can't show (or when asked for).
+    const pcTab = onTabs && !['home', 'search', 'library', 'shuffle'].includes(browseTab);
+    const pcPage = browsing && pcRoute === 'other';
+    setHidden('player', !playerVisible);
+    setHidden('next-episode-pill', !(playerVisible && state.active && state.nextEpisodePlayable));
+    setHidden('skip-segment-pill', !(playerVisible && state.active && state.skipSegment));
+    setHidden('home', !homeVisible);
+    setHidden('search', !(onTabs && browseTab === 'search'));
+    const detailsVisible = browsing && pcRoute === 'details';
+    setHidden('details', !detailsVisible);
+    if (onTabs) {
+      season = null;
+      detailsEpisodePositioned = false;
+    }
+    if (detailsVisible) positionDetailsEpisode();
+    setHidden('streams', !(browsing && pcRoute === 'streams'));
+    const libraryOpening = $('library').hidden && libraryVisible;
+    setHidden('library', !libraryVisible);
+    if (libraryOpening) { scrollTo(0, 0); renderLibrary(); }
+    const shuffleOpening = $('shuffle').hidden && shuffleVisible;
+    setHidden('shuffle', !shuffleVisible);
+    if (shuffleOpening) { scrollTo(0, 0); renderShuffle(); }
+    // A page shown from the top when it opens: View All and folders.
+    [['catalog', ['catalog', 'collection', 'continue'], renderCatalog], ['folder', ['folder'], renderFolder]].forEach(([page, routes, render]) => {
+      const opening = $(page).hidden && browsing && routes.includes(pcRoute);
+      setHidden(page, !(browsing && routes.includes(pcRoute)));
+      if (opening) { scrollTo(0, 0); render(); }
+    });
+    const hideDpad = playing || trackpadMode || !(dpadMode || pcTab || pcPage);
+    if (hideDpad) {
+      stopDpadPress();
+      if (!playing && !switchingTabs && !$('dpad').hidden && !$('remote').hidden) send({ cmd: 'exitDpad' });
+    }
+    $('remote').toggleAttribute('data-playing', playing);
+    setHidden('remote', hideDpad && !trackpadMode);
+    setHidden('dpad', hideDpad);
+    setHidden('trackpad', !trackpadMode);
+    $('pc-note').hidden = !(pcTab || pcPage);
+    $('pc-note').textContent = pcTab ? `${TAB_NAMES[browseTab]} is open on your PC. Use the D-pad to move around.`
+      : pcPage ? 'This page is open on your PC. Use the D-pad to move around.' : '';
+    $('dpad-toggle').hidden = playing;
+    $('dpad-toggle').setAttribute('aria-pressed', dpadMode);
+    $('trackpad-toggle').hidden = !trackpadAvailable;
+    $('trackpad-toggle').setAttribute('aria-pressed', trackpadMode);
+    document.querySelectorAll('[data-tab]').forEach((t) => t.setAttribute('aria-selected', t.dataset.tab === browseTab));
+    if (enteredPlayer) restoreViewScroll('player', 0);
+    if (homeVisible && !homeWasVisible) {
+      moveHomeHero(homeHeroIndex);
+      restoreViewScroll('home', homeScroll);
+    }
+    if (homeVisible !== homeWasVisible) scheduleHomeHero();
+    updateMediaBackdrop();
+    pageMotion(pageBefore, shownPage());
+  }
+
+  // ─── Motion: pages push and pop like an app, their content settles in, and presses spring ───
+  // Deeper pages slide in from the right, going back slides in from the left, and tabs cross-fade.
+  const PAGE_DEPTH = { catalog: 1, folder: 1, details: 2, streams: 3, player: 4 };
+  const shownPage = () => document.querySelector('main:not([hidden])')?.id ?? null;
+  let pageTransition = null;
+  const revealed = new Set();
+
+  // Motion's spring, short and calm; nothing moves with reduced motion or before Motion has loaded.
+  function move(target, keyframes, options = {}) {
+    if (!window.motion || homeHeroMotion.matches) return null;
+    return window.motion.animate(target, keyframes, { type: 'spring', visualDuration: 0.35, bounce: 0.1, ...options });
+  }
+
+  // The view transition moves the page itself; the first time a page opens, its sections also settle in.
+  function pageMotion(before, after) {
+    if (!after || after === before || revealed.has(after)) return;
+    revealed.add(after);
+    const parts = [...$(after).children].filter((c) => !c.hidden && c.offsetParent !== null).slice(0, 8);
+    const settle = parts.length ? move(parts, { y: [10, 0], opacity: [0, 1] }, { delay: window.motion?.stagger(0.04) }) : null;
+    // Hand the styles back to the page's CSS once they are done.
+    settle?.finished.then(() => parts.forEach((p) => { p.style.transform = ''; p.style.opacity = ''; }));
+  }
+
+  // A press sinks a little and springs back on release, like a native button.
+  const PRESSABLE = '.tile, .hero-card, .btn, .chip, .card-tap, .episode, .stream-card, .recent';
+  let pressed = null;
+  function release() {
+    if (!pressed) return;
+    move(pressed, { scale: 1 }, { visualDuration: 0.3, bounce: 0.35 });
+    pressed = null;
+  }
+  document.addEventListener('pointerdown', (e) => {
+    const target = e.target.closest(PRESSABLE);
+    if (!target || target.disabled) return;
+    release();
+    pressed = target;
+    move(target, { scale: 0.96 }, { visualDuration: 0.15, bounce: 0 });
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => document.addEventListener(type, release));
+
+  function setDpadMode(enabled) {
+    dpadMode = enabled;
+    try { localStorage.setItem('nuvio_dpad', enabled ? '1' : '0'); } catch (_) {}
+  }
+
+  document.querySelectorAll('[data-tab]').forEach((tab) => tab.addEventListener('click', () => {
+    const returningHome = tab.dataset.tab === 'home' && $('home').hidden;
+    browseTab = tab.dataset.tab;
+    trackpadMode = false;
+    cancelTrackpad();
+    setDpadMode(false);
+    send({ cmd: 'tab', tab: browseTab });
+    updateView({ switchingTabs: true });
+    if (!returningHome) scrollTo({ top: 0 });
+  }));
+  $('dpad-toggle').addEventListener('click', () => {
+    trackpadMode = false;
+    cancelTrackpad();
+    setDpadMode(!dpadMode);
+    updateView();
+  });
+  $('trackpad-toggle').addEventListener('click', () => {
+    trackpadMode = !trackpadMode;
+    cancelTrackpad();
+    if (trackpadMode) {
+      setDpadMode(false);
+      stopDpadPress();
+      closePlayerSheets();
+    }
+    updateView();
+  });
+
+  // ─── Home: the hero, Continue Watching and every row, like the PC; a tap opens the title there ───
+  const img = (src, className) => {
+    const image = el('img', className);
+    image.alt = '';
+    image.draggable = false;
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    // A missing image leaves the card's own colour, not the browser's broken-image icon.
+    // Only an image that is really loading (not there within 80 ms, so not cached) shimmers and fades in.
+    const slow = setTimeout(() => image.classList.add('pending'), 80);
+    image.onload = () => { clearTimeout(slow); image.classList.remove('pending'); };
+    image.onerror = () => { clearTimeout(slow); image.classList.remove('pending'); image.style.visibility = 'hidden'; };
+    if (src) image.src = src;
+    if (!src || (image.complete && image.naturalWidth)) clearTimeout(slow);
+    return image;
+  };
+
+  function showCardMenuActions(msg) {
+    const menu = $('card-menu');
+    if (!menu.open || msg.menu !== cardMenuRequest) return;
+    if (!msg.actions.length) {
+      menu.close();
+      return;
+    }
+    setChildren($('card-menu-actions'), msg.actions.map((action, index) => {
+      const button = el('button', action.destructive ? 'row destructive' : 'row', action.label);
+      button.addEventListener('click', () => {
+        menu.close();
+        send({ cmd: 'cardMenuAction', menu: msg.menu, action: index });
+      });
+      return button;
+    }));
+  }
+
+  function bindCardMenu(card, onSelect, options = null) {
+    card.dataset.cardMenu = '';
+    if (!options) {
+      card.addEventListener('contextmenu', (e) => e.preventDefault());
+      card.addEventListener('click', onSelect);
+      return;
+    }
+    card.setAttribute('aria-haspopup', 'dialog');
+    let press = null;
+    let menuOpened = false;
+
+    function cancelHold() {
+      if (!press) return;
+      clearTimeout(press.timer);
+      press = null;
+    }
+
+    function openMenu() {
+      cancelHold();
+      if (!card.isConnected || card.disabled) return;
+      menuOpened = true;
+      const menu = $('card-menu');
+      if (menu.open || !ws || ws.readyState !== WebSocket.OPEN) return;
+      cardMenuPointerDown = false;
+      $('card-menu-title').textContent = options.title;
+      const summary = $('card-menu-description');
+      summary.textContent = options.description || '';
+      summary.hidden = !options.description;
+      $('card-menu-actions').replaceChildren(loader('Loading actions…'));
+      present(menu);
+      send({ cmd: 'cardMenu', menu: ++cardMenuRequest, ...options.target });
+    }
+
+    card.addEventListener('pointerdown', (e) => {
+      if (!e.isPrimary || e.button !== 0 || card.disabled) return;
+      cancelHold();
+      menuOpened = false;
+      press = { id: e.pointerId, x: e.clientX, y: e.clientY, timer: setTimeout(openMenu, 500) };
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) cancelHold();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((event) => card.addEventListener(event, (e) => {
+      if (press?.id === e.pointerId) cancelHold();
+    }));
+    card.addEventListener('contextmenu', (e) => { e.preventDefault(); openMenu(); });
+    card.addEventListener('click', (e) => {
+      if (menuOpened && e.detail !== 0) return;
+      onSelect();
+    });
+  }
+
+  function posterMenu(item, location) {
+    return { title: item.name, description: item.description,
+      target: { kind: 'poster', ...location, id: item.id, type: item.type } };
+  }
+
+  // The PC hero's info rows as pills: type, genre, runtime and release; age rating | status; language; ratings.
+  function heroPills(hero) {
+    const facts = el('div', 'pills');
+    (hero.facts || []).forEach((fact) => facts.append(el('span', 'pill', fact)));
+    if (hero.badges?.length) {
+      const badge = el('span', 'pill badge');
+      hero.badges.forEach((text, i) => badge.append(...(i ? [el('i', 'sep')] : []), text));
+      facts.append(badge);
+    }
+    if (hero.language) facts.append(el('span', 'pill', hero.language));
+    const ratings = el('div', 'pills');
+    (hero.ratings || []).forEach((rating) => {
+      const pill = el('span', 'pill rating');
+      const logo = img(rating.logo);
+      logo.alt = rating.name;
+      logo.onerror = () => logo.replaceWith(el('span', '', rating.name));
+      const value = el('b', '', rating.value);
+      value.style.color = rating.color;
+      pill.append(logo, value);
+      ratings.append(pill);
+    });
+    return [facts, ratings].filter((row) => row.childElementCount);
+  }
+
+  function heroCard(hero, location) {
+    const continuing = location.from === 'continue';
+    const title = continuing ? hero.title : hero.name;
+    const card = el('div', 'hero-card');
+    card.append(img(hero.image, 'bg'), el('div', 'shade'));
+    const info = el('div', 'info');
+    if (hero.logo) {
+      const logo = img(hero.logo, 'logo');
+      logo.onerror = () => logo.replaceWith(el('div', 't-title2', title));
+      info.append(logo);
+    } else {
+      info.append(el('div', 't-title2', title));
+    }
+    if (continuing) {
+      const description = [hero.episode, hero.subtitle, hero.left].filter(Boolean).join(' · ');
+      if (description) info.append(el('div', 'desc', description));
+      info.append(resumeProgress(hero));
+      bindResumeCard(card, hero, location.item, card);
+    } else {
+      info.append(...heroPills(hero));
+      if (hero.description) info.append(el('div', 'desc', hero.description));
+      const open = () => { markBusy(card); send({ cmd: 'open', ...location }); };
+      bindCardMenu(card, open, posterMenu(hero, location));
+    }
+    info.append(el('button', 'btn btn-sm', continuing ? 'Resume' : 'View Details'));
+    card.append(info);
+    return card;
+  }
+
+  function posterTile(item, shape, location, folder = false) {
+    const tile = el('button', `tile ${shape}`);
+    const art = el('div', 'art');
+    art.append(img(item.image));
+    tile.append(art, el('span', 'name', item.name));
+    if (item.year) tile.append(el('span', 'year', item.year));
+    const open = () => {
+      markBusy(art);
+      send({ cmd: folder ? 'folder' : 'open', ...location });
+    };
+    bindCardMenu(tile, open, folder ? null : posterMenu(item, location));
+    return tile;
+  }
+
+  function resumeProgress(item) {
+    const bar = el('div', 'bar');
+    const fill = el('i');
+    fill.style.width = `${Math.round(Math.min(1, Math.max(0, item.progress)) * 100)}%`;
+    bar.append(fill);
+    return bar;
+  }
+
+  function bindResumeCard(card, item, index, busyTarget) {
+    const resumePlayback = () => { markBusy(busyTarget); send({ cmd: 'resume', item: index, key: item.key }); };
+    const menu = {
+      title: item.title,
+      description: [item.episode, item.subtitle].filter(Boolean).join(' · '),
+      target: { kind: 'continue', item: index, key: item.key },
+    };
+    bindCardMenu(card, resumePlayback, menu);
+  }
+
+  function resumeTile(item, index) {
+    const tile = el('button', 'tile landscape');
+    const art = el('div', 'art');
+    art.append(img(item.image));
+    if (item.left) art.append(el('span', 'time-left', item.left));
+    const resume = el('div', 'resume');
+    if (item.episode) resume.append(el('small', '', item.episode));
+    resume.append(el('b', '', item.title));
+    resume.append(resumeProgress(item));
+    art.append(resume);
+    tile.append(art);
+    if (item.subtitle) tile.append(el('span', 'name', item.subtitle));
+    bindResumeCard(tile, item, index, art);
+    return tile;
+  }
+
+  function rowSection(title, tiles, viewAll = null) {
+    const section = el('section');
+    const head = el('div', 'row-head');
+    head.append(el('h3', 'row-title', title));
+    if (viewAll) {
+      const button = el('button', 'btn btn-sm btn-gray', 'View All');
+      button.addEventListener('click', () => { markBusy(button); viewAll(); });
+      head.append(button);
+    }
+    section.append(head);
+    const scroll = el('div', 'row-scroll');
+    scroll.append(...tiles);
+    section.append(scroll);
+    return section;
+  }
+
+  // Replaces a list of rows but keeps how far each row was scrolled sideways.
+  // Sets a container's children, keeping any existing child that is unchanged (same signature, or the same HTML
+  // apart from passing state) exactly where it is, so only new items are inserted and animate in.
+  const childKey = (node) => node.dataset?.sig
+    || node.outerHTML.replace(/ style="[^"]*"/g, '').replace(/\b(pending|busy|loaded)\b/g, '');
+  function setChildren(container, nodes) {
+    const pool = new Map();
+    for (const child of container.children) {
+      const key = childKey(child);
+      if (!pool.has(key)) pool.set(key, []);
+      pool.get(key).push(child);
+    }
+    const next = nodes.map((node) => pool.get(childKey(node))?.shift() || node);
+    const keep = new Set(next);
+    [...container.children].forEach((child) => { if (!keep.has(child)) child.remove(); });
+    next.forEach((node, i) => { if (container.children[i] !== node) container.insertBefore(node, container.children[i] || null); });
+  }
+
+  // A section can also come as { sig, build }: if a row with that signature is already there it is kept as it is
+  // (posters and all), so an update from the PC only rebuilds the rows that changed.
+  function replaceRows(container, sections) {
+    const offsets = [...container.querySelectorAll('.row-scroll')].map((r) => r.scrollLeft);
+    const kept = new Map([...container.children].filter((c) => c.dataset.sig).map((c) => [c.dataset.sig, c]));
+    sections = sections.map((section) => {
+      if (section instanceof Node) return section;
+      const node = kept.get(section.sig) || section.build();
+      node.dataset.sig = section.sig;
+      return node;
+    });
+    setChildren(container, sections);
+    container.querySelectorAll('.row-scroll').forEach((r, i) => { r.scrollLeft = offsets[i] || 0; });
+  }
+
+  const homeHeroStrip = $('hero-strip');
+  const homeHeroMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const setHomeBackdrop = artworkBackdrop($('home-backdrop'));
+  const setMediaBackdrop = artworkBackdrop($('media-backdrop'));
+  const HOME_HERO_INTERVAL_MS = 8000;
+  let homeHeroes = [];
+  let homeHeroContent = '';
+  let homeHeroIndex = 0;
+  let homeHeroInView = false;
+  let homeHeroPointer = null;
+  let homeHeroTimer;
+  let homeHeroTarget = null;
+  let homeHeroWrap = null;
+  function artworkBackdrop(backdrop) {
+    let request = null;
+    return (source) => {
+      if ((request?.getAttribute('src') ?? null) === source) return;
+      request = source ? new Image() : null;
+      if (!request) {
+        backdrop.replaceChildren();
+        return;
+      }
+      const art = request;
+      art.alt = '';
+      art.onload = () => {
+        if (art !== request) return;
+        const previous = backdrop.lastElementChild;
+        backdrop.append(art);
+        if (!previous) return;
+        const fade = art.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: homeHeroMotion.matches ? 0 : 650,
+          easing: 'ease-in-out',
+        });
+        fade.onfinish = () => previous.remove();
+      };
+      art.onerror = () => {
+        if (art === request) backdrop.replaceChildren();
+      };
+      art.src = source;
+    };
+  }
+
+  function updateHomeBackdrop() {
+    $('hero-dots').querySelectorAll('i').forEach((dot, i) => dot.classList.toggle('on', i === homeHeroIndex));
+    setHomeBackdrop(homeHeroes[homeHeroIndex]?.image || null);
+  }
+
+  function updateMediaBackdrop() {
+    if (!$('player').hidden) {
+      setMediaBackdrop(state.artwork || null);
+    } else if (!$('details').hidden) {
+      setMediaBackdrop(details?.background || null);
+    } else {
+      setMediaBackdrop(null);
+    }
+  }
+
+  function moveHomeHero(index, behavior = 'instant') {
+    const card = homeHeroStrip.children[index];
+    if (!card || $('home').hidden) return;
+    const left = card.offsetLeft - homeHeroStrip.firstElementChild.offsetLeft;
+    homeHeroStrip.scrollTo({ left, behavior });
+    if (behavior === 'instant') {
+      homeHeroIndex = index;
+      updateHomeBackdrop();
+    }
+  }
+
+  function canRotateHomeHero() {
+    return homeHeroInView && !$('home').hidden && !document.hidden && homeHeroes.length > 1
+      && homeHeroPointer === null && !homeHeroStrip.querySelector(':focus-visible') && !document.querySelector('dialog[open]');
+  }
+
+  function scheduleHomeHero() {
+    clearTimeout(homeHeroTimer);
+    if (canRotateHomeHero()) {
+      homeHeroTimer = setTimeout(rotateHomeHero, HOME_HERO_INTERVAL_MS);
+    } else {
+      homeHeroWrap?.cancel();
+      if (homeHeroTarget !== null) {
+        homeHeroTarget = null;
+        moveHomeHero(homeHeroIndex);
+      }
+    }
+  }
+
+  async function rotateHomeHero() {
+    if (!canRotateHomeHero()) return;
+    const next = (homeHeroIndex + 1) % homeHeroes.length;
+    if (homeHeroMotion.matches) {
+      moveHomeHero(next);
+    } else if (next > 0) {
+      homeHeroTarget = next;
+      moveHomeHero(next, 'smooth');
+    } else {
+      // Fade around the wrap so the carousel does not scroll backwards through every card.
+      const fade = homeHeroStrip.animate([{ opacity: 1 }, { opacity: 0.18 }], {
+        duration: 220, easing: 'ease-in-out', fill: 'forwards',
+      });
+      homeHeroWrap = fade;
+      try {
+        await fade.finished;
+      } catch {
+        return;
+      } finally {
+        homeHeroWrap = null;
+      }
+      fade.cancel();
+      if (!canRotateHomeHero()) return;
+      moveHomeHero(0);
+      homeHeroStrip.animate([{ opacity: 0.18 }, { opacity: 1 }], { duration: 460, easing: 'ease-out' });
+    }
+    scheduleHomeHero();
+  }
+
+  new IntersectionObserver(([entry]) => {
+    homeHeroInView = entry.intersectionRatio >= 0.25;
+    scheduleHomeHero();
+  }, { threshold: 0.25 }).observe(homeHeroStrip);
+  document.addEventListener('visibilitychange', scheduleHomeHero);
+  document.querySelectorAll('dialog.sheet').forEach((sheet) => sheet.addEventListener('close', scheduleHomeHero));
+  homeHeroStrip.addEventListener('focusin', scheduleHomeHero);
+  homeHeroStrip.addEventListener('focusout', () => requestAnimationFrame(scheduleHomeHero));
+  homeHeroStrip.addEventListener('pointerdown', (event) => {
+    homeHeroPointer = event.pointerId;
+    scheduleHomeHero();
+  });
+  for (const type of ['pointerup', 'pointercancel']) {
+    window.addEventListener(type, (event) => {
+      if (homeHeroPointer !== event.pointerId) return;
+      homeHeroPointer = null;
+      scheduleHomeHero();
+    });
+  }
+
+  homeHeroStrip.addEventListener('scroll', () => {
+    if ($('home').hidden || homeHeroes.length < 2) return;
+    const [first, second] = homeHeroStrip.children;
+    const step = second.offsetLeft - first.offsetLeft;
+    if (step <= 0) return;
+    homeHeroIndex = Math.min(homeHeroes.length - 1, Math.max(0, Math.round(homeHeroStrip.scrollLeft / step)));
+    if (homeHeroTarget !== null) {
+      const targetLeft = homeHeroStrip.children[homeHeroTarget].offsetLeft - first.offsetLeft;
+      if (Math.abs(homeHeroStrip.scrollLeft - targetLeft) <= 1) homeHeroTarget = null;
+    }
+    updateHomeBackdrop();
+    scheduleHomeHero();
+  }, { passive: true });
+
+  function showHomeHero(heroes, from) {
+    const heroContent = JSON.stringify([from, heroes]);
+    if (heroContent !== homeHeroContent) {
+      const previousKey = homeHeroes[homeHeroIndex]?.key;
+      homeHeroWrap?.cancel();
+      homeHeroTarget = null;
+      homeHeroContent = heroContent;
+      homeHeroes = heroes;
+      homeHeroIndex = Math.max(0, heroes.findIndex((hero) => hero.key === previousKey));
+      homeHeroStrip.replaceChildren(...heroes.map((hero, index) => heroCard(hero, { from, item: index })));
+      if (heroes.length && !homeHeroMotion.matches) homeHeroStrip.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, easing: 'ease-out' });
+      homeHeroStrip.hidden = !heroes.length;
+      $('hero-dots').replaceChildren(...(heroes.length > 1 ? heroes.map(() => el('i')) : []));
+      moveHomeHero(homeHeroIndex);
+      updateHomeBackdrop();
+      scheduleHomeHero();
+    }
+  }
+
+  // ─── View All and collection folders, following the PC ───
+  // A grid only grows at its end as the PC loads pages: the tiles already there stay, so images and scroll stay put.
+  function fillGrid(grid, items, shape, locate) {
+    const keys = items.map((item) => `${item.type}:${item.id}`);
+    const old = grid.keys || [];
+    const kept = old.length <= keys.length && old.every((key, i) => key === keys[i]) ? old.length : 0;
+    if (!kept) grid.replaceChildren();
+    grid.classList.toggle('landscape', shape === 'landscape');
+    items.slice(kept).forEach((item, i) => grid.append(posterTile(item, shape, locate(kept + i))));
+    grid.keys = keys;
+  }
+
+  // The line under a page: loading, or why it is empty.
+  function pageStatus(status, { loading, error, count }) {
+    status.replaceChildren();
+    if (loading) status.append(el('span', 'spin-ring'), el('span', '', count ? 'Loading more…' : 'Loading…'));
+    else if (!count) status.append(el('span', '', error || 'Nothing here yet.'));
+  }
+
+  // A paged grid asks the PC for its next page when its end comes near, once per page.
+  const pagers = [
+    { status: 'catalog-status', cmd: 'catalogMore' },
+    { status: 'folder-status', cmd: 'folderMore' },
+    { status: 'discover-status', cmd: 'discoverMore' },
+  ];
+  function loadMoreIfNear() {
+    pagers.forEach((pager) => {
+      const status = $(pager.status);
+      const msg = pager.msg;
+      if (!status.offsetParent || !msg?.more || msg.loading || pager.requested === msg.items.length) return;
+      if (status.getBoundingClientRect().top > innerHeight * 2) return;
+      pager.requested = msg.items.length;
+      send({ cmd: pager.cmd });
+    });
+  }
+  addEventListener('scroll', loadMoreIfNear, { passive: true });
+
+  // View All: a catalog, paged; a collection's folders and Continue Watching come from Home's rows.
+  let catalog = null;
+  let lastHome = null;
+
+  function showCatalog(msg) {
+    catalog = msg;
+    pagers[0].msg = msg;
+    renderCatalog();
+  }
+
+  function renderCatalog() {
+    if (!catalog || $('catalog').hidden) return;
+    $('catalog-title').textContent = catalog.title || '';
+    const grid = $('catalog-grid');
+    if (pcRoute === 'catalog') {
+      fillGrid(grid, catalog.items, catalog.shape, (i) => ({ from: 'catalog', item: i }));
+      pageStatus($('catalog-status'), { ...catalog, count: catalog.items.length });
+      loadMoreIfNear();
+      return;
+    }
+    const row = lastHome?.rows.find((r) => r.kind === 'collection' && r.key === catalog.collection);
+    const tiles = pcRoute === 'continue' ? (lastHome?.continue || []).map(resumeTile)
+      : (row?.items || []).map((item, i) => posterTile(item, row.shape, { from: 'row', row: row.key, item: i }, true));
+    grid.keys = null;
+    grid.classList.toggle('landscape', pcRoute === 'continue' || row?.shape === 'landscape');
+    grid.replaceChildren(...tiles);
+    pageStatus($('catalog-status'), { count: tiles.length });
+  }
+
+  // A collection folder: a row per source with View All, or the PC's tabs over a paged grid.
+  let folder = null;
+
+  function showFolder(msg) {
+    folder = msg;
+    pagers[1].msg = msg.items ? msg : null;
+    renderFolder();
+  }
+
+  function folderRow(row) {
+    const section = rowSection(row.title, row.items.map((item, i) => posterTile(item, row.shape, { from: 'folder', row: row.key, item: i })),
+      row.viewAll ? () => send({ cmd: 'viewAll', row: row.key }) : null);
+    if (!row.items.length) {
+      section.querySelector('.row-scroll').append(...(row.loading
+        ? [el('div', 'skel sk-poster'), el('div', 'skel sk-poster'), el('div', 'skel sk-poster')]
+        : [el('div', 'row-note text-sub', row.error || 'Nothing here yet.')]));
+    }
+    return section;
+  }
+
+  function renderFolder() {
+    if (!folder?.title || $('folder').hidden) return;
+    $('folder-title').textContent = folder.title;
+    const tabbed = Boolean(folder.tabs);
+    $('folder-rows').hidden = tabbed;
+    $('folder-grid').hidden = !tabbed;
+    $('folder-tabs').hidden = !tabbed || folder.tabs.length < 2;
+    if (!tabbed) {
+      replaceRows($('folder-rows'), folder.rows.map(folderRow));
+      pageStatus($('folder-status'), { count: folder.rows.length });
+      return;
+    }
+    setChildren($('folder-tabs'), folder.tabs.map((label, i) => {
+      const button = el('button', `btn btn-sm ${i === folder.tab ? '' : 'btn-gray'}`, label);
+      button.addEventListener('click', () => { if (i !== folder.tab) send({ cmd: 'folderTab', index: i }); });
+      return button;
+    }));
+    $('folder-tabs').children[folder.tab]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    fillGrid($('folder-grid'), folder.items, folder.shape, (i) => ({ from: 'folder', item: i }));
+    pageStatus($('folder-status'), { ...folder, count: folder.items.length });
+    loadMoreIfNear();
+  }
+
+  let homeContent = '';
+
+  function showHome(msg) {
+    // The PC re-sends Home often (progress, hero details, reconnects): the same Home changes nothing.
+    const content = JSON.stringify(msg);
+    if (content === homeContent) return;
+    homeContent = content;
+    // Remembered, so the next time the remote opens it shows Home at once while the PC's arrives.
+    try { localStorage.setItem('nuvio_home', content); } catch (_) {}
+    const heroFromContinue = msg.heroFromContinue === true;
+    const heroes = msg.heroEnabled === false ? [] : (heroFromContinue ? msg.continue.slice(0, 8) : msg.hero);
+    const sections = [];
+    lastHome = msg;
+    if (msg.continue.length) sections.push({
+      sig: JSON.stringify([msg.continueViewAll, msg.continue]),
+      build: () => rowSection('Continue Watching', msg.continue.map(resumeTile),
+        msg.continueViewAll ? () => send({ cmd: 'viewAll', row: 'continue' }) : null),
+    });
+    // Catalog rows open a title; collection rows (Discover, Streaming…) open a folder.
+    msg.rows.forEach((row) => sections.push({
+      sig: JSON.stringify(row),
+      build: () => rowSection(row.title,
+        row.items.map((item, i) => posterTile(item, row.shape,
+          { from: 'row', row: row.key, item: i }, row.kind === 'collection')),
+        row.viewAll ? () => send({ cmd: 'viewAll', row: row.key }) : null),
+    }));
+    replaceRows($('home-rows'), sections);
+    if (pcRoute === 'collection' || pcRoute === 'continue') renderCatalog();
+    const empty = !heroes.length && !sections.length;
+    $('home-skeleton').hidden = !(empty && msg.loading);
+    $('home-empty').hidden = !(empty && !msg.loading);
+    $('home-hero-skeleton').hidden = msg.heroEnabled === false || heroFromContinue;
+
+    try {
+      showHomeHero(heroes, heroFromContinue ? 'continue' : 'hero');
+    } catch (error) {
+      console.error('Failed to render the Home hero', error);
+      clearTimeout(homeHeroTimer);
+      homeHeroWrap?.cancel();
+      homeHeroTarget = null;
+      homeHeroContent = '';
+      homeHeroes = [];
+      homeHeroIndex = 0;
+      homeHeroStrip.hidden = true;
+      homeHeroStrip.replaceChildren();
+      updateHomeBackdrop();
+      $('home-hero-skeleton').hidden = true;
+      $('home-skeleton').hidden = sections.length > 0 || !msg.loading;
+      $('home-empty').hidden = sections.length > 0 || msg.loading;
+    }
+  }
+
+  let backTimer;
+  // Until the PC has gone back (the view changes) or 1.5 s pass.
+  function backPending(button, page) {
+    clearBackPending();
+    button.classList.add('pending');
+    page?.classList.add('leaving');
+    navigator.vibrate?.(10);
+    backTimer = setTimeout(clearBackPending, 1500);
+  }
+  function clearBackPending() {
+    clearTimeout(backTimer);
+    document.querySelectorAll('[data-back].pending').forEach((n) => n.classList.remove('pending'));
+    document.querySelectorAll('main.leaving').forEach((n) => n.classList.remove('leaving'));
+  }
+
+  document.querySelectorAll('[data-back]').forEach((button) => button.addEventListener('click', () => {
+    cancelTrackpad();
+    if (pcRoute === 'player') {
+      if (ws?.readyState !== WebSocket.OPEN) return;
+      backPending(button, null);
+      if (state.active) player('back');
+      else send({ cmd: 'dpadBack' });
+      return;
+    }
+    stopDpadPress();
+    const phonePage = $('remote').hidden && ['details', 'streams', 'catalog', 'collection', 'continue', 'folder'].includes(pcRoute);
+    backPending(button, phonePage ? document.querySelector('main:not([hidden])') : null);
+    send({ cmd: phonePage ? 'back' : 'dpadBack' });
+  }));
+
+  // ─── Details: the title's page, like the PC; its buttons run the PC's ───
+  let activeDetailKey;
+  let latestDetails = null;
+  let details = null;
+  let season = null;
+  let detailsEpisodePositioned = false;
+
+  function titleArt(container, logo, name) {
+    container.replaceChildren();
+    if (logo) {
+      const image = img(logo, 'logo');
+      image.onerror = () => image.replaceWith(el('div', 't-title2', name));
+      container.append(image);
+    } else {
+      container.append(el('div', 't-title2', name));
+    }
+  }
+
+  function showDetails(msg) {
+    latestDetails = msg;
+    if (msg.key === activeDetailKey) renderDetails();
+  }
+
+  function renderDetails() {
+    const msg = activeDetailKey && latestDetails?.key === activeDetailKey ? latestDetails : null;
+    if (details?.key !== msg?.key) {
+      season = null;
+      detailsEpisodePositioned = false;
+      $('d-desc').classList.remove('open');
+    }
+    details = msg;
+    $('details').classList.toggle('is-loading', !msg || msg.loading);
+    updateMediaBackdrop();
+    if (!msg || msg.loading) return;
+    if ($('d-bg').getAttribute('src') !== (msg.background || null)) {
+      if (msg.background) $('d-bg').src = msg.background;
+      else $('d-bg').removeAttribute('src');
+    }
+    if ($('d-title').dataset.title !== JSON.stringify([msg.name, msg.logo])) {
+      $('d-title').dataset.title = JSON.stringify([msg.name, msg.logo]);
+      titleArt($('d-title'), msg.logo, msg.name || '');
+    }
+    setChildren($('d-pills'), heroPills(msg));
+    $('d-desc').textContent = msg.description || '';
+    $('d-desc').hidden = !msg.description;
+    $('d-play-label').textContent = msg.playLabel || 'Play';
+    $('d-play').parentElement.hidden = !msg.hasMetadata;
+    for (const id of ['d-play', 'd-watched', 'd-saved']) $(id).disabled = !msg.actionsReady;
+    $('d-watched').setAttribute('aria-pressed', msg.watched);
+    $('d-saved').setAttribute('aria-pressed', msg.saved);
+    renderEpisodes();
+  }
+
+  function positionDetailsEpisode() {
+    if (detailsEpisodePositioned || season !== null || !details?.hasMetadata || $('details').hidden) return;
+    const episode = $('d-episodes').querySelector('[data-preferred-episode]');
+    if (!episode) return;
+    requestAnimationFrame(() => {
+      if (detailsEpisodePositioned || !episode.isConnected || season !== null || $('details').hidden) return;
+      detailsEpisodePositioned = true;
+      episode.scrollIntoView({ block: 'start' });
+    });
+  }
+
+  function renderEpisodes() {
+    const seasons = details.seasons || [];
+    $('d-episodes-section').hidden = !seasons.length;
+    if (!seasons.length) return;
+    const filler = $('d-filler');
+    filler.hidden = typeof details.fillerDetection !== 'boolean';
+    filler.replaceChildren();
+    if (!filler.hidden) {
+      filler.append(
+        toggle('Anime Filler Detection', '', details.fillerDetection, (value) => send({ cmd: 'fillerDetection', value })),
+        toggle('Hide Anime Filler Episodes', '', details.hideFillers, (value) => send({ cmd: 'hideFillers', value })),
+      );
+    }
+    const selected = seasons.find((s) => s.number === season) ||
+      seasons.find((s) => s.number === details.preferredSeason) || seasons[0];
+    setChildren($('d-seasons'), seasons.map((s) => {
+      const chip = el('button', 'chip', s.label);
+      chip.setAttribute('aria-pressed', s === selected);
+      chip.addEventListener('click', () => { season = s.number; renderEpisodes(); });
+      return chip;
+    }));
+    const episodes = selected.episodes;
+    const { key, actionsReady } = details;
+    setChildren($('d-episodes'), episodes.map((ep) => {
+      const card = episodeCard(ep, () => send({ cmd: 'episode', key, item: ep.index, id: ep.id }), false,
+        { kind: 'episode', key, item: ep.index, id: ep.id });
+      card.disabled = !actionsReady;
+      return card;
+    }));
+    if (!episodes.length) $('d-episodes').append(el('p', 't-sub text-sub', 'All episodes in this season are hidden.'));
+    positionDetailsEpisode();
+  }
+
+  function episodeCard(ep, onClick, blur = false, menuTarget = null) {
+    const card = el('button', 'episode');
+    if (ep.current || ep.preferred) card.setAttribute('aria-current', 'true');
+    if (ep.preferred) card.dataset.preferredEpisode = '';
+    const thumb = el('div', 'thumb');
+    thumb.append(img(ep.image, blur ? 'blurred' : ''));
+    if (ep.code) thumb.append(el('span', 'code', ep.code));
+    const copy = el('span', 'copy');
+    copy.append(el('b', '', ep.title || ep.code));
+    if (ep.overview) copy.append(el('p', '', ep.overview));
+    const info = [ep.current ? 'Playing' : ep.watched ? 'Watched' : null, ep.fillerLabel, ep.runtime,
+      ep.rating ? `IMDb ${ep.rating}` : null, ep.released].filter(Boolean).join(' · ');
+    if (info) copy.append(el('small', '', info));
+    card.append(thumb, copy);
+    bindCardMenu(card, () => { markBusy(thumb); onClick(); }, menuTarget && {
+      title: ep.title || ep.code, description: ep.overview, target: menuTarget,
+    });
+    return card;
+  }
+  $('d-desc').addEventListener('click', () => $('d-desc').classList.toggle('open'));
+  $('d-play').addEventListener('click', () => { markBusy($('d-play')); send({ cmd: 'play', key: activeDetailKey }); });
+  $('d-watched').addEventListener('click', () => send({ cmd: 'watched', key: activeDetailKey }));
+  $('d-saved').addEventListener('click', () => send({ cmd: 'saved', key: activeDetailKey }));
+
+  // ─── Sources: the list the PC shows; a tap plays that source ───
+  let streams = { groups: [] };
+  let streamsTitle = null;
+  let addonFilter = null;
+  function showStreams(msg) {
+    streams = msg;
+    if (msg.title && msg.title + msg.episode !== streamsTitle) {
+      streamsTitle = msg.title + msg.episode;
+      addonFilter = null;
+      $('s-bg').src = msg.background || '';
+      titleArt($('s-title'), msg.logo, msg.title);
+    }
+    $('s-episode').textContent = msg.episode || '';
+    // Resume from the saved position, or start over, like the PC's banner.
+    $('s-resume').hidden = !msg.resumeMs;
+    if (msg.resumeMs) {
+      $('s-resume-label').textContent = `Resume from ${clock(msg.resumeMs)}`;
+      $('s-resume-btn').setAttribute('aria-pressed', !msg.fromStart);
+      $('s-start-btn').setAttribute('aria-pressed', !!msg.fromStart);
+    }
+    renderStreams();
+  }
+  $('s-resume-btn').addEventListener('click', () => send({ cmd: 'fromStart', value: false }));
+  $('s-start-btn').addEventListener('click', () => send({ cmd: 'fromStart', value: true }));
+  function renderStreams() {
+    const scroll = $('streams').hidden ? null : scrollY;
+    const groups = streams.groups.map((g, i) => ({ ...g, i })).filter((g) => g.streams.length || g.loading || g.error);
+    const chips = [{ addon: 'All', i: null }, ...groups].map((g) => {
+      const chip = el('button', 'chip', g.addon);
+      chip.setAttribute('aria-pressed', addonFilter === g.i);
+      chip.addEventListener('click', () => { addonFilter = g.i; renderStreams(); });
+      return chip;
+    });
+    setChildren($('s-addons'), chips);
+    const shown = groups.filter((g) => addonFilter === null || g.i === addonFilter);
+    const nodes = [];
+    shown.forEach((group) => {
+      // An addon still searching shows a spinner by its name.
+      const header = el('div', 'addon addon-loading', group.addon);
+      if (group.loading) header.append(el('span', 'spin-ring sm'));
+      if (!group.streams.length) {
+        if (group.loading) nodes.push(header);
+        // An addon that failed says why, instead of looking empty.
+        else if (group.error) nodes.push(header, el('div', 'card t-sub text-sub', group.error));
+        return;
+      }
+      nodes.push(header);
+      group.streams.forEach((stream, s) => {
+        const card = el('button', 'stream-card');
+        card.append(el('b', '', stream.name));
+        if (stream.details) card.append(el('span', 'sub', stream.details));
+        if (stream.badges.length || stream.sizeBytes > 0) {
+          const badges = el('span', 'badges');
+          stream.badges.forEach((b) => badges.append(el('span', 'badge badge-outline badge-sq', b)));
+          if (stream.sizeBytes > 0) {
+            const mib = stream.sizeBytes / 1024 ** 2;
+            const size = mib >= 1024 ? `${(mib / 1024).toFixed(1)} GB` : `${Math.round(mib)} MB`;
+            badges.append(el('span', 'badge badge-outline badge-sq', `SIZE ${size}`));
+          }
+          card.append(badges);
+        }
+        bindCardMenu(card, () => { markBusy(card); send({ cmd: 'stream', group: group.i, item: s }); }, {
+          title: stream.name, description: stream.details,
+          target: { kind: 'source', key: streams.key, group: group.i, item: s, id: stream.menuId },
+        });
+        nodes.push(card);
+      });
+    });
+    const anyStreams = shown.some((g) => g.streams.length);
+    if (!anyStreams && streams.loading) nodes.unshift(loader('Finding sources…'));
+    setChildren($('s-list'), nodes);
+    $('s-empty').hidden = anyStreams || streams.loading || shown.some((g) => g.error);
+    $('s-empty').textContent = 'No sources found.';
+    if (scroll !== null) scrollTo({ top: scroll });
+  }
+  $('s-reload').addEventListener('click', () => send({ cmd: 'reloadStreams' }));
+
+  // ─── Search: type here, the PC searches; results open the title there ───
+  let searchTimer = null;
+  let searchResults = { loading: false, rows: [] };
+  $('search-input').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => send({ cmd: 'search', query: $('search-input').value }), 400);
+    renderSearch();
+  });
+  // Clear goes back to recent searches and Discover, on the PC too, and keeps the keyboard up for a new search.
+  $('search-clear').addEventListener('click', () => {
+    clearTimeout(searchTimer);
+    $('search-input').value = '';
+    send({ cmd: 'search', query: '' });
+    renderSearch();
+    $('search-input').focus();
+  });
+  $('search-input').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    clearTimeout(searchTimer);
+    send({ cmd: 'search', query: $('search-input').value });
+    $('search-input').blur();
+  });
+  // Before you type: recent searches (tap to search again, ✕ to forget) and Discover, both from the PC.
+  let discover = null;
+  $('recent-clear').addEventListener('click', () => send({ cmd: 'searchClear' }));
+
+  function showDiscover(msg) {
+    discover = msg;
+    pagers[2].msg = msg;
+    $('recent-section').hidden = !msg.recent.length;
+    setChildren($('recent-list'), msg.recent.map((query) => {
+      const row = el('div', 'recent search-box');
+      const again = el('button', '', query);
+      again.addEventListener('click', () => {
+        $('search-input').value = query;
+        send({ cmd: 'search', query });
+        renderSearch();
+      });
+      const forget = el('button', '', '✕');
+      forget.setAttribute('aria-label', `Remove ${query}`);
+      forget.addEventListener('click', () => send({ cmd: 'searchRemove', query }));
+      row.append(again, forget);
+      return row;
+    }));
+    picker($('pick-type'), msg.types, msg.type, (value) => send({ cmd: 'discoverType', value }));
+    picker($('pick-catalog'), msg.catalogs, msg.catalog, (value) => send({ cmd: 'discoverCatalog', value }));
+    picker($('pick-genre'), msg.genres, msg.genre, (value) => send({ cmd: 'discoverGenre', value }));
+    $('discover-source').textContent = msg.source || '';
+    fillGrid($('discover-grid'), msg.items, msg.shape, (i) => ({ from: 'discover', item: i }));
+    pageStatus($('discover-status'), { ...msg, count: msg.items.length });
+    loadMoreIfNear();
+  }
+
+  // A native picker (the phone's own wheel) for one of Discover's dropdowns; choosing sends it to the PC.
+  function picker(select, options, selected, onChange) {
+    const signature = JSON.stringify(options);
+    if (select.dataset.options !== signature) {
+      select.dataset.options = signature;
+      select.replaceChildren(...options.map((option) => {
+        const item = el('option', '', option.label);
+        item.value = option.key;
+        return item;
+      }));
+      select.onchange = () => onChange(select.value);
+    }
+    select.value = selected ?? '';
+    select.disabled = options.length < 2;
+  }
+
+  // ─── Library: Saved and Cloud, with the PC's sort, layout and Downloads ───
+  let library = null;
+  let libraryView = 'saved';
+  let libraryList = null; // grid layout: the tracking list shown, and the type filter (kept on the phone, as the PC keeps its own)
+  let libraryType = '';
+
+  function showLibrary(msg) {
+    library = msg;
+    renderLibrary();
+  }
+
+  const fileSize = (bytes) => {
+    if (!bytes) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i += 1; }
+    return `${bytes.toFixed(bytes >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+  };
+
+  function renderLibrary() {
+    if (!library || $('library').hidden) return;
+    const { labels } = library;
+    $('library-title').textContent = library.title;
+    document.querySelectorAll('#library-views [data-view]').forEach((b) => {
+      b.textContent = labels[b.dataset.view];
+      b.setAttribute('aria-pressed', b.dataset.view === libraryView);
+    });
+    // Layout and sort belong to Saved, like the PC.
+    $('library-layout').hidden = libraryView !== 'saved';
+    $('library-layout').querySelector('use').setAttribute('href', library.layout === 'grid' ? '#i-layout-persistent_hero' : '#i-layout-official');
+    $('library-saved').hidden = libraryView !== 'saved';
+    $('library-cloud').hidden = libraryView !== 'cloud';
+    if (libraryView === 'saved') {
+      picker($('library-sort'), library.sorts, library.sort, (value) => send({ cmd: 'librarySort', value }));
+      const gridLayout = library.layout === 'grid';
+      $('library-list').hidden = !gridLayout || !library.tracking;
+      $('library-type').hidden = !gridLayout;
+      if (!gridLayout) {
+        replaceRows($('library-rows'), library.rows.map((row) => rowSection(row.title,
+          row.items.map((item, i) => posterTile(item, row.shape, { from: 'library', row: row.key, item: i })))));
+      } else {
+        // Like the PC's grid: a local Library is one grid of every title; a tracking source shows one list at a time.
+        const list = library.tracking ? library.rows.find((r) => r.key === libraryList) || library.rows[0] : null;
+        if (library.tracking) {
+          libraryList = list?.key ?? null;
+          picker($('library-list'), library.rows.map((r) => ({ key: r.key, label: r.title })), libraryList,
+            (value) => { libraryList = value; renderLibrary(); });
+        }
+        const titles = list || library.grid;
+        const locate = (i) => (list ? { from: 'library', row: list.key, item: i } : { from: 'libraryGrid', item: i });
+        const types = [...new Set(titles?.categories || [])].sort();
+        if (!types.includes(libraryType)) libraryType = '';
+        picker($('library-type'), [{ key: '', label: labels.allTypes }, ...types.map((t) => ({ key: t, label: library.typeLabels[t] || t }))],
+          libraryType, (value) => { libraryType = value; renderLibrary(); });
+        const grid = el('div', `catalog-grid${titles?.shape === 'landscape' ? ' landscape' : ''}`);
+        grid.append(...(titles?.items || []).flatMap((item, i) =>
+          !libraryType || titles.categories[i] === libraryType ? [posterTile(item, titles.shape, locate(i))] : []));
+        $('library-rows').replaceChildren(grid);
+      }
+      pageStatus($('library-status'), { loading: library.loading, error: library.error, count: library.rows.length });
+      return;
+    }
+    const cloud = library.cloud;
+    if (!cloud.connected) {
+      const card = el('div', 'card');
+      card.append(el('div', 'name', labels.connectTitle), el('p', 'note', labels.connectMessage));
+      $('library-cloud').replaceChildren(card);
+      pageStatus($('library-status'), { count: 1 });
+      return;
+    }
+    // Each cloud item opens to its playable files; a file plays on the PC.
+    const open = new Set([...$('library-cloud').querySelectorAll('details[open]')].map((d) => d.dataset.key));
+    setChildren($('library-cloud'), cloud.items.map((item) => {
+      const box = el('details', 'card cloud-item');
+      box.dataset.key = item.key;
+      box.open = open.has(item.key);
+      const summary = el('summary');
+      const progress = item.progress != null && item.progress < 1 ? `${Math.round(item.progress * 100)}%` : '';
+      summary.append(el('span', 'name', item.name),
+        el('span', 'note', [item.provider, fileSize(item.size), item.status, progress].filter(Boolean).join(' · ')));
+      const files = el('div', 'cloud-files');
+      files.append(...item.files.map((file) => {
+        const button = el('button', 'btn btn-gray');
+        button.append(el('span', '', file.name), el('span', 'note', fileSize(file.size)));
+        button.addEventListener('click', () => { markBusy(button); send({ cmd: 'cloudPlay', item: item.key, file: file.key }); });
+        return button;
+      }));
+      box.append(summary, files);
+      return box;
+    }));
+    pageStatus($('library-status'), { loading: cloud.loading, error: cloud.error, count: cloud.items.length });
+  }
+
+  document.querySelectorAll('#library-views [data-view]').forEach((b) => b.addEventListener('click', () => {
+    libraryView = b.dataset.view;
+    if (libraryView === 'cloud') send({ cmd: 'cloudLoad' });
+    renderLibrary();
+  }));
+  $('library-layout').addEventListener('click', () => send({ cmd: 'libraryLayout' }));
+  $('library-downloads').addEventListener('click', () => send({ cmd: 'libraryDownloads' }));
+
+  // ─── Shuffle: the PC's own Shuffle, its filters as a form; every change runs on the PC ───
+  let shuffle = null;
+
+  function showShuffle(msg) {
+    const wasActive = Boolean(shuffle?.active);
+    shuffle = msg;
+    // Follow the PC into and out of Shuffle.
+    if (msg.active !== wasActive) {
+      if (msg.active) browseTab = 'shuffle';
+      else if (browseTab === 'shuffle') browseTab = 'home';
+      updateView();
+    }
+    renderShuffle();
+  }
+
+  const setFilter = (field, value) => send({ cmd: 'shuffleFilter', field, value });
+
+  // A filter: a dropdown (the phone's own wheel) or, for the series status, chips like the PC's.
+  function shuffleField(field) {
+    let box = $(`shuffle-${field.id}`);
+    if (!box) {
+      box = el(field.chips ? 'div' : 'label', 'field');
+      box.id = `shuffle-${field.id}`;
+      box.append(el('span', 'field-label'), field.chips ? el('div', 'seg seg-fill') : el('select', 'picker'));
+      // Category and Type, Genre and Rating sit side by side; the rest take the full width.
+      if (['style', 'format', 'genre', 'rating'].includes(field.id)) box.classList.add('half');
+    }
+    box.firstChild.textContent = field.label;
+    const control = box.lastChild;
+    if (field.chips) {
+      control.replaceChildren(...field.options.map((option) => {
+        const chip = el('button', '', option.label);
+        chip.setAttribute('aria-pressed', option.key === field.value);
+        chip.disabled = field.disabled;
+        chip.addEventListener('click', () => setFilter(field.id, option.key));
+        return chip;
+      }));
+    } else {
+      picker(control, field.options, field.value, (value) => setFilter(field.id, value));
+    }
+    return box;
+  }
+
+  function renderShuffle() {
+    $('shuffle').classList.toggle('is-loading', !shuffle?.active);
+    if (!shuffle?.active || $('shuffle').hidden) return;
+    const { labels } = shuffle;
+    $('shuffle-title').textContent = labels.title;
+    $('shuffle-subtitle').textContent = labels.subtitle;
+    // Built once and updated in place, so a picker wheel open on the phone stays open while the PC updates.
+    const form = $('shuffle-form');
+    if (!form.childElementCount) {
+      form.append(el('div', 'field-label', labels.types), ...shuffle.fields.map(shuffleField),
+        el('p', 'note'), el('div', 'shuffle-toggles'), el('p', 'note'));
+    }
+    shuffle.fields.forEach(shuffleField);
+    const [noSources, toggles, hint] = [...form.children].slice(-3);
+    noSources.textContent = shuffle.noSources || '';
+    noSources.hidden = !shuffle.noSources;
+    toggles.replaceChildren(...shuffle.toggles.map((t) => toggle(t.label, null, t.value, (on) => setFilter(t.id, String(on)))));
+    hint.textContent = labels.excludeHint;
+    $('shuffle-pick').textContent = labels.pick;
+    $('shuffle-pick').disabled = !shuffle.canPick;
+    $('shuffle-reset').textContent = labels.reset;
+    $('shuffle-cancel').textContent = labels.cancel;
+    $('shuffle-cancel').hidden = !shuffle.picking;
+    setChildren($('shuffle-feedback'), [...(shuffle.busy ? [el('span', 'spin-ring sm')] : []),
+      ...(shuffle.feedback.length ? [el('span', '', shuffle.feedback.join(' · '))] : [])]);
+    $('shuffle-hint').textContent = labels.samplingHint;
+    // The picked title, like the PC's popup: its hero, then Shuffle Again and Close.
+    const result = $('shuffle-result');
+    const content = shuffle.result ? JSON.stringify(shuffle.result) : '';
+    if (result.dataset.content !== content) {
+      result.dataset.content = content;
+      result.hidden = !shuffle.result;
+      if (shuffle.result) {
+        const actions = el('div', 'shuffle-result-actions');
+        const again = el('button', 'btn btn-gray', labels.again);
+        again.addEventListener('click', () => send({ cmd: 'shufflePick' }));
+        const close = el('button', 'btn btn-gray', labels.close);
+        close.addEventListener('click', () => send({ cmd: 'shuffleClose' }));
+        actions.append(again, close);
+        result.replaceChildren(heroCard(shuffle.result, { from: 'shuffle' }), actions);
+        scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        result.replaceChildren();
+      }
+    }
+    result.querySelectorAll('.shuffle-result-actions .btn').forEach((b) => { b.disabled = shuffle.picking; });
+  }
+  $('shuffle-pick').addEventListener('click', () => send({ cmd: 'shufflePick' }));
+  $('shuffle-reset').addEventListener('click', () => send({ cmd: 'shuffleReset' }));
+  $('shuffle-cancel').addEventListener('click', () => send({ cmd: 'shuffleCancel' }));
+
+  function showSearch(msg) {
+    searchResults = msg;
+    renderSearch();
+  }
+  function renderSearch() {
+    const typed = $('search-input').value.trim();
+    const rows = typed ? searchResults.rows : [];
+    replaceRows($('search-rows'), rows.map((row) => rowSection(row.title,
+      row.items.map((item, i) => posterTile(item, row.shape, { from: 'search', row: row.key, item: i })))));
+    const searching = typed && searchResults.loading;
+    if (searching) $('search-rows').append(loader(rows.length ? 'Loading more results…' : 'Searching…'));
+    $('search-empty').hidden = !typed || rows.length > 0 || searching;
+    $('search-empty').textContent = 'No results.';
+    $('search-start').hidden = Boolean(typed);
+    if (!typed) loadMoreIfNear();
+  }
+
+  // A spinner with what it is waiting for.
+  function loader(text) {
+    const box = el('div', 'loading');
+    box.append(el('span', 'spin-ring'), el('span', '', text));
+    return box;
+  }
+  renderSearch();
+  updateView();
+
+  // The hero: artwork with the title's logo over it (the title as text when there is no logo), then the episode.
+  function showMedia(msg) {
+    const art = $('art');
+    if (art.dataset.src !== msg.artwork) {
+      art.dataset.src = msg.artwork;
+      if (msg.artwork) {
+        // The card keeps what it shows until the new artwork has loaded, so it never goes blank.
+        const next = new Image();
+        next.onload = () => {
+          if (art.dataset.src !== msg.artwork) return;
+          art.src = msg.artwork;
+          art.classList.add('on');
+        };
+        next.src = msg.artwork;
+      } else {
+        art.classList.remove('on');
+        art.removeAttribute('src');
+      }
+    }
+    const logo = $('logo');
+    if (logo.dataset.src !== msg.logo) {
+      logo.dataset.src = msg.logo;
+      logo.hidden = !msg.logo;
+      logo.onerror = () => { logo.hidden = true; $('hero-title').hidden = false; };
+      if (msg.logo) logo.src = msg.logo;
+    }
+    $('hero-title').textContent = msg.title;
+    $('hero-title').hidden = Boolean(msg.logo);
+    $('ep-info').textContent = msg.episodeInfo;
+    $('ep-info').hidden = !msg.episodeInfo;
+    $('ep-title').textContent = msg.episodeTitle;
+    $('ep-title').hidden = !$('ep-title').textContent;
+    $('synopsis').textContent = msg.description;
+    $('synopsis').hidden = !msg.description;
+    $('info-toggle').hidden = !(msg.episodeInfo || msg.episodeTitle || msg.description);
+    if ($('info-toggle').hidden) showHeroInfo(false);
+  }
+  // ─── Sleep timer: runs on the PC; the phone sets it and shows the time left ───
+  let sleep = { active: false };
+  let sleepEndsAt = 0;
+  // By default the timer also puts the PC to sleep; "Just pause" only pauses.
+  let justPause = false;
+  try { justPause = localStorage.getItem('nuvio_sleep_just_pause') === '1'; } catch (_) {}
+
+  const SLEEP_CHOICES = [
+    { label: '15 minutes', seconds: 900 }, { label: '30 minutes', seconds: 1800 }, { label: '45 minutes', seconds: 2700 },
+    { label: '1 hour', seconds: 3600 }, { label: '1 hour 30 minutes', seconds: 5400 }, { label: 'End of episode', endOfEpisode: true },
+  ];
+
+  function showSleep(msg) {
+    sleep = msg;
+    sleepEndsAt = Date.now() + (msg.remainingMs ?? 0);
+    renderSleep();
+  }
+
+  function sleepLeft() {
+    const left = Math.max(0, sleepEndsAt - Date.now());
+    if (left < 60000) return `${Math.ceil(left / 1000)}s`;
+    const minutes = Math.ceil(left / 60000);
+    return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m` : `${minutes}m`;
+  }
+
+  // The chip, the More row and the sheet's summary, from the one state.
+  function renderSleep() {
+    const after = sleep.sleepPc ? ' · then sleeps the PC' : '';
+    const text = sleep.endOfEpisode ? 'At the end of the episode' : `${sleepLeft()} left`;
+    $('sleep-chip').hidden = !sleep.active;
+    $('sleep-chip-label').textContent = sleep.endOfEpisode ? 'Ep end' : sleepLeft();
+    $('sleep-state').textContent = sleep.active ? text + after : 'Off';
+    $('sleep-summary').textContent = sleep.active ? `Pauses ${text.charAt(0).toLowerCase()}${text.slice(1)}${after}.`
+      : 'Pauses playback and puts the PC to sleep after the time you pick.';
+    $('sleep-cancel').hidden = !sleep.active;
+  }
+  setInterval(() => { if (sleep.active && !sleep.endOfEpisode) renderSleep(); }, 1000);
+
+  $('sleep-pc').append(toggle('Just pause', 'Pauses playback without putting the PC to sleep', justPause, (on) => {
+    justPause = on;
+    try { localStorage.setItem('nuvio_sleep_just_pause', on ? '1' : '0'); } catch (_) {}
+  }));
+  $('sleep-options').append(...SLEEP_CHOICES.map((choice) => {
+    const row = el('button', 'row', choice.label);
+    row.addEventListener('click', () => {
+      send({ cmd: 'sleepSet', seconds: choice.seconds, endOfEpisode: choice.endOfEpisode, sleepPc: !justPause });
+      $('sleep').close();
+    });
+    return row;
+  }));
+  $('sleep-cancel').addEventListener('click', () => { send({ cmd: 'sleepCancel' }); $('sleep').close(); });
+  $('sleep-open').addEventListener('click', () => { $('more').close(); renderSleep(); present($('sleep')); });
+  $('sleep-chip').addEventListener('click', () => { renderSleep(); present($('sleep')); });
+
+  function showHeroInfo(open) {
+    $('hero-info').hidden = !open;
+    $('info-toggle').setAttribute('aria-expanded', open);
+  }
+  $('info-toggle').addEventListener('click', () => showHeroInfo($('hero-info').hidden));
+  $('hero-info').addEventListener('click', () => showHeroInfo(false));
+  $('seek-back').addEventListener('click', () => player('keyboardSeek10Back'));
+  $('seek-forward').addEventListener('click', () => player('keyboardSeek10Forward'));
+  $('next-episode').addEventListener('click', () => player('playNextEpisode'));
+  $('skip-segment').addEventListener('click', () => {
+    if (state.active && state.skipSegment) player('skipInterval', state.skipSegment.targetMs);
+  });
+
+  // Sets a slider and paints its filled part.
+  function setRange(range, value) {
+    range.value = value;
+    range.style.setProperty('--p', ((range.value - range.min) / (range.max - range.min || 1)) * 100 + '%');
+  }
+
+  const clock = (ms) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const two = (n) => String(n).padStart(2, '0');
+    return s >= 3600 ? `${Math.floor(s / 3600)}:${two(Math.floor(s / 60) % 60)}:${two(s % 60)}` : `${Math.floor(s / 60)}:${two(s % 60)}`;
+  };
+  function showTime(position, duration) {
+    if (draggingSeek) return;
+    $('seek').max = Math.max(1, duration);
+    setRange($('seek'), position);
+    $('position').textContent = clock(position);
+    $('duration').textContent = clock(duration);
+  }
+  $('seek').addEventListener('input', () => {
+    draggingSeek = true;
+    setRange($('seek'), $('seek').value);
+    $('position').textContent = clock(Number($('seek').value));
+  });
+  $('seek').addEventListener('change', () => { draggingSeek = false; player('scrubFinish', Number($('seek').value)); });
+  $('volume').addEventListener('input', () => {
+    draggingVolume = true;
+    setRange($('volume'), $('volume').value);
+    $('volume-label').textContent = Math.round(Number($('volume').value) * 100) + '%';
+    player('volumeChangeTemporary', Number($('volume').value));
+  });
+  $('volume').addEventListener('change', () => { draggingVolume = false; player('volumeChange', Number($('volume').value)); });
+  $('play').addEventListener('click', () => player('toggle'));
+
+  // Buttons click the same control on the PC, so the PC opens its panel, and the same panel opens here.
+  document.querySelectorAll('[data-click]').forEach((btn) => btn.addEventListener('click', () => {
+    click(btn.dataset.click);
+    if (btn.dataset.panel) {
+      $('more').close();
+      openSheet(btn.dataset.panel);
+    } else if (!('stay' in btn.dataset)) {
+      $('more').close();
+    }
+  }));
+  $('more-open').addEventListener('click', () => present($('more')));
+
+  // ─── The player's panels ───
+  let openPanel = null;
+  let playerSourceFilter = '';
+  let playerSeason = null;
+  let positionPlayingEpisode = false;
+  let subtitleLanguage = '__off__';
+  let subtitleTab = 'subtitles';
+  let lastSvpMode = 'auto';
+
+  function openSheet(name) {
+    openPanel = name;
+    if (name === 'sources' || name === 'episodes') playerSourceFilter = '';
+    if (name === 'episodes') {
+      playerSeason = null;
+      positionPlayingEpisode = true;
+    }
+    if (name === 'subtitles') { subtitleLanguage = state.subtitles.language; subtitleTab = 'subtitles'; }
+    renderPanel();
+    $('panel-body').scrollTop = 0;
+    if (!$('panel').open) present($('panel'));
+  }
+  // Closing here closes the PC's panel too.
+  $('panel').addEventListener('close', () => {
+    if ($('panel').open) return;
+    const closedPanel = openPanel;
+    openPanel = null;
+    if (closedPanel === 'p2pConsent') player('cancelP2pForPlayerControls');
+    else if (closedPanel) send({ cmd: 'close' });
+  });
+  const closeSheet = () => $('panel').close();
+  function closeSheetFromPlayer() {
+    openPanel = null;
+    closeSheet();
+  }
+
+  function renderPanel() {
+    const body = $('panel-body');
+    const scroll = body.scrollTop;
+    const chipRow = '.subtitle-languages, .episode-seasons, .player-source-filters';
+    const chipScroll = body.querySelector(chipRow)?.scrollLeft ?? 0;
+    body.replaceChildren();
+    $('panel-actions').replaceChildren();
+    $('panel-subtitle').hidden = true;
+    $('panel-close').textContent = openPanel === 'p2pConsent' ? state.p2pConsent.cancelLabel : 'Close';
+    panels[openPanel]();
+    body.scrollTop = scroll;
+    const chips = body.querySelector(chipRow);
+    if (chips) chips.scrollLeft = chipScroll;
+    if (openPanel === 'episodes' && !state.episodes.streams && positionPlayingEpisode) {
+      const episode = body.querySelector('.episode[aria-current="true"]');
+      if (episode) requestAnimationFrame(() => {
+        if (openPanel !== 'episodes' || !positionPlayingEpisode || !episode.isConnected) return;
+        positionPlayingEpisode = false;
+        body.scrollTop += episode.getBoundingClientRect().top - body.getBoundingClientRect().top;
+        const activeSeason = chips?.querySelector('[aria-pressed="true"]');
+        if (activeSeason) chips.scrollLeft += activeSeason.getBoundingClientRect().left - chips.getBoundingClientRect().left;
+      });
+    }
+  }
+
+  // ─── Building blocks, from cuppa.css ───
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  const add = (...nodes) => $('panel-body').append(...nodes);
+  function header(title, subtitle) {
+    $('panel-title').textContent = title;
+    $('panel-subtitle').textContent = subtitle || '';
+    $('panel-subtitle').hidden = !subtitle;
+  }
+  function action(label, onClick) {
+    const btn = el('button', 'btn btn-sm btn-gray', label);
+    btn.addEventListener('click', onClick);
+    $('panel-actions').append(btn);
+  }
+  function tick() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'line tick');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.innerHTML = '<path d="M20 6 9 17l-5-5"/>';
+    return svg;
+  }
+  const group = (...rows) => { const list = el('div', 'group-list'); list.append(...rows); return list; };
+  const section = (title) => el('div', 'section-title', title);
+  const empty = (text) => add(el('div', 'card t-sub text-sub', text));
+
+  // A choice in a list: name, optional detail and tag, a tick when chosen.
+  function choice({ label, detail, tag, checked, disabled, onClick, trailing }) {
+    const btn = el('button', 'row');
+    btn.setAttribute('aria-checked', Boolean(checked));
+    btn.disabled = Boolean(disabled);
+    const copy = el('span', 'copy');
+    if (tag) copy.append(el('span', 'badge badge-tint badge-sq', tag));
+    copy.append(el('span', '', label));
+    if (detail) copy.append(el('small', '', detail));
+    btn.append(copy);
+    if (trailing) btn.append(trailing);
+    btn.append(tick());
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+  // A setting with a value and a - / + stepper, like the player's steppers.
+  function stepper(label, value, onMinus, onPlus, disabled = false) {
+    const row = el('div', 'row');
+    row.append(el('span', 'copy', label), el('span', 'value', value));
+    const seg = el('div', 'seg');
+    [['-', onMinus, 'Less'], ['+', onPlus, 'More']].forEach(([text, onClick, name]) => {
+      const btn = el('button', '', text);
+      btn.setAttribute('aria-label', `${name} ${label}`);
+      btn.disabled = disabled;
+      btn.addEventListener('click', onClick);
+      seg.append(btn);
+    });
+    row.append(seg);
+    return row;
+  }
+  // An on/off setting.
+  function toggle(label, detail, on, onChange, disabled = false) {
+    const row = el('label', 'row');
+    const copy = el('span', 'copy', label);
+    if (detail) copy.append(el('small', '', detail));
+    const sw = el('span', 'switch');
+    const input = el('input');
+    input.type = 'checkbox';
+    input.checked = on;
+    input.disabled = disabled;
+    input.addEventListener('change', () => onChange(input.checked));
+    sw.append(input);
+    row.append(copy, sw);
+    return row;
+  }
+
+  const languageName = (code, fallback = '') => {
+    const value = String(code || '').trim().toLowerCase().replace(/_/g, '-');
+    if (!value || value === 'und' || value === '__unknown__') return fallback || 'Unknown';
+    try { return new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(value) || value; }
+    catch (_) { return fallback || value.toUpperCase(); }
+  };
+
+  const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  const upscalerOptions = [
+    { key: 'off', label: 'Off', value: 0 }, { key: 'auto', label: 'Anime Only', value: 1 },
+    { key: 'always_on', label: 'All Media', value: 2 },
+  ];
+  const svpOptions = [
+    { mode: 'auto', label: 'Anime Only', description: '60 FPS for Anime and Cartoons only', value: 1 },
+    { mode: 'global', label: 'All Media', description: '60 FPS for all contents', value: 2 },
+  ];
+  const contentLabels = { anime: 'Anime', cartoon: 'Cartoon', live_action: 'Live Action' };
+
+  function renderSourceCards(sources, selectAction) {
+    const filters = sources.filters || [];
+    if (!filters.some((filter) => filter.id === playerSourceFilter)) playerSourceFilter = '';
+    const selected = filters.find((filter) => filter.id === playerSourceFilter);
+    if (filters.length) {
+      const chips = el('div', 'chips player-source-filters');
+      chips.setAttribute('role', 'group');
+      chips.setAttribute('aria-label', 'Source providers');
+      filters.forEach((filter) => {
+        const chip = el('button', 'chip', filter.label);
+        chip.setAttribute('aria-pressed', filter === selected);
+        if (filter.loading) chip.append(el('span', 'spin-ring sm'));
+        chip.addEventListener('click', () => {
+          playerSourceFilter = filter.id;
+          $('panel-body').scrollTop = 0;
+          renderPanel();
+        });
+        chips.append(chip);
+      });
+      add(chips);
+    }
+    const items = playerSourceFilter ? sources.items.filter((item) => item.filterId === playerSourceFilter) : sources.items;
+    const loading = playerSourceFilter ? selected?.loading : sources.loading;
+    if (!items.length) return loading ? add(loader('Loading sources…')) : empty('No streams found');
+    items.forEach((item) => {
+      const card = el('button', 'card card-tap stream');
+      card.setAttribute('aria-checked', item.current);
+      card.disabled = !item.enabled;
+      const top = el('span', 'top', item.label);
+      if (item.current) top.append(el('span', 'badge badge-solid', 'Playing'));
+      card.append(top);
+      if (item.subtitle) card.append(el('span', 'sub', item.subtitle));
+      if (item.badges.length || item.size) {
+        const badges = el('span', 'badges');
+        item.badges.forEach((src) => { const img = el('img'); img.src = src; img.alt = ''; badges.append(img); });
+        if (item.size) badges.append(el('span', 'badge badge-outline badge-sq', item.size));
+        card.append(badges);
+      }
+      bindCardMenu(card, () => player(selectAction, item.index));
+      add(card);
+    });
+  }
+
+  const panels = {
+    p2pConsent() {
+      const consent = state.p2pConsent;
+      header(consent.title);
+      add(el('p', 't-sub text-sub', consent.body));
+      action(consent.enableLabel, () => player('enableP2pForPlayerControls'));
+    },
+
+    sources() {
+      header('Sources', state.title);
+      action('Reload', () => player('reloadSources'));
+      renderSourceCards(state.sources, 'selectSource');
+    },
+
+    episodes() {
+      const { seasons, items, streams, blurUnwatched } = state.episodes;
+      if (streams) {
+        header('Episode sources', streams.title);
+        action('Reload', () => player('reloadEpisodeStreams'));
+        renderSourceCards(streams, 'selectEpisodeStream');
+        return;
+      }
+
+      header('Episodes', state.title);
+      if (!seasons.some((season) => season.number === playerSeason)) {
+        playerSeason = (seasons.find((season) => season.current) || seasons[0])?.number ?? null;
+      }
+      if (seasons.length > 1) {
+        const chips = el('div', 'chips episode-seasons');
+        seasons.forEach((season) => {
+          const chip = el('button', 'chip', season.label);
+          chip.setAttribute('aria-pressed', season.number === playerSeason);
+          chip.addEventListener('click', () => {
+            playerSeason = season.number;
+            positionPlayingEpisode = false;
+            $('panel-body').scrollTop = 0;
+            renderPanel();
+          });
+          chips.append(chip);
+        });
+        add(chips);
+      }
+      const episodes = items.filter((episode) => episode.season === playerSeason);
+      if (!episodes.length) return empty('No episodes available');
+      episodes.forEach((episode) => {
+        const blur = blurUnwatched && !episode.watched && !episode.current;
+        add(episodeCard(episode, () => player('selectEpisode', episode.index), blur));
+      });
+    },
+
+    subtitles() {
+      const subs = state.subtitles;
+      header('Subtitles');
+
+      const secondary = Boolean(subs.slots?.secondarySelected);
+      const sendSubtitle = (type, value) => player(secondary ? `secondary:${type}` : type, value);
+      if (subs.slots) {
+        const slots = el('div', 'seg seg-fill');
+        slots.setAttribute('role', 'group');
+        slots.setAttribute('aria-label', 'Subtitle slot');
+        [subs.slots.primaryLabel, subs.slots.secondaryLabel].forEach((label, index) => {
+          const btn = el('button', '', label);
+          btn.setAttribute('aria-pressed', Number(secondary) === index);
+          btn.addEventListener('click', () => player('subtitleSlot', index));
+          slots.append(btn);
+        });
+        add(slots);
+      }
+
+      // The panel's tabs; switching here switches the PC's tab too.
+      const tabs = el('div', 'seg seg-fill');
+      [['subtitles', 'Subtitles', 'subtitleTabSubtitles'], ['customization', 'Customization', 'subtitleTabCustomization']]
+        .forEach(([tab, label, target]) => {
+          const btn = el('button', '', label);
+          btn.setAttribute('aria-pressed', subtitleTab === tab);
+          btn.addEventListener('click', () => {
+            subtitleTab = tab;
+            click(target);
+            $('panel-body').scrollTop = 0;
+            renderPanel();
+          });
+          tabs.append(btn);
+        });
+      add(tabs);
+      if (subtitleTab === 'customization') {
+        return customization(subs.style, sendSubtitle);
+      }
+
+      const languages = subs.languages.some((l) => l.key === '__off__')
+        ? subs.languages : [{ key: '__off__', label: 'None', count: 0 }, ...subs.languages];
+      const chips = el('div', 'chips subtitle-languages');
+      languages.forEach((language) => {
+        const label = language.key === '__off__' ? (language.label || 'None') : (language.label || 'Imported');
+        const chip = el('button', 'chip', label);
+        chip.setAttribute('aria-pressed', language.key === subtitleLanguage);
+        if (language.count > 0) chip.append(el('span', 'count', String(language.count)));
+        chip.addEventListener('click', () => {
+          subtitleLanguage = language.key;
+          if (language.key === '__off__') sendSubtitle('selectBuiltInSubtitleTrack', -1);
+          renderPanel();
+        });
+        chips.append(chip);
+      });
+      add(chips);
+
+      const options = subs.options.filter((o) => o.language === subtitleLanguage);
+      if (subtitleLanguage === '__off__') return add(el('div', 'card t-sub text-sub', 'Subtitles are off.'));
+      add(group(...options.map((option) => choice({
+        tag: option.source, label: option.title || option.source, detail: option.metadata,
+        checked: option.id === subs.selected || option.selected,
+        onClick: () => sendSubtitle(option.kind === 'addon' ? 'selectAddonSubtitle' : 'selectBuiltInSubtitleTrack', option.index),
+      }))));
+    },
+
+    audio() {
+      const audio = state.audio;
+      header('Audio Tracks');
+      if (!audio.tracks.length) empty('No audio tracks available');
+      else add(group(...audio.tracks.map((track) => choice({
+        label: track.label || languageName(track.language) || `Track ${track.index + 1}`,
+        detail: track.language && track.language !== 'und' ? languageName(track.language) : '',
+        checked: track.selected,
+        onClick: () => { player('selectAudioTrack', track.id >= 0 ? track.id : track.index); closeSheet(); },
+      }))));
+      add(group(toggle('Night Mode (DRC)', 'Normalize loudness to boost quiet voices', audio.nightMode,
+        (on) => player('toggleAudioNightMode', on ? 1 : 0))));
+    },
+
+    enhance() {
+      const e = state.enhancements;
+      header('Enhancements');
+
+      const index = Math.max(0, upscalerOptions.findIndex((o) => o.key === e.upscaler));
+      const upscalerOff = upscalerOptions[index].key === 'off';
+      const step = (delta) => player('setAnimeUpscalerOption',
+        upscalerOptions[(index + delta + upscalerOptions.length) % upscalerOptions.length].value);
+      add(section('Anime Upscaler'), group(
+        stepper('Mode', upscalerOptions[index].label, () => step(-1), () => step(1)),
+        ...e.modes.map((mode) => choice({
+          label: mode.label, detail: mode.description, checked: !upscalerOff && mode.index === e.mode,
+          disabled: upscalerOff, onClick: () => player('setAnimeUpscalerMode', mode.index),
+        })),
+      ));
+
+      const svpOff = e.svp === 'off' || !e.svpAvailable;
+      if (!svpOff) lastSvpMode = e.svp === 'global' || e.svp === 'cinema' ? 'global' : 'auto';
+      add(section('Motion Smoothing (SVP)'));
+      if (!e.svpAvailable) add(el('div', 'note', 'Motion smoothing runtime is unavailable. Check its status in Settings.'));
+      add(group(
+        toggle('Motion smoothing', '', !svpOff, (on) => player('setSvpMode', on ? (lastSvpMode === 'global' ? 2 : 1) : 0), !e.svpAvailable),
+        ...svpOptions.map((option) => choice({
+          label: option.label, detail: option.description, checked: !svpOff && option.mode === lastSvpMode,
+          disabled: svpOff, onClick: () => { lastSvpMode = option.mode; player('setSvpMode', option.value); },
+        })),
+      ));
+      const detected = el('div', 'row');
+      detected.append(el('span', 'copy', 'Detected Content'), el('span', 'badge badge-tint', contentLabels[e.content] || 'Unknown'));
+      add(group(detected));
+    },
+
+    speed() {
+      header('Playback Speed');
+      const current = parseFloat(state.speed);
+      add(group(...speeds.map((speed) => choice({
+        label: speed === 1 ? '1x (Normal)' : `${speed}x`, checked: Math.abs(speed - current) < 0.01,
+        onClick: () => { player('setPlaybackSpeed', speed); closeSheet(); },
+      }))));
+    },
+
+    eyeFilter() {
+      header('Eye Filter');
+      add(group(
+        toggle('Eye filter', '', state.eyeFilter, (on) => player('setEyeFilterEnabled', on ? 1 : 0)),
+        toggle('Frosted matte filter', 'Film grain & frosted effect', state.frostedFilter, (on) => player('setGrainFilterEnabled', on ? 1 : 0))
+      ));
+    },
+
+    chapters() {
+      header('Chapters');
+      add(group(...state.chapters.map((chapter, i) => choice({
+        label: chapter.title || `Chapter ${i + 1}`, detail: clock(chapter.startMs),
+        onClick: () => { player('selectChapter', i); closeSheet(); },
+      }))));
+    },
+  };
+
+  // ─── Subtitles → Customization, control for control ───
+  const alphaPercent = (argb) => Math.round(parseInt(String(argb).slice(1, 3), 16) / 255 * 100);
+  const rgbHex = (argb) => '#' + String(argb).slice(3, 9);
+  const cssColor = (argb) => rgbHex(argb) + String(argb).slice(1, 3); // #AARRGGBB from the player → CSS #RRGGBBAA
+  const formatDelay = (ms) => `${ms >= 0 ? '+' : '-'}${(Math.abs(ms) / 1000).toFixed(3)}s`;
+
+  // The player's swatches, plus "Custom": the phone's own colour picker.
+  function swatches(label, colors, selected, onSwatch, onColor, disabled) {
+    const row = el('div', 'row row-stack');
+    row.append(el('span', 'copy', label));
+    const box = el('div', 'swatches');
+    colors.forEach((color, index) => {
+      const swatch = el('button', 'swatch');
+      swatch.setAttribute('aria-label', `${label} ${index + 1}`);
+      swatch.setAttribute('aria-pressed', rgbHex(color).toLowerCase() === rgbHex(selected).toLowerCase());
+      swatch.style.setProperty('--swatch', cssColor(color));
+      swatch.disabled = disabled;
+      swatch.addEventListener('click', () => onSwatch(index));
+      box.append(swatch);
+    });
+    const custom = el('label', 'btn btn-sm btn-gray custom', 'Custom');
+    const input = el('input');
+    input.type = 'color';
+    input.value = rgbHex(selected);
+    input.disabled = disabled;
+    input.addEventListener('change', () => onColor(parseInt(input.value.slice(1), 16)));
+    custom.append(input);
+    box.append(custom);
+    row.append(box);
+    return row;
+  }
+
+  function customization(style, sendSubtitle) {
+    const off = !style.custom;
+    const noEffect = style.effect === 'none';
+    const boxed = style.effect === 'background_box';
+    const text = alphaPercent(style.textColor);
+    const outline = alphaPercent(style.effectColor);
+    const delay = stepper('Subtitle Delay', formatDelay(style.delayMs),
+      () => sendSubtitle('subtitleDelayDelta', -100), () => sendSubtitle('subtitleDelayDelta', 100));
+    delay.classList.add('row-delay');
+    const reset = el('button', 'btn btn-sm btn-gray', 'Reset');
+    reset.addEventListener('click', () => sendSubtitle('subtitleDelayReset'));
+    delay.querySelector('.value').after(reset);
+    add(group(
+      delay,
+      stepper('Font Size', `${style.fontSize}sp`, () => sendSubtitle('subtitleFontSizeDelta', -1), () => sendSubtitle('subtitleFontSizeDelta', 1)),
+      stepper('Bottom Offset', String(style.bottomOffset), () => sendSubtitle('subtitleBottomOffsetDelta', -5), () => sendSubtitle('subtitleBottomOffsetDelta', 5)),
+    ));
+
+    add(group(
+      toggle('Use custom styling', '', style.custom, () => player('subtitleCustomStyleToggle')),
+      stepper('Font', style.font, () => sendSubtitle('subtitleFontDelta', -1), () => sendSubtitle('subtitleFontDelta', 1), off),
+      toggle('Bold', '', style.bold, () => sendSubtitle('subtitleBoldToggle'), off),
+      swatches('Color', style.textSwatches, style.textColor,
+        (index) => sendSubtitle('subtitleTextColor', index), (rgb) => sendSubtitle('subtitleTextColorRgb', rgb), off),
+      stepper('Text Opacity', `${text}%`, () => sendSubtitle('subtitleTextOpacity', Math.max(0, text - 10)),
+        () => sendSubtitle('subtitleTextOpacity', Math.min(100, text + 10)), off),
+      stepper('Outline Style', style.effectLabel, () => sendSubtitle('subtitleOutlineEffectDelta', -1), () => sendSubtitle('subtitleOutlineEffectDelta', 1), off),
+      swatches(boxed ? 'Box Color' : 'Outline Color', style.outlineSwatches, style.effectColor,
+        (index) => sendSubtitle('subtitleOutlineColor', index), (rgb) => sendSubtitle('subtitleOutlineColorRgb', rgb), off || noEffect),
+      stepper(boxed ? 'Box Opacity' : 'Outline Opacity', `${outline}%`, () => sendSubtitle('subtitleOutlineOpacity', Math.max(0, outline - 10)),
+        () => sendSubtitle('subtitleOutlineOpacity', Math.min(100, outline + 10)), off || noEffect),
+      stepper('Outline Thickness', String(style.outlineWidth), () => sendSubtitle('subtitleOutlineThicknessDelta', -1),
+        () => sendSubtitle('subtitleOutlineThicknessDelta', 1), off || boxed || noEffect),
+    ));
+
+    // Auto Sync: tap the line being spoken now, and the subtitle shifts to match.
+    const sync = style.autoSync;
+    const buttons = el('div', 'row');
+    buttons.append(el('span', 'copy', 'Auto Sync'));
+    [['Reload', 'subtitleAutoSyncReload'], ['Capture', 'subtitleAutoSyncCapture']].forEach(([label, type]) => {
+      const btn = el('button', 'btn btn-sm btn-gray', label);
+      btn.disabled = !sync.enabled;
+      btn.addEventListener('click', () => sendSubtitle(type));
+      buttons.append(btn);
+    });
+    const status = !sync.enabled ? 'Select an addon subtitle first' : sync.loading ? 'Loading subtitle lines...' : sync.error;
+    const rows = [buttons];
+    if (status) { const note = el('div', 'row note', status); rows.push(note); }
+    sync.cues.forEach((cue) => rows.push(choice({ label: cue.text, detail: cue.time, onClick: () => sendSubtitle('subtitleAutoSyncCue', cue.index) })));
+    add(group(...rows));
+
+    const resetAll = el('button', 'btn btn-block btn-gray', 'Reset Defaults');
+    resetAll.addEventListener('click', () => sendSubtitle('subtitleStyleReset'));
+    add(resetAll);
+  }
+
+  function stopDpadPress() {
+    if (!dpadPress) return;
+    clearTimeout(dpadPress.timer);
+    clearInterval(dpadPress.timer);
+    dpadPress.button.classList.remove('pressed');
+    dpadPress = null;
+  }
+
+  document.querySelectorAll('.dpad button').forEach((button) => {
+    const key = button.dataset.key;
+    const msg = key ? { cmd: 'key', key } : { cmd: 'ok' };
+    const ownsPress = (e) => dpadPress?.button === button && dpadPress.pointerId === e.pointerId;
+    button.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || dpadPress) return;
+      e.preventDefault();
+      button.classList.add('pressed');
+      const press = { button, pointerId: e.pointerId, longPressed: false, timer: null };
+      dpadPress = press;
+      if (key) {
+        send(msg);
+        press.timer = setTimeout(() => { press.timer = setInterval(() => send(msg), 120); }, 400);
+      } else {
+        press.timer = setTimeout(() => {
+          press.longPressed = true;
+          send({ cmd: 'okLong' });
+        }, 500);
+      }
+    });
+    button.addEventListener('pointerup', (e) => {
+      if (!ownsPress(e)) return;
+      const shortOk = !key && !dpadPress.longPressed;
+      stopDpadPress();
+      if (shortOk) send(msg);
+    });
+    ['pointerleave', 'pointercancel'].forEach((event) => {
+      button.addEventListener(event, (e) => { if (ownsPress(e)) stopDpadPress(); });
+    });
+    button.addEventListener('click', (e) => { if (e.detail === 0) send(msg); });
+    button.addEventListener('contextmenu', (e) => e.preventDefault());
+  });
+  const trackpad = $('trackpad');
+  const trackpadPointers = new Map();
+  const trackpadThreshold = 6;
+  // A tap is a short touch that does not move; a second touch soon after a tap drags.
+  const trackpadTapMax = 350;
+  const trackpadDoubleTap = 350;
+  // Windows wheel units (120 = one notch) per pixel of two-finger travel, summed over both fingers.
+  const trackpadWheelPerPx = 2.5;
+  const trackpadSend = (action, data) => send({ cmd: 'trackpad', action, ...data });
+  let trackpadGesture = null;
+  let trackpadLastTap = 0;
+  let trackpadFrame = 0;
+  let trackpadDx = 0;
+  let trackpadDy = 0;
+  let trackpadWheelX = 0;
+  let trackpadWheelY = 0;
+  let trackpadKeepAlive = 0;
+
+  function scheduleTrackpadFlush() {
+    if (!trackpadFrame) trackpadFrame = requestAnimationFrame(() => flushTrackpad());
+  }
+
+  // When the socket is backed up the totals keep building and go out once it drains, so no travel is lost.
+  function flushTrackpad(force = false) {
+    cancelAnimationFrame(trackpadFrame);
+    trackpadFrame = 0;
+    if (!force && ws?.bufferedAmount > 4096) {
+      if (trackpadDx || trackpadDy || trackpadWheelX || trackpadWheelY) scheduleTrackpadFlush();
+      return;
+    }
+    const dx = Math.trunc(trackpadDx);
+    const dy = Math.trunc(trackpadDy);
+    const wheelX = Math.trunc(trackpadWheelX);
+    const wheelY = Math.trunc(trackpadWheelY);
+    trackpadDx -= dx;
+    trackpadDy -= dy;
+    trackpadWheelX -= wheelX;
+    trackpadWheelY -= wheelY;
+    if (dx || dy) trackpadSend('move', { dx, dy });
+    if (wheelX || wheelY) trackpadSend('wheel', { dx: wheelX, dy: wheelY });
+  }
+
+  // Slow movement stays near 1:1 for precision; fast flicks cover more of the screen.
+  function trackpadGain(dx, dy, dt) {
+    const speed = Math.hypot(dx, dy) / Math.max(dt, 1);
+    return Math.min(3.5, 1 + speed * 1.6);
+  }
+
+  function endTrackpadDrag() {
+    if (!trackpadGesture?.dragging) return;
+    trackpadGesture.dragging = false;
+    clearInterval(trackpadKeepAlive);
+    trackpadSend('dragEnd');
+  }
+
+  function cancelTrackpad() {
+    endTrackpadDrag();
+    cancelAnimationFrame(trackpadFrame);
+    trackpadFrame = trackpadDx = trackpadDy = trackpadWheelX = trackpadWheelY = 0;
+    trackpadGesture = null;
+    const captured = [...trackpadPointers.keys()];
+    trackpadPointers.clear();
+    for (const id of captured) {
+      if (trackpad.hasPointerCapture(id)) trackpad.releasePointerCapture(id);
+    }
+  }
+
+  trackpad.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || ws?.readyState !== WebSocket.OPEN || trackpad.hidden) return;
+    event.preventDefault();
+    trackpad.setPointerCapture(event.pointerId);
+    trackpadPointers.set(event.pointerId, {
+      x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, t: event.timeStamp,
+    });
+    if (!trackpadGesture) {
+      const now = performance.now();
+      trackpadGesture = {
+        started: now, fingers: 1, moved: false, dragging: false, blocked: false,
+        tapDrag: now - trackpadLastTap < trackpadDoubleTap,
+      };
+      trackpadLastTap = 0;
+    } else if (trackpadGesture.fingers !== 1 || trackpadGesture.dragging) {
+      flushTrackpad(true);
+      endTrackpadDrag();
+      trackpadGesture.blocked = true;
+    } else {
+      flushTrackpad(true);
+      trackpadDx = trackpadDy = 0;
+      trackpadGesture.fingers = 2;
+      for (const point of trackpadPointers.values()) {
+        point.startX = point.x;
+        point.startY = point.y;
+      }
+    }
+  });
+
+  function moveTrackpad(event) {
+    const point = trackpadPointers.get(event.pointerId);
+    const gesture = trackpadGesture;
+    if (!point || !gesture || gesture.blocked) return;
+    const dx = event.clientX - point.x;
+    const dy = event.clientY - point.y;
+    const dt = event.timeStamp - point.t;
+    point.x = event.clientX;
+    point.y = event.clientY;
+    point.t = event.timeStamp;
+    const fromStartX = point.x - point.startX;
+    const fromStartY = point.y - point.startY;
+    const crossedThreshold = Math.hypot(fromStartX, fromStartY) >= trackpadThreshold;
+    if (trackpadPointers.size !== gesture.fingers) {
+      if (crossedThreshold) gesture.moved = true;
+      return;
+    }
+    if (gesture.fingers === 2) {
+      // Lock to the axis the fingers first travel along, like a laptop trackpad.
+      // Content follows the fingers: moving them up scrolls down, moving them left scrolls right.
+      if (gesture.axis) {
+        if (gesture.axis === 'x') trackpadWheelX -= dx * trackpadWheelPerPx;
+        else trackpadWheelY -= dy * trackpadWheelPerPx;
+      } else if (crossedThreshold) {
+        gesture.moved = true;
+        gesture.axis = Math.abs(fromStartX) > Math.abs(fromStartY) ? 'x' : 'y';
+        if (gesture.axis === 'x') trackpadWheelX -= fromStartX * trackpadWheelPerPx;
+        else trackpadWheelY -= fromStartY * trackpadWheelPerPx;
+      }
+    } else if (gesture.moved) {
+      const gain = trackpadGain(dx, dy, dt);
+      trackpadDx += dx * gain;
+      trackpadDy += dy * gain;
+    } else if (crossedThreshold) {
+      gesture.moved = true;
+      if (gesture.tapDrag) {
+        gesture.dragging = true;
+        trackpadSend('dragStart');
+        trackpadKeepAlive = setInterval(() => trackpadSend('dragKeepAlive'), 400);
+      }
+      trackpadDx += fromStartX;
+      trackpadDy += fromStartY;
+    }
+    if (gesture.moved) scheduleTrackpadFlush();
+  }
+
+  trackpad.addEventListener('pointermove', moveTrackpad);
+  trackpad.addEventListener('pointerup', (event) => {
+    if (!trackpadPointers.has(event.pointerId)) return;
+    moveTrackpad(event);
+    trackpadPointers.delete(event.pointerId);
+    if (trackpadPointers.size) return;
+    const gesture = trackpadGesture;
+    // The last of the travel goes out before dragEnd, even if the socket is backed up.
+    flushTrackpad(true);
+    if (!gesture.blocked && !gesture.moved && performance.now() - gesture.started < trackpadTapMax) {
+      trackpadSend(gesture.fingers === 1 ? 'leftClick' : 'rightClick');
+      if (gesture.fingers === 1) trackpadLastTap = performance.now();
+    }
+    cancelTrackpad();
+  });
+  for (const event of ['pointercancel', 'lostpointercapture']) {
+    trackpad.addEventListener(event, (e) => { if (trackpadPointers.has(e.pointerId)) cancelTrackpad(); });
+  }
+  trackpad.addEventListener('contextmenu', (event) => event.preventDefault());
+  window.addEventListener('pagehide', cancelTrackpad);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    stopDpadPress();
+    cancelTrackpad();
+  });
+
+  try {
+    const remembered = localStorage.getItem('nuvio_home');
+    if (remembered) showHome(JSON.parse(remembered));
+  } catch (_) {}
+  connect();
+</script>
+</body>
+</html>

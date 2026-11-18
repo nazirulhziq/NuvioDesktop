@@ -1,7 +1,14 @@
 package com.nuvio.app.features.player
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.format.formatReleaseDateForDisplay
+import com.nuvio.app.features.anime.AnimeFillerSettingsRepository
 import com.nuvio.app.features.details.MetaDetailsUiState
+import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.p2p.P2pConsentDialog
@@ -9,6 +16,8 @@ import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamsUiState
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
+import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
+import com.nuvio.app.features.watching.application.WatchingState
 
 @Composable
 internal fun PlayerScreenModalHosts(
@@ -55,6 +64,7 @@ internal fun PlayerScreenModalHosts(
     onAutoSyncCueSelected: (SubtitleSyncCue) -> Unit,
     onAutoSyncReload: () -> Unit,
     onSubtitleModalDismissed: () -> Unit,
+    onImportSubtitle: (() -> Unit)? = null,
     showVideoSettingsModal: Boolean,
     playerSettings: PlayerSettingsUiState,
     onVideoSettingsChanged: () -> Unit,
@@ -99,6 +109,7 @@ internal fun PlayerScreenModalHosts(
     onSubmitIntroEndTimeChanged: (String) -> Unit,
     onSubmitIntroDismissed: () -> Unit,
     onSubmitIntroSuccess: () -> Unit,
+    episodeImdbRatings: Map<Pair<Int, Int>, Double> = emptyMap(),
 ) {
     if (pendingP2pSwitch != null) {
         P2pConsentDialog(
@@ -166,6 +177,7 @@ internal fun PlayerScreenModalHosts(
         onAutoSyncCueSelected = onAutoSyncCueSelected,
         onAutoSyncReload = onAutoSyncReload,
         onDismiss = onSubtitleModalDismissed,
+        onImportSubtitle = onImportSubtitle,
     )
 
     IosVideoSettingsModal(
@@ -174,6 +186,50 @@ internal fun PlayerScreenModalHosts(
         onSettingsChanged = onVideoSettingsChanged,
         onDismiss = onVideoSettingsModalDismissed,
     )
+
+    val activeEpisode = remember(allEpisodes, activeSeasonNumber, activeEpisodeNumber) {
+        if (activeSeasonNumber != null && activeEpisodeNumber != null) {
+            allEpisodes.firstOrNull { it.season == activeSeasonNumber && it.episode == activeEpisodeNumber }
+        } else null
+    }
+    val metaScreenSettings by MetaScreenSettingsRepository.uiState.collectAsState()
+    val isFillerEnabled by remember {
+        AnimeFillerSettingsRepository.ensureLoaded()
+        AnimeFillerSettingsRepository.enabled
+    }.collectAsStateWithLifecycle()
+
+    val sourceReleaseDate: String?
+    val sourceRating: String?
+    val sourceIsFiller: Boolean
+    val sourceIsMixed: Boolean
+
+    if (isSeries && activeEpisode != null) {
+        val episodeVideoId = buildPlaybackVideoId(
+            parentMetaId = parentMetaId,
+            seasonNumber = activeEpisode.season,
+            episodeNumber = activeEpisode.episode,
+            fallbackVideoId = activeEpisode.id,
+        )
+        val isWatched = watchProgressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+            WatchingState.isEpisodeWatched(
+                watchedKeys = watchedKeys,
+                metaType = parentMetaType,
+                metaId = parentMetaId,
+                episode = activeEpisode,
+            )
+        sourceReleaseDate = activeEpisode.released?.takeIf { it.isNotBlank() }?.let(::formatReleaseDateForDisplay)
+        val rawRating = activeEpisode.seasonEpisodeKey()?.let { episodeImdbRatings[it] } ?: activeEpisode.rating
+        sourceRating = rawRating
+            ?.takeIf { it > 0.0 && metaScreenSettings.episodeRatingsVisibility.showRating(isWatched) }
+            ?.let(::formatEpisodeRating)
+        sourceIsFiller = activeEpisode.isFiller && isFillerEnabled
+        sourceIsMixed = activeEpisode.isMixed && isFillerEnabled
+    } else {
+        sourceReleaseDate = metaUiState.meta?.releaseInfo?.takeIf { it.isNotBlank() }
+        sourceRating = metaUiState.meta?.imdbRating?.takeIf { it.isNotBlank() }
+        sourceIsFiller = false
+        sourceIsMixed = false
+    }
 
     PlayerSourcesPanel(
         visible = showSourcesPanel,
@@ -187,6 +243,10 @@ internal fun PlayerScreenModalHosts(
         onStreamSelected = onSourceStreamSelected,
         onReload = onReloadSources,
         onDismiss = onSourcesPanelDismissed,
+        releaseDate = sourceReleaseDate,
+        imdbRating = sourceRating,
+        isFiller = sourceIsFiller,
+        isMixed = sourceIsMixed,
     )
 
     if (isSeries) {
@@ -200,6 +260,7 @@ internal fun PlayerScreenModalHosts(
             progressByVideoId = watchProgressByVideoId,
             watchedKeys = watchedKeys,
             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+            episodeRatings = episodeImdbRatings,
             episodeStreamsState = episodeStreamsPanelState.copy(
                 streamsUiState = episodeStreamsRepoState,
             ),

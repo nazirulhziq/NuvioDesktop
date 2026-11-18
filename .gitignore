@@ -38,3 +38,40 @@ iosApp/Configuration/DeviceSigning.local.json
 
 # Local MPVKit iOS build environment (sparse APFS image, see MPVKit docs)
 .mpvkit-build.sparseimage
+
+# Compiled native WiX helpers
+composeApp/src/desktopMain/wix/UninstallPrompt.exe
+composeApp/src/desktopMain/wix/DesktopShortcutHelper.exe
+
+# Package & Installer Artifacts
+*.msi
+*.wixobj
+*.wixpdb
+*.cab
+/*.wxs
+
+# JVM Crash & Diagnostic Dumps
+hs_err_pid*.log
+replay_pid*.log
+*.hprof
+
+# Editor & IDE Settings
+.vscode/
+*.code-workspace
+.vs/
+*.suo
+*.user
+
+# Windows OS Metadata
+[Tt]humbs.db
+[Tt]humbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Python Cache (Scripts)
+__pycache__/
+*.py[cod]
+!composeApp/src/desktopMain/native/windows/svp-runtime/**/*.pyd
+*$py.class

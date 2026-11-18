@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.isDesktop
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -132,7 +133,8 @@ internal fun StyledSubtitleText(
         val lineRight = (0 until layout.lineCount).maxOfOrNull { layout.getLineRight(it) } ?: 0f
         val textHeight = with(density) { (layout.size.height + paddingY * 2).toDp() }
         val radius = with(density) { (style.appearance.backgroundRadius.dp * scale).toPx() }
-        val outline = with(density) { (style.outlineWidth.dp * scale).toPx() } / 2f
+        val outline = with(density) { (style.outlineWidth.dp * scale).toPx() }
+        val strokeWidth = if (isDesktop) outline * 2f else outline
         val shadowSize = with(density) { (style.appearance.shadowSize.dp * scale).toPx() }
         Canvas(
             Modifier.fillMaxWidth().height(textHeight).semantics { this.text = text },
@@ -152,15 +154,18 @@ internal fun StyledSubtitleText(
             }
             val origin = Offset(textLeft, paddingY)
             drawRoundRect(
-                color = style.backgroundColor,
+                color = if (style.outlineEffect == SubtitleOutlineEffect.BACKGROUND_BOX) style.backgroundBoxColor else style.backgroundColor,
                 topLeft = Offset(left, 0f),
                 size = androidx.compose.ui.geometry.Size(boxWidth, size.height),
                 cornerRadius = CornerRadius(radius),
             )
             if (style.outlineEnabled && outline > 0) {
                 drawText(
-                    outlineLayout, color = style.outlineColor.copy(alpha = style.outlineColor.alpha * style.textColor.alpha),
-                    topLeft = origin, drawStyle = Stroke(outline * 2), shadow = Shadow.None,
+                    outlineLayout,
+                    color = if (isDesktop) style.outlineColor else style.outlineColor.copy(
+                        alpha = style.outlineColor.alpha * textAlpha,
+                    ),
+                    topLeft = origin, drawStyle = Stroke(strokeWidth), shadow = Shadow.None,
                 )
             }
             drawText(

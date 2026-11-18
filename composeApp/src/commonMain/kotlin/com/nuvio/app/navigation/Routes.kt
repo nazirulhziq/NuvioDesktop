@@ -1,7 +1,9 @@
 package com.nuvio.app.navigation
 
 import androidx.navigation3.runtime.NavKey
+import com.nuvio.app.features.details.PersistentHeroDetails
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 sealed interface AppRoute : NavKey {
@@ -34,11 +36,18 @@ sealed interface SettingsDestinationRoute : AppRoute {
 data object TabsRoute : AppRoute
 
 @Serializable
+data object RandomPickerRoute : AppRoute
+
+@Serializable
 data class DetailRoute(
     val type: String,
     val id: String,
     override val title: String? = null,
-) : AppRoute
+    val posterUrl: String? = null,
+) : AppRoute {
+    @Transient
+    internal var persistentHeroDetails: PersistentHeroDetails? = null
+}
 
 @Serializable
 data class PersonDetailRoute(
@@ -116,6 +125,12 @@ data class LicensesAttributionsSettingsRoute(override val title: String = "") : 
 data class CollectionsRoute(override val title: String = "") : SettingsDestinationRoute
 
 @Serializable
+data class CollectionFoldersRoute(
+    val collectionId: String,
+    override val title: String,
+) : AppRoute
+
+@Serializable
 data class CollectionEditorRoute(
     val collectionId: String? = null,
     override val title: String = "",
@@ -139,13 +154,22 @@ data class FolderDetailRoute(
 data class StreamRoute(
     val launchId: Long,
     override val title: String = "",
-) : AppRoute
+) : AppRoute {
+    @Transient
+    internal var persistentHeroDetails: PersistentHeroDetails? = null
+}
 
 @Serializable
 data class CatalogRoute(
     val launchId: Long,
     override val title: String = "",
     override val subtitle: String? = null,
+) : AppRoute
+
+@Serializable
+data class ContinueWatchingRoute(
+    val shuffleVisit: Long,
+    override val title: String,
 ) : AppRoute
 
 @Serializable
@@ -156,3 +180,10 @@ data class PlayerRoute(
     override val hidesNavigationBar: Boolean
         get() = true
 }
+
+@Serializable
+data class OnboardingRoute(
+    val isReviewMode: Boolean = false,
+    override val title: String = "",
+) : AppRoute
+

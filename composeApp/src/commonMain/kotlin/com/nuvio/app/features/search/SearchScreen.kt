@@ -1,6 +1,26 @@
 package com.nuvio.app.features.search
 
+import com.nuvio.app.core.ui.LocalFrostedGlassEnabled
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.RemoteNavigationFocusDestination
+import com.nuvio.app.core.ui.BindRemoteNavigationFocusDestination
+import com.nuvio.app.core.ui.remoteNavigationDown
+import com.nuvio.app.core.ui.remoteNavigationUp
+import com.nuvio.app.core.ui.remoteNavigationFocusDestination
+import com.nuvio.app.core.ui.revealNavigationItem
+import com.nuvio.app.core.ui.isRemoteKeyboardNavigationActive
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,10 +28,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
@@ -23,6 +46,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.nuvio.app.core.ui.BindPosterNavigationPage
+import com.nuvio.app.core.ui.PosterNavigationRow
+import com.nuvio.app.core.ui.RemotePosterRow
+import com.nuvio.app.features.home.stableKey
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.runtime.derivedStateOf
@@ -34,6 +61,22 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalFocusManager
+import com.nuvio.app.core.ui.navigationGlass
+import com.nuvio.app.core.ui.navigationGlassFeedback
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.rememberHazeState
+import com.nuvio.app.core.ui.nuvio
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -51,7 +94,11 @@ import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.nuvioConsumePointerEvents
+import com.nuvio.app.core.ui.desktopCatalogShelfPosterBaseWidthDp
+import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.PosterGlowOutset
+import com.nuvio.app.core.ui.nuvioShelfHoverOverdraw
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.core.ui.ScreenActivityEffect
 import com.nuvio.app.features.addons.AddonRepository
@@ -62,6 +109,7 @@ import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.buildAddonCatalogRefreshSignature
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
+import com.nuvio.app.features.home.components.homePosterGutterPaddingForWidth
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.home.components.HomeSkeletonRow
 import com.nuvio.app.core.ui.posterGridColumnCountForCatalogWidth
@@ -80,6 +128,7 @@ import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.home_empty_no_sources_title
 import nuvio.composeapp.generated.resources.search_empty_no_sources_message
 import nuvio.composeapp.generated.resources.compose_search_clear
+import nuvio.composeapp.generated.resources.compose_search_clear_all
 import nuvio.composeapp.generated.resources.compose_search_discover_title
 import nuvio.composeapp.generated.resources.compose_search_empty_failed_message
 import nuvio.composeapp.generated.resources.compose_search_empty_failed_title
@@ -91,6 +140,8 @@ import nuvio.composeapp.generated.resources.compose_search_placeholder
 import nuvio.composeapp.generated.resources.compose_search_recent_searches
 import nuvio.composeapp.generated.resources.compose_search_remove_recent_search
 import org.jetbrains.compose.resources.stringResource
+
+internal val LocalSearchBackdropState = staticCompositionLocalOf<HazeState?> { null }
 
 @Composable
 fun SearchScreen(
@@ -104,10 +155,26 @@ fun SearchScreen(
 ) {
     val focusRequester = remember { FocusRequester() }
     var isSearchFocused by remember { mutableStateOf(false) }
+    var isRecentSearchesFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    var searchBarBounds by remember { mutableStateOf<Rect?>(null) }
+    var pageOrigin by remember { mutableStateOf(Offset.Zero) }
+    // The shell supplies the aura beneath the scrolling sources, including at scroll position zero.
+    // The pinned search field is never captured in its own backdrop.
+    val searchBackdropState = LocalSearchBackdropState.current ?: rememberHazeState()
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    val glowOutset = if (isDesktop && posterCardStyle.glowEnabled) PosterGlowOutset else 0.dp
+    // Capture the glow as well as the card when frosted controls sample this layer.
+    val searchBackdropModifier = if (isDesktop && LocalFrostedGlassEnabled.current) {
+        Modifier.nuvioShelfHoverOverdraw(glowOutset)
+            .hazeSource(searchBackdropState)
+            .padding(glowOutset)
+    } else Modifier
 
     ScreenActivityEffect(listState) { screenActive ->
         if (!screenActive) {
             isSearchFocused = false
+            isRecentSearchesFocused = false
             focusRequester.freeFocus()
             listState.stopScroll()
         }
@@ -120,6 +187,7 @@ fun SearchScreen(
     }
 
     LaunchedEffect(Unit) {
+        HomeCatalogSettingsRepository.snapshot()
         AddonRepository.initialize()
         WatchedRepository.ensureLoaded()
         SearchHistoryRepository.ensureLoaded()
@@ -128,15 +196,54 @@ fun SearchScreen(
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val uiState by SearchRepository.uiState.collectAsStateWithLifecycle()
     val discoverUiState by SearchRepository.discoverUiState.collectAsStateWithLifecycle()
-    val homeCatalogSettingsUiState by remember {
-        HomeCatalogSettingsRepository.snapshot()
-        HomeCatalogSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val homeCatalogSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
     val recentSearches by SearchHistoryRepository.uiState.collectAsStateWithLifecycle()
     val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val fullyWatchedSeriesKeys by WatchedRepository.fullyWatchedSeriesKeys.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
+    var resultGeneration by rememberSaveable { mutableStateOf(0) }
+    // Text typed on the phone remote goes into this field, as if typed here.
+    LaunchedEffect(Unit) {
+        com.nuvio.app.features.remote.RemoteAppBridge.searchQuery.collect { remoteQuery ->
+            if (remoteQuery != null) {
+                query = remoteQuery
+                com.nuvio.app.features.remote.RemoteAppBridge.consumeSearchQuery()
+            }
+        }
+    }
+    val discoverFiltersFocus = remember { RemoteNavigationFocusDestination() }
+    val discoverPosterFocus = remember { RemoteNavigationFocusDestination() }
+    val showRecent = query.isBlank() && (isDesktop || isSearchFocused || isRecentSearchesFocused) && recentSearches.isNotEmpty()
+    val recentFocus = remember { mutableMapOf<String, RemoteNavigationFocusDestination>() }
+    val clearRecentFocus = remember { RemoteNavigationFocusDestination() }
+    val discoverKeys = buildList<Any> {
+        add("search_header")
+        if (showRecent) add("recent_searches")
+        add("discover_header")
+        add("discover_filters")
+        if (discoverUiState.selectedCatalog != null) add("discover_catalog_context")
+        add("discover_posters_0")
+    }
+    val firstEnabledFilter = discoverUiState.firstEnabledFilterIndex
+    BindRemoteNavigationFocusDestination(clearRecentFocus) {
+        if (showRecent) listState.revealNavigationItem("recent_searches", discoverKeys, stickyHeader = true)
+    }
+    BindRemoteNavigationFocusDestination(discoverFiltersFocus) {
+        if (query.isBlank() && firstEnabledFilter != null)
+            listState.revealNavigationItem("discover_filters", discoverKeys, stickyHeader = true)
+    }
+    BindRemoteNavigationFocusDestination(discoverPosterFocus) {
+        if (query.isBlank() && discoverUiState.items.isNotEmpty()) {
+            listState.revealNavigationItem("discover_posters_0", discoverKeys, stickyHeader = true)
+        }
+    }
+    val focusDiscoverFilters: suspend () -> Unit = {
+        if (firstEnabledFilter != null) discoverFiltersFocus.requestFocus()
+    }
+    val focusDiscoverPoster: suspend () -> Unit = {
+        if (discoverUiState.items.isNotEmpty()) discoverPosterFocus.requestFocus()
+    }
     var lastRequestedQuery by rememberSaveable { mutableStateOf<String?>(null) }
     var observedOfflineState by remember { mutableStateOf(false) }
     val discoverInFocus by remember(query, listState) {
@@ -157,12 +264,12 @@ fun SearchScreen(
     }
     val addonManifestsLoading = addonsUiState.addons.hasPendingEnabledManifests()
 
-    ScreenActivityEffect(addonRefreshKey, homeCatalogSettingsUiState.hideUnreleasedContent) { screenActive ->
+    ScreenActivityEffect(addonRefreshKey, homeCatalogSettings.hideUnreleasedContent) { screenActive ->
         if (!screenActive) return@ScreenActivityEffect
         SearchRepository.refreshDiscover(addonsUiState.addons)
     }
 
-    ScreenActivityEffect(query, addonRefreshKey, homeCatalogSettingsUiState.hideUnreleasedContent) { screenActive ->
+    ScreenActivityEffect(query, addonRefreshKey, homeCatalogSettings.hideUnreleasedContent) { screenActive ->
         if (!screenActive) return@ScreenActivityEffect
         val normalizedQuery = query.trim()
         if (normalizedQuery.isBlank()) {
@@ -236,10 +343,47 @@ fun SearchScreen(
         }
     }
 
+    val auraBackgroundEnabled by com.nuvio.app.features.settings.ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
+
     BoxWithConstraints(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize()
+            .onGloballyPositioned { pageOrigin = it.boundsInRoot().topLeft }
+            .pointerInput(focusManager) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (isSearchFocused && event.changes.any {
+                                it.pressed && !it.previousPressed &&
+                                    searchBarBounds?.contains(it.position + pageOrigin) == false
+                            }) {
+                            focusManager.clearFocus(force = true)
+                        }
+                    }
+                }
+            },
     ) {
-        val posterCardStyle = rememberPosterCardStyleUiState()
+        if (auraBackgroundEnabled && !isDesktop) {
+            com.nuvio.app.features.home.components.HomeInteractiveGradientBackground(
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        val useGutterLayout = homeCatalogSettings.scrollPostersLayoutEnabled && isDesktop
+        val basePosterWidthDp = desktopCatalogShelfPosterBaseWidthDp(posterCardStyle.widthDp)
+        val effectivePosterWidth = if (posterCardStyle.catalogLandscapeModeEnabled) {
+            landscapePosterWidth(basePosterWidthDp)
+        } else {
+            basePosterWidthDp.dp
+        }
+        val homeSectionPadding = remember(maxWidth) {
+            homeSectionHorizontalPaddingForWidth(maxWidth.value)
+        }
+        val effectivePosterSectionPadding = if (useGutterLayout) {
+            homePosterGutterPaddingForWidth(maxWidth.value, effectivePosterWidth, gutterSize = homeCatalogSettings.posterGutterSize)
+        } else {
+            homeSectionPadding
+        }
+        val sectionBottomPadding = if (useGutterLayout) 24.dp else 12.dp
         val discoverColumns = remember(maxWidth, maxHeight, posterCardStyle.widthDp, isDesktop) {
             if (isDesktop) {
                 posterGridColumnCountForCatalogWidth(
@@ -250,27 +394,40 @@ fun SearchScreen(
                 posterGridColumnCountForWidth(maxWidth)
             }
         }
-        val homeSectionPadding = remember(maxWidth) {
-            homeSectionHorizontalPaddingForWidth(maxWidth.value)
-        }
         val headerTitle = when {
             query.isNotBlank() -> stringResource(Res.string.compose_nav_search)
             discoverInFocus -> stringResource(Res.string.compose_search_discover_title)
             else -> stringResource(Res.string.compose_nav_search)
         }
+        val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val effectiveHeaderTopPadding = topChromePadding ?: (statusBarTop + MaterialTheme.nuvio.spacing.screenTop)
 
+        val navigationRows = if (query.isBlank()) {
+            val start = 3 + (if (showRecent) 1 else 0) + (if (discoverUiState.selectedCatalog != null) 1 else 0)
+            discoverUiState.items.chunked(discoverColumns).mapIndexed { index, items ->
+                PosterNavigationRow("discover_posters_$index", items.map { it.stableKey() }, start + index, grid = true)
+            }
+        } else uiState.sections.withDuplicateSafeLazyKeys { it.key }.mapIndexed { index, section ->
+            PosterNavigationRow(section.lazyKey, section.value.items.map { it.stableKey() }, index + 1)
+        }
+        val profile by com.nuvio.app.features.profiles.ProfileRepository.state.collectAsStateWithLifecycle()
+        BindPosterNavigationPage("search", listOf(profile.activeProfile?.profileIndex, query.trim(), resultGeneration), navigationRows, listState,
+            if (query.isBlank()) discoverUiState.isLoading || addonManifestsLoading else uiState.isLoading || lastRequestedQuery != query.trim())
+
+        SearchFocusScrollOwner(suppressReveal = { isDesktop && isSearchFocused }) {
         NuvioScreen(
             horizontalPadding = 0.dp,
-            topPadding = if (topChromePadding != null) 0.dp else null,
+            topPadding = 0.dp,
             listState = listState,
+            backgroundColor = if (isDesktop || auraBackgroundEnabled) Color.Transparent else MaterialTheme.nuvio.colors.background,
             modifier = Modifier.fillMaxSize(),
         ) {
-        stickyHeader {
+        stickyHeader(key = "search_header") {
             Box(modifier = Modifier.fillMaxWidth()) {
                 Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .background(MaterialTheme.colorScheme.background)
+                        .background(Color.Transparent)
                         .nuvioConsumePointerEvents(),
                 )
                 androidx.compose.foundation.layout.Column(
@@ -279,28 +436,37 @@ fun SearchScreen(
                     NuvioScreenHeader(
                         title = headerTitle,
                         modifier = Modifier.padding(horizontal = 16.dp),
-                        topPadding = topChromePadding,
+                        topPadding = effectiveHeaderTopPadding,
+                        backgroundColor = Color.Transparent,
+                        showFullscreenAction = false,
                     )
                     androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(6.dp))
                     androidx.compose.foundation.layout.Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         NuvioInputField(
+                            useGlass = isDesktop,
+                            glassBackdropState = searchBackdropState.takeIf { isDesktop },
                             value = query,
                             onValueChange = {
-                                focusRequester.captureFocus()
+                                if (!isDesktop) focusRequester.captureFocus()
                                 query = it
                             },
                             placeholder = stringResource(Res.string.compose_search_placeholder),
                             textStyle = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content),
                             shape = RoundedCornerShape(NuvioTokens.Radius.xl),
                             modifier = Modifier
+                                .onGloballyPositioned { searchBarBounds = it.boundsInRoot() }
+                                .remoteNavigationDown((suspend {
+                                    if (showRecent) clearRecentFocus.requestFocus() else focusDiscoverFilters()
+                                    Unit
+                                }).takeIf { isDesktop && query.isBlank() })
                                 .focusRequester(focusRequester)
                                 .onFocusChanged {
-                                    isSearchFocused = it.isFocused
-                                    if (query.isNotBlank()) focusRequester.captureFocus()
+                                    isSearchFocused = it.hasFocus
+                                    if (query.isNotBlank()) if (!isDesktop) focusRequester.captureFocus()
                                 },
                             trailingContent = if (query.isNotBlank()) {
                                 {
-                                    IconButton(onClick = { query = "" }) {
+                                    IconButton(onClick = { query = ""; focusRequester.requestFocus() }, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                                         Icon(
                                             imageVector = Icons.Rounded.Close,
                                             contentDescription = stringResource(Res.string.compose_search_clear),
@@ -319,24 +485,45 @@ fun SearchScreen(
         }
 
         if (query.isBlank()) {
-            if (isSearchFocused && recentSearches.isNotEmpty()) {
-                focusRequester.captureFocus()
+            if (showRecent) {
+                if (!isDesktop) focusRequester.captureFocus()
                 item(key = "recent_searches") {
                     SearchRecentSection(
                         recentSearches = recentSearches,
+                        auraBackgroundEnabled = auraBackgroundEnabled,
                         onSearchPress = { recentQuery -> query = recentQuery },
                         onRemoveSearch = SearchHistoryRepository::removeSearch,
+                        onClearSearches = SearchHistoryRepository::clearSearches,
+                        focusDestinations = recentFocus,
+                        clearAllFocus = clearRecentFocus,
+                        onExitDown = focusDiscoverFilters,
+                        onExitUp = { focusRequester.requestFocus(); Unit },
+                        modifier = Modifier
+                            .then(searchBackdropModifier)
+                            .onFocusChanged { isRecentSearchesFocused = it.hasFocus },
                     )
                 }
             }
                 discoverContent(
                     state = discoverUiState,
+                    filterFocus = discoverFiltersFocus,
+                    firstEnabledFilter = firstEnabledFilter,
+                    posterFocus = discoverPosterFocus,
+                    onFilterDown = focusDiscoverPoster.takeIf { isDesktop },
+                    onFilterUp = (suspend {
+                        val last = recentSearches.lastOrNull()?.let { recentFocus[it] }
+                        if (showRecent && last != null) {
+                            listState.revealNavigationItem("recent_searches", discoverKeys, stickyHeader = true)
+                            last.requestFocus()
+                        } else focusRequester.requestFocus()
+                        Unit
+                    }).takeIf { isDesktop },
                     isSourceLoading = addonManifestsLoading,
                     columns = discoverColumns,
                     networkCondition = networkStatusUiState.condition,
-                    onTypeSelected = SearchRepository::selectDiscoverType,
-                    onCatalogSelected = SearchRepository::selectDiscoverCatalog,
-                    onGenreSelected = SearchRepository::selectDiscoverGenre,
+                    onTypeSelected = { if (it != discoverUiState.selectedType) resultGeneration++; SearchRepository.selectDiscoverType(it) },
+                    onCatalogSelected = { if (it != discoverUiState.selectedCatalogKey) resultGeneration++; SearchRepository.selectDiscoverCatalog(it) },
+                    onGenreSelected = { if (it != discoverUiState.selectedGenre) resultGeneration++; SearchRepository.selectDiscoverGenre(it) },
                     onRetry = {
                         NetworkStatusRepository.requestRefresh(force = true)
                         if (addonsUiState.addons.firstEnabledManifestError() != null) {
@@ -352,6 +539,7 @@ fun SearchScreen(
                     fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
                     onPosterClick = onPosterClick,
                     onPosterLongClick = onPosterLongClick,
+                    posterContentModifier = searchBackdropModifier,
                 )
             } else {
                 val normalizedQuery = query.trim()
@@ -360,7 +548,8 @@ fun SearchScreen(
                     isWaitingForSearch -> {
                         items(2) {
                             HomeSkeletonRow(
-                                horizontalPadding = homeSectionPadding,
+                                horizontalPadding = effectivePosterSectionPadding,
+                                useGutterLayout = useGutterLayout,
                             )
                         }
                     }
@@ -368,7 +557,8 @@ fun SearchScreen(
                     (uiState.isLoading || addonManifestsLoading) && uiState.sections.isEmpty() -> {
                         items(2) {
                             HomeSkeletonRow(
-                                horizontalPadding = homeSectionPadding,
+                                horizontalPadding = effectivePosterSectionPadding,
+                                useGutterLayout = useGutterLayout,
                             )
                         }
                     }
@@ -393,7 +583,7 @@ fun SearchScreen(
                                         }
                                     }
                                 },
-                                modifier = Modifier.padding(horizontal = homeSectionPadding),
+                                modifier = Modifier.padding(horizontal = effectivePosterSectionPadding),
                             )
                         }
                     }
@@ -404,19 +594,25 @@ fun SearchScreen(
                             key = { section -> section.lazyKey },
                         ) { keyedSection ->
                             val section = keyedSection.value
-                            HomeCatalogRowSection(
-                                section = section,
-                                modifier = Modifier.padding(bottom = 12.dp),
-                                watchedKeys = watchedUiState.watchedKeys,
-                                fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
-                                onPosterClick = onPosterClick,
-                                onPosterLongClick = onPosterLongClick,
-                            )
+                            RemotePosterRow("search", keyedSection.lazyKey) {
+                                Box(modifier = Modifier.padding(bottom = sectionBottomPadding).then(searchBackdropModifier)) {
+                                    HomeCatalogRowSection(
+                                        section = section,
+                                        sectionPadding = effectivePosterSectionPadding,
+                                        useGutterLayout = useGutterLayout,
+                                        watchedKeys = watchedUiState.watchedKeys,
+                                        fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                                        onPosterClick = onPosterClick,
+                                        onPosterLongClick = onPosterLongClick,
+                                    )
+                                }
+                            }
                         }
                         if (uiState.isLoading) {
                             item(key = "search_loading_more") {
                                 HomeSkeletonRow(
-                                    horizontalPadding = homeSectionPadding,
+                                    horizontalPadding = effectivePosterSectionPadding,
+                                    useGutterLayout = useGutterLayout,
                                 )
                             }
                         }
@@ -425,6 +621,22 @@ fun SearchScreen(
             }
         }
     }
+    }
+}
+
+/** A pinned input is already visible; its original lazy-item position must not be revealed. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun SearchFocusScrollOwner(suppressReveal: () -> Boolean, content: @Composable () -> Unit) {
+    val defaultReveal = LocalBringIntoViewSpec.current
+    val suppressed by rememberUpdatedState(suppressReveal)
+    val reveal = remember(defaultReveal) {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+                if (suppressed()) 0f else defaultReveal.calculateScrollDistance(offset, size, containerSize)
+        }
+    }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides reveal, content = content)
 }
 
 @Composable
@@ -486,30 +698,89 @@ private fun SearchEmptyStateCard(
 }
 
 @Composable
-private fun SearchRecentSection(
+internal fun SearchRecentSection(
     recentSearches: List<String>,
+    auraBackgroundEnabled: Boolean,
     onSearchPress: (String) -> Unit,
     onRemoveSearch: (String) -> Unit,
+    onClearSearches: () -> Unit,
     modifier: Modifier = Modifier,
+    focusDestinations: MutableMap<String, RemoteNavigationFocusDestination> = remember { mutableMapOf() },
+    clearAllFocus: RemoteNavigationFocusDestination = remember { RemoteNavigationFocusDestination() },
+    onExitDown: (suspend () -> Unit)? = null,
+    onExitUp: (suspend () -> Unit)? = null,
 ) {
+    val scope = rememberCoroutineScope()
+    val keyboard = isRemoteKeyboardNavigationActive
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
-            text = stringResource(Res.string.compose_search_recent_searches),
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.compose_search_recent_searches),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = stringResource(Res.string.compose_search_clear_all),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .remoteNavigationFocusDestination(clearAllFocus)
+                    .remoteNavigationDown {
+                        recentSearches.firstOrNull()?.let { focusDestinations[it]?.requestFocus() }
+                    }
+                    .remoteNavigationUp(onExitUp)
+                    .remoteNavigationTarget(shape = RoundedCornerShape(8.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClick = {
+                            if (keyboard) scope.launch {
+                                onExitUp?.invoke()
+                                onClearSearches()
+                            } else onClearSearches()
+                        },
+                    )
+                    .padding(horizontal = 12.dp, vertical = 14.dp),
+            )
+        }
         Spacer(modifier = Modifier.height(4.dp))
-        recentSearches.forEach { recentQuery ->
+        recentSearches.forEachIndexed { index, recentQuery ->
+            key(recentQuery) {
+            val destination = focusDestinations.getOrPut(recentQuery) { RemoteNavigationFocusDestination() }
             SearchRecentRow(
                 query = recentQuery,
+                auraBackgroundEnabled = auraBackgroundEnabled,
                 onSearchPress = { onSearchPress(recentQuery) },
-                onRemovePress = { onRemoveSearch(recentQuery) },
+                onRemovePress = {
+                    val remaining = recentSearches.filterNot { it == recentQuery }
+                    if (keyboard) scope.launch {
+                        val next = remaining.getOrNull(index.coerceAtMost(remaining.lastIndex))
+                        if (next != null) focusDestinations[next]?.requestFocus() else onExitUp?.invoke()
+                        onRemoveSearch(recentQuery)
+                    } else onRemoveSearch(recentQuery)
+                },
+                modifier = Modifier
+                    .remoteNavigationFocusDestination(destination)
+                    .remoteNavigationDown {
+                        val next = recentSearches.getOrNull(index + 1)?.let { focusDestinations[it] }
+                        if (next != null) next.requestFocus() else onExitDown?.invoke()
+                    }
+                    .remoteNavigationUp {
+                        val previous = recentSearches.getOrNull(index - 1)?.let { focusDestinations[it] }
+                        if (previous != null) previous.requestFocus() else clearAllFocus.requestFocus()
+                    },
             )
+            }
         }
         Spacer(modifier = Modifier.height(6.dp))
     }
@@ -518,20 +789,31 @@ private fun SearchRecentSection(
 @Composable
 internal fun SearchRecentRow(
     query: String,
+    auraBackgroundEnabled: Boolean,
     onSearchPress: () -> Unit,
     onRemovePress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val cardColor = if (auraBackgroundEnabled) {
+        MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+    } else {
+        MaterialTheme.nuvio.colors.surfaceCard
+    }
+    val shape = RoundedCornerShape(16.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onSearchPress)
             .padding(vertical = 2.dp)
-            .background(
-                color = MaterialTheme.colorScheme.background,
-                shape = RoundedCornerShape(16.dp),
+            .then(
+                if (isDesktop) Modifier.navigationGlass(shape = shape, backgroundOnly = true)
+                    .navigationGlassFeedback(interactionSource, shape)
+                else Modifier.clip(shape).background(cardColor),
             )
-            .padding(start = 2.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            .remoteNavigationTarget(shape = shape)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onSearchPress)
+            .padding(start = 16.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -543,7 +825,7 @@ internal fun SearchRecentRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(onClick = onRemovePress) {
+        IconButton(onClick = onRemovePress, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
             Icon(
                 imageVector = Icons.Rounded.Close,
                 contentDescription = stringResource(Res.string.compose_search_remove_recent_search),

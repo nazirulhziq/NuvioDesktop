@@ -66,7 +66,8 @@ class CollectionCardRemoteImageTest {
             val card = compose.onNodeWithTag("card")
             fun waitForColor(channel: Int) {
                 compose.waitUntil(timeoutMillis = 5_000) {
-                    val color = card.captureToImage().toPixelMap()[16, 16]
+                    val pixelMap = card.captureToImage().toPixelMap()
+                    val color = pixelMap[16, 16]
                     when (channel) {
                         0 -> color.red > 0.8f && color.green < 0.1f
                         1 -> color.green > 0.4f && color.red < 0.1f
@@ -74,13 +75,13 @@ class CollectionCardRemoteImageTest {
                     }
                 }
             }
-            waitForColor(2)
-            card.performMouseInput { enter(center) }
+            // Visible cards animate automatically once loaded.
+            compose.waitUntil(timeoutMillis = 5_000) { requests.get() >= 1 }
             waitForColor(0)
             waitForColor(1)
-            assertEquals(1, requests.get())
-            card.performMouseInput { exit() }
-            waitForColor(2)
+            // Playback must reuse the decoded codec instead of fetching the asset a
+            // second time, so the request count stays at one.
+            assertEquals(1, requests.get(), "the focus asset must be fetched exactly once")
         } finally {
             server.stop(0)
         }

@@ -1,5 +1,17 @@
 package com.nuvio.app.features.collection
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
+import com.nuvio.app.core.ui.navigationGlassSource
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.home.components.HomeInteractiveGradientBackground
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,7 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -79,91 +91,107 @@ fun CollectionManagementScreen(
     var showDeleteConfirm by remember { mutableStateOf<String?>(null) }
     var showCopyError by remember { mutableStateOf(false) }
 
-    NuvioScreen {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = stringResource(Res.string.collections_header),
-                onBack = onBack,
-            ) {
-                IconButton(onClick = {
-                    val json = CollectionRepository.exportToJson()
-                    showCopyError = runCatching {
-                        clipboardManager.setText(AnnotatedString(json))
-                    }.isFailure
-                }) {
-                    Icon(
-                        imageVector = Icons.Rounded.ContentCopy,
-                        contentDescription = stringResource(Res.string.collections_copy_json),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                IconButton(onClick = { showImportDialog = true }) {
-                    Icon(
-                        imageVector = Icons.Rounded.ContentPaste,
-                        contentDescription = stringResource(Res.string.collections_import),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-        item {
-            NuvioSurfaceCard {
-                Text(
-                    text = stringResource(
-                        Res.string.collections_count_summary,
-                        collections.size,
-                        collections.sumOf { it.folders.size },
-                    ),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+    val auraEnabled by ThemeSettingsRepository.auraBackgroundEnabled.collectAsStateWithLifecycle()
+    val sidebarInset = LocalDesktopSidebarContentInset.current
 
-        item {
-            NuvioPrimaryButton(
-                text = stringResource(Res.string.collections_new),
-                onClick = { onNavigateToEditor(null) },
-            )
+    Box(Modifier.fillMaxSize()) {
+        if (auraEnabled) {
+            HomeInteractiveGradientBackground(Modifier.fillMaxSize())
+        } else {
+            Box(Modifier.fillMaxSize().navigationGlassSource(zIndex = -1f).background(MaterialTheme.nuvio.colors.background))
         }
-
-        if (collections.isNotEmpty()) {
-            item { NuvioSectionLabel(text = stringResource(Res.string.collections_your_collections)) }
-        }
-
-        if (collections.isNotEmpty()) {
-            item {
-                CollectionReorderableList(
-                    collections = collections,
-                    onEdit = { onNavigateToEditor(it) },
-                    onDelete = { showDeleteConfirm = it },
-                )
-            }
-        }
-
-        if (collections.isEmpty()) {
-            item {
-                NuvioSurfaceCard(
-                    modifier = Modifier.padding(top = 24.dp),
+        NuvioScreen(
+            backgroundColor = Color.Transparent,
+            sidebarContentInset = sidebarInset,
+        ) {
+            stickyHeader {
+                NuvioScreenHeader(
+                    title = stringResource(Res.string.collections_header),
+                    backgroundColor = Color.Transparent,
+                    onBack = onBack,
+                    backButtonKeyboardNavigationEnabled = false,
+                    showFullscreenAction = false,
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Folder,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    IconButton(onClick = {
+                        val json = CollectionRepository.exportToJson()
+                        showCopyError = runCatching {
+                            clipboardManager.setText(AnnotatedString(json))
+                        }.isFailure
+                    }, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentCopy,
+                            contentDescription = stringResource(Res.string.collections_copy_json),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = { showImportDialog = true }, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentPaste,
+                            contentDescription = stringResource(Res.string.collections_import),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            item {
+                NuvioSurfaceCard {
                     Text(
-                        text = stringResource(Res.string.collections_empty_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(Res.string.collections_empty_subtitle),
+                        text = stringResource(
+                            Res.string.collections_count_summary,
+                            collections.size,
+                            collections.sumOf { it.folders.size },
+                        ),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+
+            item {
+                NuvioPrimaryButton(
+                    text = stringResource(Res.string.collections_new),
+                    onClick = { onNavigateToEditor(null) },
+                )
+            }
+
+            if (collections.isNotEmpty()) {
+                item { NuvioSectionLabel(text = stringResource(Res.string.collections_your_collections)) }
+            }
+
+            if (collections.isNotEmpty()) {
+                item {
+                    CollectionReorderableList(
+                        collections = collections,
+                        onEdit = { onNavigateToEditor(it) },
+                        onDelete = { showDeleteConfirm = it },
+                    )
+                }
+            }
+
+            if (collections.isEmpty()) {
+                item {
+                    NuvioSurfaceCard(
+                        modifier = Modifier.padding(top = 24.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Folder,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(Res.string.collections_empty_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(Res.string.collections_empty_subtitle),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -241,10 +269,10 @@ private fun CollectionReorderableList(
         hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
     }
 
-    LazyColumn(
-        modifier = Modifier
+    NuvioLazyColumn(
+        modifier = Modifier.remoteNavigationGroup().then(Modifier
             .fillMaxWidth()
-            .heightIn(max = 720.dp),
+            .heightIn(max = 720.dp)),
         state = lazyListState,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -315,7 +343,7 @@ private fun CollectionListItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(
-                modifier = with(dragHandleScope) {
+                modifier = (with(dragHandleScope) {
                     Modifier.draggableHandle(
                         onDragStarted = {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -324,7 +352,7 @@ private fun CollectionListItem(
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         },
                     ).size(36.dp)
-                },
+                }).remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
                 onClick = {},
             ) {
                 Icon(
@@ -337,7 +365,7 @@ private fun CollectionListItem(
             Spacer(modifier = Modifier.weight(1f))
             IconButton(
                 onClick = onEdit,
-                modifier = Modifier.size(36.dp),
+                modifier = (Modifier.size(36.dp)).remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Edit,
@@ -348,7 +376,7 @@ private fun CollectionListItem(
             }
             IconButton(
                 onClick = onDelete,
-                modifier = Modifier.size(36.dp),
+                modifier = (Modifier.size(36.dp)).remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Delete,
@@ -377,9 +405,9 @@ private fun ImportDialog(
         OutlinedTextField(
             value = importText,
             onValueChange = onTextChange,
-            modifier = Modifier
+            modifier = (Modifier
                 .fillMaxWidth()
-                .height(160.dp),
+                .height(160.dp)).remoteNavigationTarget(textField = true),
             placeholder = {
                 Text(
                     stringResource(Res.string.collections_import_json_placeholder),

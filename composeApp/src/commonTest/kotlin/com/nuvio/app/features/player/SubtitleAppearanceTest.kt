@@ -16,9 +16,9 @@ class SubtitleAppearanceTest {
 
     @Test
     fun customOutlineWidthUsesStyledOverlay() {
-        assertTrue(SubtitleStyleState(outlineWidth = 4).usesStyledOverlay)
-        assertFalse(SubtitleStyleState(outlineWidth = 4, outlineEnabled = false).usesStyledOverlay)
-        assertFalse(SubtitleStyleState(outlineWidth = SUBTITLE_OUTLINE_WIDTH_DEFAULT).usesStyledOverlay)
+        assertTrue(SubtitleStyleState(outlineWidth = 4f).usesStyledOverlay)
+        assertFalse(SubtitleStyleState(outlineWidth = 4f, outlineEnabled = false).usesStyledOverlay)
+        assertFalse(SubtitleStyleState(outlineWidth = SubtitleStyleState.DEFAULT.outlineWidth).usesStyledOverlay)
     }
 
     @Test

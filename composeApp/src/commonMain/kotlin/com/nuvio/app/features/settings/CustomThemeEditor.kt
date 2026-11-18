@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -16,7 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -69,13 +71,18 @@ internal fun CustomThemeEditor(
     allowGradient: Boolean,
     onSave: (CustomThemeColors) -> Unit,
     onDismiss: () -> Unit,
+    title: String? = null,
+    subtitle: String? = null,
+    saveLabel: String? = null,
+    forceThreeColors: Boolean = false,
+    preview: (@Composable (CustomThemeColors) -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var encodedColors by rememberSaveable(allowGradient) { mutableStateOf(initialColors.encode()) }
     var gradientEnabled by rememberSaveable(allowGradient) {
-        mutableStateOf(allowGradient && !initialColors.isSolid)
+        mutableStateOf(forceThreeColors || (allowGradient && !initialColors.isSolid))
     }
     var selectedIndex by rememberSaveable(gradientEnabled) { mutableStateOf(0) }
     val draftColors = CustomThemeColors.decode(encodedColors)
@@ -103,17 +110,17 @@ internal fun CustomThemeEditor(
             verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
         ) {
             Text(
-                text = stringResource(
+                text = title ?: stringResource(
                     if (gradientEnabled) Res.string.custom_theme_title else Res.string.custom_theme_solid_title,
                 ),
                 style = MaterialTheme.typography.titleLarge,
                 color = tokens.colors.textPrimary,
             )
             Column(
-                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                modifier = Modifier.weight(1f).nuvioVerticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s16),
             ) {
-                if (allowGradient) {
+                if (allowGradient && !forceThreeColors) {
                     FlowRow(
                         modifier = Modifier.selectableGroup(),
                         horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
@@ -127,7 +134,7 @@ internal fun CustomThemeEditor(
                                         if (gradient) Res.string.custom_theme_mode_gradient else Res.string.custom_theme_mode_solid,
                                     ))
                                 },
-                                modifier = Modifier.semantics { role = Role.RadioButton },
+                                modifier = (Modifier.semantics { role = Role.RadioButton }).remoteNavigationTarget(),
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -137,13 +144,13 @@ internal fun CustomThemeEditor(
                     }
                 }
                 Text(
-                    text = stringResource(
+                    text = subtitle ?: stringResource(
                         if (gradientEnabled) Res.string.custom_theme_subtitle else Res.string.custom_theme_solid_subtitle,
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = tokens.colors.textSecondary,
                 )
-                CustomThemePreview(colors)
+                if (preview != null) preview(colors) else CustomThemePreview(colors)
                 if (gradientEnabled) {
                     Row(horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8)) {
                         colors.colors.forEachIndexed { index, color ->
@@ -194,11 +201,11 @@ internal fun CustomThemeEditor(
                 modifier = Modifier.padding(bottom = NuvioTokens.Space.s12),
                 horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
             ) {
-                TextButton(onClick = ::dismiss, modifier = Modifier.height(NuvioTokens.Space.s48 + NuvioTokens.Space.s4)) {
+                TextButton(onClick = ::dismiss, modifier = (Modifier.height(NuvioTokens.Space.s48 + NuvioTokens.Space.s4)).remoteNavigationTarget(shape = androidx.compose.material3.ButtonDefaults.shape)) {
                     Text(stringResource(Res.string.action_cancel))
                 }
                 NuvioPrimaryButton(
-                    text = stringResource(Res.string.custom_theme_save),
+                    text = saveLabel ?: stringResource(Res.string.custom_theme_save),
                     modifier = Modifier.weight(1f),
                     enabled = validHex,
                     onClick = {
@@ -228,7 +235,7 @@ private fun ThemeColorSlot(
                 if (selected) tokens.colors.textPrimary else tokens.colors.borderDefault,
                 tokens.shapes.compactCard,
             )
-            .selectable(selected, role = Role.RadioButton, onClick = onClick)
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).selectable(selected, role = Role.RadioButton, onClick = onClick)
             .padding(NuvioTokens.Space.s8),
         verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
     ) {

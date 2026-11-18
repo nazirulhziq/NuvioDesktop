@@ -1,6 +1,10 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.anime.AnimeFillerSettingsRepository
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
@@ -18,6 +22,15 @@ internal fun LazyListScope.integrationsContent(
     onDebridClick: () -> Unit,
 ) {
     item {
+        val animeFillerEnabled by remember {
+            AnimeFillerSettingsRepository.ensureLoaded()
+            AnimeFillerSettingsRepository.enabled
+        }.collectAsStateWithLifecycle()
+        val animeHideFillers by remember {
+            AnimeFillerSettingsRepository.ensureLoaded()
+            AnimeFillerSettingsRepository.hideFillers
+        }.collectAsStateWithLifecycle()
+
         SettingsSection(
             title = stringResource(Res.string.settings_integrations_section_title),
             isTablet = isTablet,
@@ -45,6 +58,23 @@ internal fun LazyListScope.integrationsContent(
                     isTablet = isTablet,
                     onClick = onDebridClick,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Anime Filler Detection",
+                    description = "Identify and mark filler episodes across catalog and metadata addons",
+                    checked = animeFillerEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = AnimeFillerSettingsRepository::setEnabled,
+                )
+                if (animeFillerEnabled) {
+                    SettingsSwitchRow(
+                        title = "Hide Anime Filler Episodes",
+                        description = "Hide filler episodes from episode lists and skip them during playback (mixed episodes are kept)",
+                        checked = animeHideFillers,
+                        isTablet = isTablet,
+                        onCheckedChange = AnimeFillerSettingsRepository::setHideFillers,
+                    )
+                }
             }
         }
     }

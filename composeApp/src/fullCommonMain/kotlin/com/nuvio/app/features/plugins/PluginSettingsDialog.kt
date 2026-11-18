@@ -1,9 +1,11 @@
 package com.nuvio.app.features.plugins
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material3.*
@@ -46,7 +48,7 @@ fun PluginSettingsDialog(
         Column(
             modifier = Modifier
                 .weight(1f, fill = false)
-                .verticalScroll(rememberScrollState()),
+                .nuvioVerticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             layout.forEach { element ->
@@ -103,7 +105,7 @@ fun PluginSettingsDialog(
                             Box {
                                 OutlinedButton(
                                     onClick = { expanded = true },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = (Modifier.fillMaxWidth()).remoteNavigationTarget(shape = RoundedCornerShape(14.dp)),
                                     shape = RoundedCornerShape(14.dp),
                                     contentPadding = PaddingValues(16.dp)
                                 ) {
@@ -169,7 +171,7 @@ fun PluginSettingsDialog(
                             Switch(
                                 checked = value,
                                 onCheckedChange = { currentSettings[key] = JsonPrimitive(it) }
-                            )
+                            , modifier = Modifier.remoteNavigationTarget())
                         }
                     }
                 }

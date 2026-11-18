@@ -18,6 +18,7 @@ internal data class CatalogLaunch(
     val title: String,
     val subtitle: String,
     val target: CatalogTarget,
+    val heroPreview: MetaPreview? = null,
 )
 
 internal object CatalogLaunchStore {
@@ -40,7 +41,7 @@ internal object CatalogLaunchStore {
 internal fun NuvioNavigator.openPreview(meta: MetaPreview) {
     val collection = ServerCatalog.collectionTarget(meta)
     if (collection == null) {
-        navigate(DetailRoute(type = meta.type, id = meta.id, title = meta.name))
+        navigate(DetailRoute(type = meta.type, id = meta.id, title = meta.name, posterUrl = meta.poster))
         return
     }
     val subtitle = ServerCatalog.sourceLabel(collection)
@@ -66,6 +67,8 @@ internal fun CatalogDestination(
         title = launch.title,
         subtitle = launch.subtitle,
         target = target,
+        initialHeroPreview = launch.heroPreview,
+        launchId = route.launchId,
         onBack = onBack,
         onPosterClick = navController::openPreview,
         onPosterLongClick = { meta: MetaPreview ->

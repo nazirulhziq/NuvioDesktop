@@ -90,7 +90,7 @@ class PlayerSourceFallbackTest {
 
         assertEquals(candidates[0].url, runtime.activeSourceUrl)
         assertEquals(120_000L, runtime.activeInitialPositionMs)
-        assertEquals(candidates[0].url, runtime.autoSelectedSourceUrl)
+        assertEquals(candidates[0].url, runtime.sourceFallbackUrl)
     }
 
     @Test
@@ -141,7 +141,7 @@ class PlayerSourceFallbackTest {
 
         runtime.restartSourceFallback(nextUrl, PlayerSourceFallbackTried(keys = setOf("tried while resolving"), attempts = 1))
 
-        assertEquals(nextUrl, runtime.autoSelectedSourceUrl)
+        assertEquals(nextUrl, runtime.sourceFallbackUrl)
         assertEquals(1, runtime.sourceFallbackAttempts)
         assertEquals(setOf("tried while resolving"), runtime.sourceFallbackTriedKeys)
     }
@@ -154,7 +154,7 @@ class PlayerSourceFallbackTest {
 
         runtime.restartSourceFallback(pickedUrl, autoSelection = null)
 
-        assertNull(runtime.autoSelectedSourceUrl)
+        assertNull(runtime.sourceFallbackUrl)
         assertEquals(0, runtime.sourceFallbackAttempts)
         assertFalse(runtime.tryFallbackToNextSourceAfterError("failed"))
     }

@@ -1,0 +1,321 @@
+package com.nuvio.app.features.remote
+
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asComposeImageBitmap
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import com.nuvio.app.DesktopRemoteCursorController
+import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.core.ui.RemoteNavigationDispatcher
+import com.nuvio.app.features.anime.AnimeFillerSettingsRepository
+import com.nuvio.app.features.player.PlayerSettingsRepository
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import nuvio.composeapp.generated.resources.Res
+import io.ktor.server.application.install
+import io.ktor.server.cio.CIO
+import io.ktor.server.engine.EmbeddedServer
+import io.ktor.server.engine.embeddedServer
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.response.header
+import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
+import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
+import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.NetworkInterface
+import javax.swing.SwingUtilities
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.ImageInfo
+
+/** Serves the phone remote page on the LAN and takes button presses over a WebSocket. */
+internal object DesktopRemoteServer : RemoteServerPlatform {
+    private const val ENABLED_KEY = "enabled"
+    private const val PORT_KEY = "port"
+    private val ICON_SIZES = setOf("180", "192", "512")
+    private val RATING_LOGO = Regex("""rating_[a-z_]+\.svg""")
+    private val store = DesktopStorage.store("nuvio_remote_settings")
+    private var server: EmbeddedServer<*, *>? = null
+    private var trackpad: RemoteTrackpad? = null
+
+    fun install() {
+        AnimeFillerSettingsRepository.ensureLoaded()
+        RemoteServer.install(this)
+    }
+
+    override fun loadEnabled(): Boolean = store.getBoolean(ENABLED_KEY) ?: false
+
+    override fun loadPort(): Int? = store.getInt(PORT_KEY)
+
+    override fun save(enabled: Boolean, port: Int) {
+        store.putBoolean(ENABLED_KEY, enabled)
+        store.putInt(PORT_KEY, port)
+    }
+
+    @Synchronized
+    override fun start(port: Int): RemoteServer.Connection {
+        val devices = MutableStateFlow<List<RemoteDevice>>(emptyList())
+        val pointer = RemoteTrackpad()
+        val engine = embeddedServer(CIO, port = port, host = "0.0.0.0") {
+            install(WebSockets) {
+                pingPeriodMillis = 15_000
+                timeoutMillis = 10_000
+            }
+            routing {
+                // no-store: the phone always gets the current page, never a cached older one.
+                get("/") {
+                    call.response.header("Cache-Control", "no-store")
+                    call.respondText(page(), ContentType.Text.Html)
+                }
+                get("/cuppa.css") {
+                    call.response.header("Cache-Control", "no-store")
+                    call.respondText(resource("cuppa.css"), ContentType.Text.CSS)
+                }
+                // Motion (motion.dev) for the page's animations; pinned, so the phone can keep it.
+                get("/motion.mjs") {
+                    call.response.header("Cache-Control", "max-age=31536000, immutable")
+                    call.respondText(resource("motion.mjs"), ContentType.Text.JavaScript)
+                }
+                // "Add to Home Screen": the manifest and icons, so the remote opens full screen like an app.
+                get("/manifest.webmanifest") {
+                    call.respondText(resource("manifest.webmanifest"), ContentType.parse("application/manifest+json"))
+                }
+                // The rating logos the PC's hero shows, from the app's own drawables.
+                get("/rating/{file}") {
+                    val file = call.parameters["file"]?.takeIf { RATING_LOGO.matches(it) }
+                    val bytes = file?.let { runCatching { Res.readBytes("drawable/$it") }.getOrNull() }
+                    if (bytes == null) call.respond(HttpStatusCode.NotFound) else call.respondBytes(bytes, ContentType.Image.SVG)
+                }
+                get("/icon-{size}.png") {
+                    val bytes = call.parameters["size"]?.takeIf { it in ICON_SIZES }
+                        ?.let { javaClass.getResource("/remote/icon-$it.png")?.readBytes() }
+                    if (bytes == null) call.respond(HttpStatusCode.NotFound) else call.respondBytes(bytes, ContentType.Image.PNG)
+                }
+                webSocket("/ws") {
+                    val device = remoteDevice(call.request.local.remoteAddress, call.request.headers[HttpHeaders.UserAgent])
+                    val cardMenus = RemoteCardMenuSession()
+                    val pointerSession = Any()
+                    val player = launch {
+                        combine(
+                            RemotePlayerLink.state,
+                            PlayerSettingsRepository.uiState.map { it.grainFilterEnabled }.distinctUntilChanged(),
+                        ) { state, _ ->
+                            RemotePlayerPanels.message(state, RemotePlayerLink.audioTracks())
+                        }.distinctUntilChanged().collect { send(Frame.Text(it)) }
+                    }
+                    // Browsing: Home's rows and the search results.
+                    val home = launch { RemoteHome.homeMessages.collect { send(Frame.Text(it)) } }
+                    val search = launch { RemoteHome.searchMessages.collect { send(Frame.Text(it)) } }
+                    val catalog = launch { RemoteHome.catalogMessages.collect { send(Frame.Text(it)) } }
+                    val folder = launch { RemoteFolderPage.messages.collect { send(Frame.Text(it)) } }
+                    val discover = launch { RemoteSearch.messages.collect { send(Frame.Text(it)) } }
+                    val shuffle = launch { RemoteShufflePage.messages.collect { send(Frame.Text(it)) } }
+                    val library = launch { RemoteLibrary.messages.collect { send(Frame.Text(it)) } }
+                    val sleep = launch { RemoteSleepTimer.messages.collect { send(Frame.Text(it)) } }
+                    // Following the PC into a title, its sources and the player.
+                    val pages = launch {
+                        launch { RemoteDetails.routeMessages.collect { send(Frame.Text(it)) } }
+                        launch { RemoteDetails.detailsMessages.collect { send(Frame.Text(it)) } }
+                        launch { RemoteDetails.streamsMessages.collect { send(Frame.Text(it)) } }
+                    }
+                    // The seek bar: position once a second while the player is open.
+                    val progress = launch {
+                        while (true) {
+                            RemotePlayerLink.progress()?.let { (position, duration) ->
+                                send(Frame.Text("""{"k":"time","position":$position,"duration":$duration}"""))
+                            }
+                            delay(1_000)
+                        }
+                    }
+                    devices.update { it + device }
+                    try {
+                        for (frame in incoming) {
+                            if (frame !is Frame.Text) continue
+                            val json = runCatching { Json.parseToJsonElement(frame.readText()).jsonObject }.getOrNull() ?: continue
+                            val cmd = (json["cmd"] as? JsonPrimitive)?.contentOrNull ?: continue
+                            if (cmd == "trackpad") pointer.handle(pointerSession, json)
+                            else handle(cmd, json, cardMenus) { send(Frame.Text(it)) }
+                        }
+                    } finally {
+                        pointer.disconnect(pointerSession)
+                        devices.update { it - device }
+                        player.cancel()
+                        progress.cancel()
+                        home.cancel()
+                        search.cancel()
+                        catalog.cancel()
+                        folder.cancel()
+                        discover.cancel()
+                        shuffle.cancel()
+                        library.cancel()
+                        sleep.cancel()
+                        pages.cancel()
+                    }
+                }
+            }
+        }
+        engine.start(wait = false)
+        server = engine
+        trackpad = pointer
+        return RemoteServer.Connection(
+            url = lanAddress()?.let { "http://$it:$port" },
+            devices = devices.asStateFlow(),
+        )
+    }
+
+    @Synchronized
+    override fun stop() {
+        try {
+            server?.stop(gracePeriodMillis = 100, timeoutMillis = 500)
+        } finally {
+            trackpad?.close()
+            trackpad = null
+            server = null
+        }
+    }
+
+    private fun remoteDevice(address: String, userAgent: String?): RemoteDevice {
+        val agent = userAgent.orEmpty()
+        val platform = when {
+            "iPhone" in agent -> "iPhone"
+            "iPad" in agent -> "iPad"
+            "Android" in agent -> "Android"
+            "Windows" in agent -> "Windows"
+            "CrOS" in agent -> "ChromeOS"
+            "Macintosh" in agent -> "macOS"
+            "Linux" in agent -> "Linux"
+            else -> null
+        }
+        val browser = when {
+            "Edg/" in agent || "EdgA/" in agent || "EdgiOS/" in agent -> "Edge"
+            "SamsungBrowser/" in agent -> "Samsung Internet"
+            "OPR/" in agent || "OPiOS/" in agent -> "Opera"
+            "Firefox/" in agent || "FxiOS/" in agent -> "Firefox"
+            "Chrome/" in agent || "CriOS/" in agent -> "Chrome"
+            "Safari/" in agent -> "Safari"
+            else -> null
+        }
+        return RemoteDevice(address, platform, browser)
+    }
+
+    override fun qrCode(url: String): ImageBitmap {
+        val matrix = QRCodeWriter().encode(url, BarcodeFormat.QR_CODE, 240, 240)
+        val rowBytes = matrix.width * 4
+        val pixels = ByteArray(rowBytes * matrix.height) { 0xff.toByte() }
+        for (y in 0 until matrix.height) {
+            for (x in 0 until matrix.width) {
+                if (matrix[x, y]) {
+                    val offset = y * rowBytes + x * 4
+                    pixels.fill(0, offset, offset + 3)
+                }
+            }
+        }
+        val info = ImageInfo(matrix.width, matrix.height, ColorType.RGBA_8888, ColorAlphaType.OPAQUE)
+        return Bitmap().apply { check(installPixels(info, pixels, rowBytes)) }.asComposeImageBitmap()
+    }
+
+    /**
+     * One phone message: `{"cmd":"player","type":"selectSource","value":3}` goes to the player like an on-screen
+     * control, `{"cmd":"click","target":"sources"}` clicks that on-screen control, `{"cmd":"close"}` closes the PC's
+     * open panel, anything else is a key press.
+     */
+    private suspend fun handle(cmd: String, json: JsonObject, cardMenus: RemoteCardMenuSession, sendMenu: suspend (String) -> Unit) {
+        when (cmd) {
+            "cardMenu" -> {
+                cardMenus.open(json)?.let { sendMenu(it) }
+                return
+            }
+            "cardMenuAction" -> {
+                cardMenus.select(json)
+                return
+            }
+        }
+        if (cmd == "exitDpad") {
+            SwingUtilities.invokeLater { RemoteNavigationDispatcher.exitKeyboardNavigation(discardPosterOrigins = true) }
+            return
+        }
+        DesktopRemoteCursorController.hideCursor()
+        when (cmd) {
+            "dpadBack" -> RemoteAppBridge.send(RemoteAppBridge.Command.Back(fromDpad = true))
+            "okLong" -> SwingUtilities.invokeLater { RemoteNavigationDispatcher.openContextMenu() }
+            "tab", "open", "folder", "resume", "search", "desktopLayout", "viewAll", "catalogMore" -> RemoteHome.handle(cmd, json)
+            "folderTab", "folderMore" -> RemoteFolderPage.handle(cmd, json)
+            "searchRemove", "searchClear", "discoverType", "discoverCatalog", "discoverGenre", "discoverMore" -> RemoteSearch.handle(cmd, json)
+            "shuffleFilter", "shufflePick", "shuffleReset", "shuffleCancel", "shuffleClose" -> RemoteShufflePage.handle(cmd, json)
+            "libraryLayout", "librarySort", "libraryDownloads", "cloudLoad", "cloudPlay" -> RemoteLibrary.handle(cmd, json)
+            "sleepSet", "sleepCancel" -> RemoteSleepTimer.handle(cmd, json)
+            "fillerDetection", "hideFillers" -> RemoteDetails.handle(cmd, json)
+            "back", "play", "episode", "saved", "watched", "stream", "reloadStreams", "fromStart" -> RemoteDetails.handle(cmd, json)
+            "player" -> {
+                val type = json["type"]?.jsonPrimitive?.contentOrNull ?: return
+                val value = json["value"]?.jsonPrimitive?.doubleOrNull ?: return
+                RemotePlayerLink.send(type, value)
+            }
+            "click" -> RemotePlayerLink.click(json["target"]?.jsonPrimitive?.contentOrNull ?: return)
+            "close" -> RemotePlayerLink.closePanels()
+            else -> RemoteKeyInjector.handle(json)
+        }
+    }
+
+    /**
+     * Read on every request, so edits to the page show up on a phone refresh. The player's own icon set is copied
+     * in from its controls page, so the phone shows the same icons.
+     */
+    private fun page(): String {
+        val html = resource("index.html")
+        val controls = javaClass.getResource("/player-ui/controls.html")?.readText().orEmpty()
+        val start = controls.indexOf("<svg width=\"0\"")
+        val end = controls.indexOf("</svg>", start)
+        val icons = if (start >= 0 && end > start) controls.substring(start, end + "</svg>".length) else ""
+        return html.replace("<!-- player icons -->", icons)
+            .replace("<!-- trackpad enabled -->", if (RemoteTrackpad.available) "true" else "false")
+    }
+
+    /** A file of the remote page from resources/remote, read on every request so edits show up on a refresh. */
+    private fun resource(name: String): String =
+        javaClass.getResource("/remote/$name")?.readText() ?: "/* $name missing */"
+
+    private fun lanAddress(): String? {
+        val routedAddress = runCatching {
+            DatagramSocket().use {
+                it.connect(InetAddress.getByName("8.8.8.8"), 53)
+                it.localAddress
+            }
+        }.getOrNull()
+        if (routedAddress is Inet4Address && !routedAddress.isAnyLocalAddress && !routedAddress.isLoopbackAddress) {
+            return routedAddress.hostAddress
+        }
+        return runCatching {
+            NetworkInterface.getNetworkInterfaces()?.asSequence()
+                ?.filter { it.isUp && !it.isLoopback }
+                ?.flatMap { it.inetAddresses.asSequence() }
+                ?.filterIsInstance<Inet4Address>()
+                ?.firstOrNull { !it.isLoopbackAddress && !it.isAnyLocalAddress }
+                ?.hostAddress
+        }.getOrNull()
+    }
+}

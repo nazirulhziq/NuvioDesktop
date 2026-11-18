@@ -1,5 +1,8 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationPageEntry
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
@@ -9,6 +12,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -36,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -43,8 +48,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.nuvioHorizontalMouseWheelScroll
+import com.nuvio.app.core.ui.navigationGlassFeedback
 import com.nuvio.app.core.ui.backdropControlColor
-import com.nuvio.app.core.ui.nuvioFocusBorder
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_tab_all
 import nuvio.composeapp.generated.resources.streams_refresh
@@ -61,11 +67,14 @@ internal fun ProviderFilterRow(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     spacing: Dp = 8.dp,
+    desktopDragMomentumEnabled: Boolean = false,
     refreshChip: @Composable (Boolean, () -> Unit) -> Unit = { isLoading, onClick ->
         RefreshChip(isLoading = isLoading, onClick = onClick)
     },
     filterChip: @Composable (AddonStreamGroup?, Boolean, () -> Unit) -> Unit = { group, isSelected, onClick ->
-        FilterChip(
+        StreamFilterChip(
+            initialFocus = group == null,
+            modifier = Modifier.streamResultsFocus(isTab = true, id = group?.addonId),
             label = group?.addonName ?: stringResource(Res.string.collections_tab_all),
             isSelected = isSelected,
             onClick = onClick,
@@ -78,13 +87,15 @@ internal fun ProviderFilterRow(
             onFilterSelected(null)
         }
     }
-    if (addonGroups.isEmpty() && onRefresh == null) return
+    if (addonGroups.isEmpty() && onRefresh == null && !com.nuvio.app.isDesktop) return
 
     val scrollState = rememberScrollState()
     Row(
         modifier = modifier
+            .remoteNavigationPageEntry()
             .fillMaxWidth()
-            .nuvioDesktopDragScroll(scrollState)
+            .nuvioHorizontalMouseWheelScroll(scrollState)
+            .nuvioDesktopDragScroll(scrollState, momentumEnabled = desktopDragMomentumEnabled)
             .horizontalScroll(scrollState)
             .padding(contentPadding),
         horizontalArrangement = Arrangement.spacedBy(spacing),
@@ -131,7 +142,7 @@ private fun RefreshChip(
     onClick: () -> Unit,
 ) {
     val rotation = rememberRefreshRotation(isLoading)
-    FilterChip(
+    StreamFilterChip(
         icon = Icons.Rounded.Refresh,
         contentDescription = stringResource(Res.string.streams_refresh),
         iconModifier = Modifier.graphicsLayer { rotationZ = rotation.value },
@@ -141,7 +152,9 @@ private fun RefreshChip(
 }
 
 @Composable
-private fun FilterChip(
+internal fun StreamFilterChip(
+    modifier: Modifier = Modifier,
+    initialFocus: Boolean = false,
     label: String? = null,
     icon: ImageVector? = null,
     contentDescription: String? = null,
@@ -174,19 +187,26 @@ private fun FilterChip(
         animationSpec = tween(durationMillis = 180),
         label = "filter_chip_content",
     )
-    val chipShape = RoundedCornerShape(16.dp)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
             .height(36.dp)
-            .clip(chipShape)
-            .nuvioFocusBorder(chipShape)
-            .background(containerColor)
-            .nuvioFocusBorder(RoundedCornerShape(16.dp))
-            .clickable(
+            .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (LocalStreamResultsGlass.current) {
+                    (if (isSelected) Modifier.background(containerColor) else Modifier.streamResultsSurface().streamResultsBorder(RoundedCornerShape(16.dp)))
+                        .navigationGlassFeedback(interactionSource, RoundedCornerShape(16.dp))
+                        .hoverable(interactionSource)
+                } else Modifier.background(containerColor),
+            )
+            .remoteNavigationTarget(
+                initialFocus = initialFocus,
+                shape = RoundedCornerShape(16.dp),
+                focusOutlineColor = if (isSelected) Color.White else null,
+            ).clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,

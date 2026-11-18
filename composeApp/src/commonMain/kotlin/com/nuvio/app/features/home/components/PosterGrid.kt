@@ -12,21 +12,25 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import com.nuvio.app.core.ui.RemotePosterItem
+import com.nuvio.app.features.home.stableKey
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
-import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.NuvioPosterWatchedOverlay
@@ -34,6 +38,10 @@ import com.nuvio.app.core.ui.SkeletonPoster
 import com.nuvio.app.core.ui.desktopPosterHoverScale
 import com.nuvio.app.core.ui.nuvioCardDepth
 import com.nuvio.app.core.ui.posterCardClickable
+import com.nuvio.app.core.ui.posterGlow
+import com.nuvio.app.core.ui.rememberPosterGlowState
+import com.nuvio.app.core.ui.RemoteNavigationFocusDestination
+import com.nuvio.app.core.ui.remoteNavigationFocusDestination
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
@@ -52,20 +60,25 @@ internal fun PosterGridRow(
     fullyWatchedSeriesKeys: Set<String> = emptySet(),
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    firstPosterFocus: RemoteNavigationFocusDestination? = null,
+    posterBackgroundColor: Color = MaterialTheme.colorScheme.surface,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
 
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth()
+            .padding(horizontal = if (isDesktop && posterCardStyle.glowEnabled) 16.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        items.forEach { item ->
+        items.forEachIndexed { index, item ->
+            RemotePosterItem(item.stableKey(), index) {
             PosterGridTile(
                 item = item,
                 cornerRadiusDp = posterCardStyle.cornerRadiusDp,
                 hideLabels = posterCardStyle.hideLabelsEnabled,
-                modifier = Modifier.weight(1f),
+                backgroundColor = posterBackgroundColor,
+                modifier = Modifier.weight(1f).remoteNavigationFocusDestination(firstPosterFocus.takeIf { index == 0 }),
                 isWatched = WatchingState.isPosterWatched(
                     watchedKeys = watchedKeys,
                     item = item,
@@ -74,6 +87,7 @@ internal fun PosterGridRow(
                 onClick = onPosterClick?.let { { it(item) } },
                 onLongClick = onPosterLongClick?.let { { it(item) } },
             )
+            }
         }
         repeat(columns - items.size) {
             Spacer(modifier = Modifier.weight(1f))
@@ -89,7 +103,8 @@ internal fun PosterGridSkeletonRow(
     val posterCardStyle = rememberPosterCardStyleUiState()
 
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth()
+            .padding(horizontal = if (isDesktop && posterCardStyle.glowEnabled) 16.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         repeat(columns) {
@@ -108,11 +123,17 @@ private fun PosterGridTile(
     item: MetaPreview,
     cornerRadiusDp: Int,
     hideLabels: Boolean,
+    backgroundColor: Color,
     modifier: Modifier = Modifier,
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val posterCardStyle = rememberPosterCardStyleUiState()
+    val glowArtworkKey = "${item.poster}\n${item.rawPosterUrl}"
+    val glow = if (isDesktop && posterCardStyle.glowEnabled && item.poster != null) {
+        rememberPosterGlowState(glowArtworkKey)
+    } else null
     HomePosterHoverPreview(
         item = item,
         isWatched = isWatched,
@@ -131,8 +152,9 @@ private fun PosterGridTile(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(item.posterShape.posterGridAspectRatio())
+                    .posterGlow(glow, glowArtworkKey, RoundedCornerShape(cornerRadiusDp.dp))
                     .clip(RoundedCornerShape(cornerRadiusDp.dp))
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(backgroundColor)
                     .nuvioCardDepth(
                         shape = RoundedCornerShape(cornerRadiusDp.dp),
                         surface = NuvioCardDepthSurface.Posters,
@@ -167,6 +189,7 @@ private fun PosterGridTile(
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                             desktopAnimation = rememberAnimatedArtworkAnimation(),
+                            onSuccess = { result -> glow?.painter = result.painter },
                         )
                     } else {
                         AsyncImage(
@@ -187,7 +210,7 @@ private fun PosterGridTile(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val detail = item.releaseInfo?.let { formatReleaseDateForDisplay(it) }
+                val detail = if (!posterCardStyle.hideYearEnabled) item.releaseInfo?.let { formatReleaseDateForDisplay(it) } else null
                 if (detail != null) {
                     Text(
                         text = detail,

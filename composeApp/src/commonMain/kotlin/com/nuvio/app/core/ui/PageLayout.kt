@@ -2,6 +2,28 @@ package com.nuvio.app.core.ui
 
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+
+/** Shared placement of desktop back navigation, matching enhanced details. */
+internal val desktopBackButtonTopPadding = 16.dp
+internal val desktopBackButtonSize = 38.dp
+internal val desktopBackButtonIconSize = 22.dp
+internal val desktopBackButtonContainerColor = Color.Black.copy(alpha = 0.34f)
+
+/** Desktop top bar layout metrics for vertical alignment and responsive height. */
+internal val desktopTopBarTopPadding = 10.dp
+
+internal fun desktopTopBarHeight(windowWidth: Dp): Dp = when {
+    windowWidth < 800.dp -> 46.dp
+    windowWidth > 1600.dp -> 50.dp
+    else -> 48.dp
+}
+
+internal fun desktopTopBarActionIconSize(windowWidth: Dp): Dp = when {
+    windowWidth < 800.dp -> 22.dp
+    windowWidth > 1600.dp -> 26.dp
+    else -> 24.dp
+}
 
 /**
  * Horizontal inset for top-level desktop page content.

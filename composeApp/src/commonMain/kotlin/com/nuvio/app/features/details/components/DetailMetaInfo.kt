@@ -1,7 +1,10 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.rememberImdbLogoPainter
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -10,16 +13,22 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -27,12 +36,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -132,9 +148,7 @@ fun DetailMetaInfo(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.sp,
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    ClickableRatingBadge(url = formatImdbTitleUrl(meta.imdbId ?: meta.id)) {
                         ImdbRatingSourceLabel(storeTextStyle = imdbTextStyle)
                         Spacer(modifier = Modifier.width(5.dp))
                         Text(
@@ -161,6 +175,7 @@ fun DetailMetaInfo(
         ) {
             DetailRatingsRow(
                 ratings = meta.externalRatings,
+                imdbId = meta.imdbId ?: meta.id,
                 horizontalScrollPadding = horizontalScrollPadding,
             )
         }
@@ -193,12 +208,14 @@ fun DetailMetaInfo(
 internal fun DetailRatingsRow(
     ratings: List<MetaExternalRating>,
     modifier: Modifier = Modifier,
+    imdbId: String? = null,
     horizontalScrollPadding: Dp = 0.dp,
 ) {
     val scrollState = rememberScrollState()
 
     RatingsRow(
         ratings = ratings,
+        imdbId = imdbId,
         modifier = modifier
             .nuvioHorizontalScrollBleed(horizontalScrollPadding)
             .fillMaxWidth()
@@ -208,11 +225,15 @@ internal fun DetailRatingsRow(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RatingsRow(
     ratings: List<MetaExternalRating>,
     modifier: Modifier = Modifier,
+    imdbId: String? = null,
     maxItems: Int = Int.MAX_VALUE,
+    wrap: Boolean = false,
+    compact: Boolean = false,
 ) {
     val orderedRatings = remember(ratings, maxItems) {
         val bySource = ratings.associateBy { it.source }
@@ -222,19 +243,21 @@ internal fun RatingsRow(
     }
 
     if (orderedRatings.isEmpty()) return
+    val ratingScale = if (compact) 0.85f else 1f
 
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    val content: @Composable () -> Unit = {
         orderedRatings.forEach { (visuals, rating) ->
             val ratingTextStyle = MaterialTheme.typography.titleSmall.copy(
+                fontSize = MaterialTheme.typography.titleSmall.fontSize * ratingScale,
+                lineHeight = MaterialTheme.typography.titleSmall.lineHeight * ratingScale,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.sp,
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            val targetUrl = rating.url
+                ?: if (visuals.source == PROVIDER_IMDB) formatImdbTitleUrl(imdbId) else null
+            ClickableRatingBadge(
+                url = targetUrl,
+                modifier = if (wrap) Modifier.heightIn(min = 24.dp * ratingScale) else Modifier,
             ) {
                 if (visuals.source == PROVIDER_IMDB && !AppFeaturePolicy.imdbRatingLogoEnabled) {
                     ImdbRatingSourceLabel(storeTextStyle = ratingTextStyle)
@@ -242,14 +265,17 @@ internal fun RatingsRow(
                     val logoHeight = when (rating.rottenTomatoesStatus) {
                         RottenTomatoesStatus.CERTIFIED_FRESH, RottenTomatoesStatus.VERIFIED_HOT -> 24.dp
                         else -> 16.dp
-                    }
+                    } * ratingScale
                     Image(
-                        painter = painterResource(visuals.logoFor(rating)),
+                        painter = if (visuals.source == PROVIDER_IMDB) rememberImdbLogoPainter() else painterResource(visuals.logoFor(rating)),
                         contentDescription = visuals.displayName,
-                        modifier = Modifier.size(width = maxOf(visuals.logoWidth, logoHeight), height = logoHeight),
+                        modifier = Modifier.size(
+                            width = maxOf(visuals.logoWidth * ratingScale, if (wrap) 24.dp * ratingScale else logoHeight),
+                            height = logoHeight,
+                        ),
                     )
                 }
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(4.dp * ratingScale))
                 Text(
                     text = visuals.format(rating.value),
                     style = ratingTextStyle,
@@ -258,6 +284,69 @@ internal fun RatingsRow(
             }
         }
     }
+    if (wrap) {
+        FlowRow(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy(10.dp * ratingScale),
+            verticalArrangement = Arrangement.spacedBy(6.dp * ratingScale),
+        ) { content() }
+    } else {
+        Row(
+            modifier = modifier,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp * ratingScale),
+        ) { content() }
+    }
+}
+
+internal fun formatImdbTitleUrl(imdbId: String?): String? {
+    val clean = imdbId?.substringBefore(":")?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val id = when {
+        clean.startsWith("tt", ignoreCase = true) && clean.length > 2 -> clean
+        clean.all { it.isDigit() } -> "tt$clean"
+        else -> null
+    } ?: return null
+    return "https://www.imdb.com/title/$id/"
+}
+
+@Composable
+internal fun ClickableRatingBadge(
+    url: String?,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(6.dp),
+    content: @Composable RowScope.() -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    val isClickable = !url.isNullOrBlank()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val containerColor by animateColorAsState(
+        targetValue = if (isClickable && isHovered) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f) else Color.Transparent,
+        animationSpec = tween(durationMillis = 150),
+        label = "rating_badge_hover",
+    )
+
+    val badgeModifier = if (isClickable) {
+        modifier
+            .clip(shape)
+            .background(containerColor)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(),
+                role = Role.Button,
+                onClick = { runCatching { uriHandler.openUri(url) } },
+            )
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+    } else {
+        modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+    }
+
+    Row(
+        modifier = badgeModifier,
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
+    )
 }
 
 @Composable
@@ -267,7 +356,7 @@ internal fun ImdbRatingSourceLabel(
 ) {
     if (AppFeaturePolicy.imdbRatingLogoEnabled) {
         Image(
-            painter = painterResource(Res.drawable.rating_imdb),
+            painter = if (isDesktop) rememberImdbLogoPainter() else painterResource(Res.drawable.rating_imdb),
             contentDescription = stringResource(Res.string.source_imdb),
             modifier = Modifier.size(width = 30.dp, height = 16.dp),
         )
@@ -356,6 +445,36 @@ private data class RatingVisuals(
     val format: (Double) -> String,
 )
 
+/** A rating as [RatingsRow] draws it, for the phone remote: the logo's file in drawable/, its value and colour. */
+internal data class RatingBadge(val name: String, val logoFile: String, val value: String, val color: Color)
+
+internal fun ratingBadges(ratings: List<MetaExternalRating>): List<RatingBadge> {
+    val bySource = ratings.associateBy { it.source }
+    return ratingVisuals.mapNotNull { visuals ->
+        bySource[visuals.source]?.let { rating ->
+            RatingBadge(visuals.displayName, logoFileFor(visuals.source, rating), visuals.format(rating.value), visuals.valueColor)
+        }
+    }
+}
+
+/** The IMDb rating alone, as the hero shows it when there are no MDBList ratings. */
+internal fun imdbRatingBadge(rating: Double): RatingBadge =
+    ratingVisuals.first { it.source == PROVIDER_IMDB }.let { RatingBadge(it.displayName, "rating_imdb.svg", formatOneDecimal(rating), it.valueColor) }
+
+private fun logoFileFor(source: String, rating: MetaExternalRating): String = when (rating.rottenTomatoesStatus) {
+    RottenTomatoesStatus.FRESH -> "rating_rotten_tomatoes.svg"
+    RottenTomatoesStatus.ROTTEN -> "rating_rotten_tomatoes_rotten.svg"
+    RottenTomatoesStatus.CERTIFIED_FRESH -> "rating_rotten_tomatoes_certified.svg"
+    RottenTomatoesStatus.HOT -> "rating_audience_score.svg"
+    RottenTomatoesStatus.STALE -> "rating_audience_stale.svg"
+    RottenTomatoesStatus.VERIFIED_HOT -> "rating_audience_verified_hot.svg"
+    else -> when (source) {
+        PROVIDER_TOMATOES -> "rating_rotten_tomatoes.svg"
+        PROVIDER_AUDIENCE -> "rating_audience_score.svg"
+        else -> "rating_$source.svg"
+    }
+}
+
 private fun RatingVisuals.logoFor(rating: MetaExternalRating): DrawableResource =
     when (rating.rottenTomatoesStatus) {
         RottenTomatoesStatus.FRESH -> Res.drawable.rating_rotten_tomatoes
@@ -380,7 +499,7 @@ private val ratingVisuals = listOf(
         source = PROVIDER_TMDB,
         displayName = "TMDB",
         logo = Res.drawable.rating_tmdb,
-        logoWidth = 16.dp,
+        logoWidth = 22.dp,
         valueColor = Color(0xFF01B4E4),
         format = ::formatWhole,
     ),

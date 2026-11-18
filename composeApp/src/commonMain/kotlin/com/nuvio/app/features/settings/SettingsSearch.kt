@@ -1,5 +1,9 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.features.remote.RemoteServer
+import nuvio.composeapp.generated.resources.compose_settings_remote_search_description
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -12,6 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.People
@@ -26,6 +33,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import com.nuvio.app.core.ui.isRemoteKeyboardNavigationActive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -38,6 +48,7 @@ import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
+import com.nuvio.app.isWindows
 import com.nuvio.app.supportsPosterNavigationMotion
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -186,6 +197,30 @@ internal fun settingsSearchEntries(
         )
     }
 
+    if (isDesktop) {
+        addRow(
+            page = SettingsPage.Layout,
+            key = "navigation-feel",
+            title = stringResource(Res.string.settings_navigation_feel),
+            description = listOf(
+                stringResource(Res.string.settings_navigation_feel_description),
+                stringResource(Res.string.settings_navigation_feel_smooth),
+                stringResource(Res.string.settings_navigation_feel_snappy),
+            ).joinToString(" "),
+            pageLabel = layoutPage,
+            section = stringResource(Res.string.settings_appearance_section_display),
+        )
+    }
+    listOf(
+        Triple("xo-video-enhancements", "Anime4K, motion smoothing, SVP", SettingsPage.PlaybackVideo),
+        Triple("xo-audio-enhancement", "Audio Night Mode", SettingsPage.PlaybackAudio),
+        Triple("xo-buffer-preset", "Playback buffer preset", SettingsPage.PlaybackBuffer),
+        Triple("xo-interface", "Player UI, clock, seekbar, remaining time", SettingsPage.PlaybackInterface),
+        Triple("xo-filler", "Anime filler markers and skipping", SettingsPage.PlaybackSkipSegments),
+        Triple("xo-aura", "CodeineXO Aura, surface style, keyboard navigation", SettingsPage.Layout),
+    ).forEach { (key, title, destination) ->
+        addRow(page = destination, key = key, title = title, pageLabel = pageTitles.getValue(destination), section = "CodeineXO")
+    }
     if (switchProfileAvailable) {
         add(
             key = "switch-profile",
@@ -211,6 +246,22 @@ internal fun settingsSearchEntries(
         description = stringResource(Res.string.compose_settings_root_tracking_description),
         category = accountCategory,
     )
+    addPage(
+        page = SettingsPage.CodeineXO,
+        key = "codeine-xo",
+        title = stringResource(Res.string.compose_settings_page_codeine_xo),
+        description = stringResource(Res.string.compose_settings_root_codeine_xo_description),
+        category = advancedCategory,
+    )
+    if (RemoteServer.platform != null) {
+        addPage(
+            page = SettingsPage.Remote,
+            key = "remote",
+            title = pageTitles.getValue(SettingsPage.Remote),
+            description = stringResource(Res.string.compose_settings_remote_search_description),
+            category = advancedCategory,
+        )
+    }
     addPage(
         page = SettingsPage.Appearance,
         key = "appearance",
@@ -389,6 +440,14 @@ internal fun settingsSearchEntries(
         title = stringResource(Res.string.settings_appearance_amoled_black),
         description = stringResource(Res.string.settings_appearance_amoled_description),
         pageLabel = appearancePage,
+        section = stringResource(Res.string.settings_appearance_section_display),
+    )
+    addRow(
+        page = SettingsPage.Appearance,
+        key = "frosted-glass",
+        title = stringResource(Res.string.settings_appearance_frosted_glass),
+        description = stringResource(Res.string.settings_appearance_frosted_glass_description),
+        pageLabel = layoutPage,
         section = stringResource(Res.string.settings_appearance_section_display),
     )
     if (liquidGlassNativeTabBarSupported) {
@@ -646,8 +705,6 @@ internal fun settingsSearchEntries(
             PlaybackSearchRow("secondary-audio", stringResource(Res.string.settings_playback_secondary_audio_language), page = SettingsPage.PlaybackAudio),
             PlaybackSearchRow("subtitle-font", stringResource(Res.string.subtitle_font), stringResource(Res.string.subtitle_font_import_hint)),
             PlaybackSearchRow("subtitle-background-opacity", stringResource(Res.string.subtitle_background_opacity)),
-            PlaybackSearchRow("subtitle-background-roundness", stringResource(Res.string.subtitle_background_roundness)),
-            PlaybackSearchRow("subtitle-shadow", stringResource(Res.string.subtitle_shadow), stringResource(Res.string.subtitle_shadow_description)),
             PlaybackSearchRow("preferred-subtitles", stringResource(Res.string.settings_playback_preferred_subtitle_language)),
             PlaybackSearchRow("secondary-subtitles", stringResource(Res.string.settings_playback_secondary_subtitle_language)),
         ),
@@ -675,6 +732,9 @@ internal fun settingsSearchEntries(
             add(PlaybackSearchRow("stream-mode", stringResource(Res.string.settings_playback_stream_selection_mode)))
             add(PlaybackSearchRow("regex-pattern", stringResource(Res.string.settings_playback_regex_pattern)))
             add(PlaybackSearchRow("stream-timeout", stringResource(Res.string.settings_playback_stream_timeout), stringResource(Res.string.settings_playback_stream_timeout_description)))
+            add(PlaybackSearchRow("source-fallback", stringResource(Res.string.settings_playback_fallback_next_source), stringResource(Res.string.settings_playback_fallback_next_source_description)))
+            add(PlaybackSearchRow("source-fallback-max", stringResource(Res.string.settings_playback_fallback_max_sources)))
+            add(PlaybackSearchRow("source-fallback-timeout", stringResource(Res.string.settings_playback_fallback_startup_timeout)))
             add(PlaybackSearchRow("source-scope", stringResource(Res.string.settings_playback_source_scope)))
             add(PlaybackSearchRow("allowed-addons", stringResource(Res.string.settings_playback_allowed_addons)))
             if (pluginsEnabled) add(PlaybackSearchRow("allowed-plugins", stringResource(Res.string.settings_playback_allowed_plugins)))
@@ -691,6 +751,15 @@ internal fun settingsSearchEntries(
                     add(PlaybackSearchRow("auto-switch-engine", stringResource(Res.string.settings_playback_auto_switch_engine_on_error), stringResource(Res.string.settings_playback_auto_switch_engine_on_error_description), page = SettingsPage.PlaybackPlayer))
                 }
                 add(PlaybackSearchRow("decoder-priority", stringResource(Res.string.settings_playback_decoder_priority)))
+                if (isWindows) {
+                    add(
+                        PlaybackSearchRow(
+                            "custom-mpv-config",
+                            stringResource(Res.string.settings_playback_mpv_config),
+                            stringResource(Res.string.settings_playback_mpv_config_description),
+                        ),
+                    )
+                }
                 if (!isDesktop) {
                     add(PlaybackSearchRow("dv7-hevc", stringResource(Res.string.settings_playback_map_dv7_to_hevc), stringResource(Res.string.settings_playback_map_dv7_to_hevc_description)))
                     add(PlaybackSearchRow("tunneled-playback", stringResource(Res.string.settings_playback_tunneled_playback), stringResource(Res.string.settings_playback_tunneled_playback_description)))
@@ -708,8 +777,12 @@ internal fun settingsSearchEntries(
             section = playbackSubtitleRendering,
             page = SettingsPage.PlaybackSubtitles,
             rows = buildList {
+                add(PlaybackSearchRow(
+                    "libass",
+                    stringResource(if (isDesktop) Res.string.settings_playback_custom_subtitle_styling else Res.string.settings_playback_enable_libass),
+                    stringResource(if (isDesktop) Res.string.settings_playback_custom_subtitle_styling_description else Res.string.settings_playback_enable_libass_description),
+                ))
                 if (!isDesktop) {
-                    add(PlaybackSearchRow("libass", stringResource(Res.string.settings_playback_enable_libass), stringResource(Res.string.settings_playback_enable_libass_description)))
                     add(PlaybackSearchRow("libass-render-mode", stringResource(Res.string.settings_playback_render_mode), stringResource(Res.string.settings_playback_render_mode_description)))
                     add(PlaybackSearchRow("libass-render", stringResource(Res.string.settings_playback_render_scale)))
                 }
@@ -740,6 +813,21 @@ internal fun settingsSearchEntries(
             PlaybackSearchRow("threshold-mode", stringResource(Res.string.settings_playback_threshold_mode)),
             PlaybackSearchRow("threshold-percent", stringResource(Res.string.settings_playback_threshold_percentage), stringResource(Res.string.settings_playback_threshold_percentage_description)),
             PlaybackSearchRow("threshold-minutes", stringResource(Res.string.settings_playback_minutes_before_end), stringResource(Res.string.settings_playback_minutes_before_end_description)),
+        ),
+    )
+
+    addPlaybackRows(
+        addRow = ::addRow,
+        pageLabel = playbackPage,
+        section = stringResource(Res.string.settings_seek_preview_section),
+        page = SettingsPage.PlaybackInterface,
+        rows = listOf(
+            PlaybackSearchRow("settings_playback_seek_previews", stringResource(Res.string.settings_playback_seek_previews)),
+            PlaybackSearchRow("settings_playback_seekr_api_key", stringResource(Res.string.settings_playback_seekr_api_key)),
+            PlaybackSearchRow("settings_seek_preview_dragging", stringResource(Res.string.settings_seek_preview_dragging)),
+            PlaybackSearchRow("settings_seek_preview_hovering", stringResource(Res.string.settings_seek_preview_hovering)),
+            PlaybackSearchRow("settings_seek_preview_keyboard", stringResource(Res.string.settings_seek_preview_keyboard)),
+            PlaybackSearchRow("settings_seek_preview_count", stringResource(Res.string.settings_seek_preview_count)),
         ),
     )
 
@@ -782,6 +870,8 @@ internal fun settingsSearchEntries(
         PlaybackSearchRow("poster-radius", stringResource(Res.string.settings_poster_card_radius)),
         PlaybackSearchRow("poster-landscape", stringResource(Res.string.settings_poster_landscape_mode)),
         PlaybackSearchRow("poster-hide-labels", stringResource(Res.string.settings_poster_hide_labels)),
+        PlaybackSearchRow("poster-glow", stringResource(Res.string.settings_poster_glow), stringResource(Res.string.settings_poster_glow_description)),
+        PlaybackSearchRow("poster-animated-artwork", stringResource(Res.string.settings_poster_animated_artwork)),
     ).forEach { row ->
         addRow(
             page = SettingsPage.PosterCustomization,
@@ -811,6 +901,7 @@ internal fun settingsSearchEntries(
 
     val homeLayoutSection = stringResource(Res.string.settings_homescreen_section_hero)
     listOf(
+        PlaybackSearchRow("home-collection-animation", stringResource(Res.string.settings_homescreen_always_animate_collections), stringResource(Res.string.settings_homescreen_always_animate_collections_description)),
         PlaybackSearchRow("home-hero", stringResource(Res.string.settings_homescreen_show_hero), stringResource(Res.string.settings_homescreen_show_hero_description)),
         PlaybackSearchRow("home-catalog-type", stringResource(Res.string.layout_catalog_type), stringResource(Res.string.layout_catalog_type_sub)),
         PlaybackSearchRow("home-hide-unreleased", stringResource(Res.string.layout_hide_unreleased), stringResource(Res.string.layout_hide_unreleased_sub)),
@@ -1174,10 +1265,12 @@ private fun SettingsSearchField(
     onQueryChange: (String) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    var isEditing by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier.fillMaxWidth(),
+        readOnly = isRemoteKeyboardNavigationActive && !isEditing,
+        modifier = (Modifier.fillMaxWidth()).remoteNavigationTarget(textField = true, onEditingChange = { isEditing = it }),
         singleLine = true,
         shape = RoundedCornerShape(NuvioTokens.Radius.xl),
         leadingIcon = {
@@ -1189,7 +1282,7 @@ private fun SettingsSearchField(
         },
         trailingIcon = if (query.isNotBlank()) {
             {
-                IconButton(onClick = { onQueryChange("") }) {
+                IconButton(onClick = { onQueryChange("") }, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = stringResource(Res.string.compose_search_clear),

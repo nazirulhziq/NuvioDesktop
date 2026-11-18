@@ -1,5 +1,7 @@
 package com.nuvio.app.features.party
 
+import com.nuvio.app.isDesktop
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -29,7 +31,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,10 +55,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
+import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.DialogButton
 import com.nuvio.app.core.ui.DialogButtonStyle
 import com.nuvio.app.core.ui.NuvioScreen
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.nuvioPlatformExtraTopPadding
@@ -144,7 +147,10 @@ private fun PartyHome(
             PartyRoom(onBack = onBack, onWatch = onWatch)
             return@AnimatedContent
         }
-        NuvioScreen(modifier = Modifier.fillMaxSize()) {
+        NuvioScreen(
+            sidebarContentInset = LocalDesktopSidebarContentInset.current,
+            modifier = Modifier.fillMaxSize(),
+        ) {
             stickyHeader {
                 NuvioScreenHeader(
                     title = stringResource(Res.string.party_title),
@@ -194,7 +200,7 @@ private fun PartyRoom(
     val unread by PartyChat.unread.collectAsStateWithLifecycle()
     val party = state.party ?: return
     var showChat by rememberSaveable { mutableStateOf(unread > 0) }
-    PartyPage(onBack = onBack) {
+    PartyPage(onBack = onBack, sidebarContentInset = LocalDesktopSidebarContentInset.current) {
         PartyTabs(
             chatSelected = showChat,
             unread = unread,
@@ -208,6 +214,7 @@ private fun PartyRoom(
         ) { chat ->
             if (chat) {
                 PartyChatContent(
+                    desktopDragEnabled = true,
                     members = party.members,
                     modifier = Modifier
                         .fillMaxSize()
@@ -217,7 +224,7 @@ private fun PartyRoom(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .nuvioVerticalScroll(rememberScrollState())
                         .padding(bottom = nuvioSafeBottomPadding(tokens.spacing.screenBottom)),
                 ) {
                     PartyContent(party, onWatch)
@@ -230,6 +237,7 @@ private fun PartyRoom(
 @Composable
 internal fun PartyPage(
     onBack: () -> Unit,
+    sidebarContentInset: androidx.compose.ui.unit.Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -238,8 +246,9 @@ internal fun PartyPage(
         modifier = Modifier
             .fillMaxSize()
             .background(tokens.colors.background)
-            .padding(top = tokens.spacing.screenTop + statusBarTop + nuvioPlatformExtraTopPadding)
-            .padding(horizontal = tokens.spacing.screenHorizontal),
+            .padding(start = sidebarContentInset)
+            .padding(top = if (isDesktop) 0.dp else tokens.spacing.screenTop + statusBarTop + nuvioPlatformExtraTopPadding)
+            .padding(horizontal = if (isDesktop) 0.dp else tokens.spacing.screenHorizontal),
     ) {
         NuvioScreenHeader(
             title = stringResource(Res.string.party_title),

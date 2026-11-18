@@ -4,6 +4,13 @@ import kotlinx.coroutines.delay
 
 private const val CHAPTER_RETRIES = 8
 
+internal fun PlayerScreenRuntime.clearChapters() {
+    chapters = emptyList()
+    chaptersLoadedForSourceUrl = null
+    if (showChaptersPanel) controlsVisible = true
+    showChaptersPanel = false
+}
+
 /**
  * Reads the chapters once per source, when it has loaded: libmpv lists them itself, ExoPlayer
  * reads them from the file (when allowed), so a rebuffer must not read them again. They always
@@ -12,16 +19,17 @@ private const val CHAPTER_RETRIES = 8
 internal suspend fun PlayerScreenRuntime.loadChaptersIfNeeded() {
     val controller = playerController ?: return
     val sourceUrl = playerControllerSourceUrl ?: return
+    if (sourceUrl != activeSourceUrl || !playerSettingsUiState.androidExoChaptersEnabled) return
     if (chaptersLoadedForSourceUrl == sourceUrl) return
     var loaded = PlayerChapters.normalize(controller.getChapters())
     var attempts = 0
     while (loaded.isEmpty() && attempts < CHAPTER_RETRIES) {
         delay(1_000)
-        if (playerControllerSourceUrl != sourceUrl || playerController !== controller) return
+        if (playerControllerSourceUrl != sourceUrl || activeSourceUrl != sourceUrl || playerController !== controller) return
         loaded = PlayerChapters.normalize(controller.getChapters())
         attempts++
     }
-    if (playerControllerSourceUrl != sourceUrl || playerController !== controller) return
+    if (playerControllerSourceUrl != sourceUrl || activeSourceUrl != sourceUrl || playerController !== controller) return
     chaptersLoadedForSourceUrl = sourceUrl
     chapters = if (playerSettingsUiState.androidExoChaptersEnabled) loaded else emptyList()
     onChaptersLoaded(loaded)
@@ -38,10 +46,9 @@ internal fun PlayerScreenRuntime.openChaptersPanel() {
 internal fun PlayerScreenRuntime.selectChapter(index: Int) {
     val chapter = chapters.getOrNull(index) ?: return
     showChaptersPanel = false
-    lastManualSkipSeekPositions = playbackSnapshot.positionMs to chapter.startMs
-    playerController?.seekTo(chapter.startMs)
-    scheduleProgressSyncAfterSeek()
+    finishTimelineSeek(chapter.startMs)
     controlsVisible = true
+    controlsActivityTick += 1
 }
 
 /**

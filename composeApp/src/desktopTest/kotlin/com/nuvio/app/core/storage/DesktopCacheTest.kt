@@ -62,7 +62,11 @@ class DesktopCacheTest {
     private fun deleteRecursively(path: Path) {
         if (!Files.exists(path)) return
         Files.walk(path).use { stream ->
-            stream.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+            stream.sorted(Comparator.reverseOrder()).forEach {
+                runCatching { Files.deleteIfExists(it) }.onFailure { _ ->
+                    it.toFile().deleteOnExit()
+                }
+            }
         }
     }
 }

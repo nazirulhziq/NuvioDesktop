@@ -217,6 +217,13 @@ internal fun PlayerScreenRuntime.applyNativePlaybackState(play: Boolean) {
 }
 
 internal fun PlayerScreenRuntime.seekFromNativeControls(offsetMs: Long, revealControls: Boolean = true): Boolean {
+    if (!revealControls) {
+        val from = pendingSeekTarget?.takeIf { (_, mark) -> mark.elapsedNow() < PendingSeekWindow }?.first
+            ?: currentPlaybackPositionMs()
+        val duration = playbackSnapshot.durationMs
+        val target = (from + offsetMs).coerceAtLeast(0L).let { if (duration > 0) it.coerceAtMost(duration) else it }
+        seekPreviewInteraction.keyboard(target, scope)
+    }
     if (isPartySynced) {
         seekBy(offsetMs, revealControls)
         return true
@@ -226,7 +233,15 @@ internal fun PlayerScreenRuntime.seekFromNativeControls(offsetMs: Long, revealCo
 }
 
 internal fun PlayerScreenRuntime.finishTimelineSeek(positionMs: Long) {
-    val targetMs = if (isPartyControlLocked) ownSeekTarget(positionMs) else positionMs
+    val durationMs = playbackSnapshot.durationMs
+    val clampedMs = if (durationMs > 2_000L) {
+        positionMs.coerceIn(0L, durationMs - 1_500L)
+    } else if (durationMs > 0L) {
+        positionMs.coerceIn(0L, durationMs)
+    } else {
+        positionMs.coerceAtLeast(0L)
+    }
+    val targetMs = if (isPartyControlLocked) ownSeekTarget(clampedMs) else clampedMs
     if (targetMs == null) {
         isScrubbingTimeline = false
         scrubbingPositionMs = null
@@ -241,7 +256,7 @@ internal fun PlayerScreenRuntime.finishTimelineSeek(positionMs: Long) {
 internal fun PlayerScreenRuntime.skipInterval(interval: SkipInterval) {
     val durationMs = playbackSnapshot.durationMs
     val rawMs = interval.internalSkipAction(skipIntervals, durationMs)?.targetMs ?: return
-    val requestedMs = if (durationMs > 0L) rawMs.coerceAtMost(durationMs - 1) else rawMs
+    val requestedMs = if (durationMs > 2_000L) rawMs.coerceAtMost(durationMs - 1_500L) else if (durationMs > 0L) rawMs.coerceAtMost(durationMs - 1L) else rawMs
     val seekMs = if (isPartyControlLocked) ownSeekTarget(requestedMs) ?: return else requestedMs
     playerController?.seekTo(seekMs)
     scheduleProgressSyncAfterSeek()
@@ -271,8 +286,9 @@ internal fun PlayerScreenRuntime.seekBy(offsetMs: Long, revealControls: Boolean 
         ?.takeIf { (_, mark) -> mark.elapsedNow() < PendingSeekWindow }
         ?.first
         ?: currentPlaybackPositionMs()
+    val maxSeekTarget = if (playbackSnapshot.durationMs > 2_000L) playbackSnapshot.durationMs - 1_500L else playbackSnapshot.durationMs
     val requestedMs = (fromMs + offsetMs).coerceAtLeast(0L)
-        .let { if (playbackSnapshot.durationMs > 0L) it.coerceAtMost(playbackSnapshot.durationMs) else it }
+        .let { if (maxSeekTarget > 0L) it.coerceAtMost(maxSeekTarget) else it }
     val targetMs = if (isPartyControlLocked) ownSeekTarget(requestedMs) ?: return else requestedMs
     lastManualSkipSeekPositions = fromMs to targetMs
     pendingSeekTarget = targetMs to TimeSource.Monotonic.markNow()
@@ -468,10 +484,18 @@ internal fun PlayerScreenRuntime.rememberSurfaceGestureCallbacks(): PlayerSurfac
         currentPositionMs = rememberUpdatedState(playbackSnapshot.positionMs.coerceAtLeast(0L)),
         currentDurationMs = rememberUpdatedState(playbackSnapshot.durationMs),
         commitHorizontalSeek = rememberUpdatedState { requestedPositionMs: Long ->
-            val targetPositionMs = if (isPartyControlLocked) {
-                ownSeekTarget(requestedPositionMs) ?: return@rememberUpdatedState
+            val durationMs = playbackSnapshot.durationMs
+            val clampedMs = if (durationMs > 2_000L) {
+                requestedPositionMs.coerceIn(0L, durationMs - 1_500L)
+            } else if (durationMs > 0L) {
+                requestedPositionMs.coerceIn(0L, durationMs)
             } else {
-                requestedPositionMs
+                requestedPositionMs.coerceAtLeast(0L)
+            }
+            val targetPositionMs = if (isPartyControlLocked) {
+                ownSeekTarget(clampedMs) ?: return@rememberUpdatedState
+            } else {
+                clampedMs
             }
             lastManualSkipSeekPositions = playbackSnapshot.positionMs to targetPositionMs
             playerController?.seekTo(targetPositionMs)

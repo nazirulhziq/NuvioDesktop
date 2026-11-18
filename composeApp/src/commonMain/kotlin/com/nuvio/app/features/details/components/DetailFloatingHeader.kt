@@ -1,12 +1,20 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.LocalDesktopSidebarContentInset
+import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
+
+import com.nuvio.app.core.ui.desktopBackButtonTopPadding
+
+import com.nuvio.app.isDesktop
+
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,9 +52,7 @@ import androidx.compose.ui.unit.lerp
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.ArtworkBackdrop
 import com.nuvio.app.core.ui.NuvioBackButton
-import com.nuvio.app.core.ui.FullscreenActionButton
 import com.nuvio.app.core.ui.fullscreenActionHorizontalInsetForWidth
-import com.nuvio.app.core.ui.isFullscreenActionSupported
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.isIos
 import nuvio.composeapp.generated.resources.*
@@ -65,7 +71,7 @@ fun DetailFloatingHeader(
     modifier: Modifier = Modifier,
 ) {
     val safeAreaTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val headerTopPadding = (safeAreaTop - 6.dp).coerceAtLeast(safeAreaTop * 0.8f)
+    val headerTopPadding = if (isDesktop) safeAreaTop + desktopBackButtonTopPadding else (safeAreaTop - 6.dp).coerceAtLeast(safeAreaTop * 0.8f)
     val surfaceColor = backgroundColor ?: if (isIos) {
         MaterialTheme.colorScheme.surface.copy(alpha = 1.0f)
     } else {
@@ -87,8 +93,9 @@ fun DetailFloatingHeader(
             },
     ) {
         val logoWidth = (maxWidth * 0.6f).coerceAtMost(240.dp)
-        val rightActionsWidth = if (isFullscreenActionSupported) 84.dp else 40.dp
-        val actionHorizontalInset = fullscreenActionHorizontalInsetForWidth(maxWidth.value)
+        val rightActionsWidth = if (isDesktop) 48.dp else 40.dp
+        val actionHorizontalInsetStart = if (isDesktop) desktopPageHorizontalPaddingForWidth(maxWidth.value) + LocalDesktopSidebarContentInset.current else fullscreenActionHorizontalInsetForWidth(maxWidth.value)
+        val actionHorizontalInsetEnd = if (isDesktop) desktopPageHorizontalPaddingForWidth(maxWidth.value) else fullscreenActionHorizontalInsetForWidth(maxWidth.value)
 
         Box(
             modifier = Modifier
@@ -102,8 +109,8 @@ fun DetailFloatingHeader(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = headerTopPadding, start = actionHorizontalInset, end = actionHorizontalInset)
-                    .height(56.dp)
+                    .padding(top = headerTopPadding, start = actionHorizontalInsetStart, end = actionHorizontalInsetEnd)
+                    .height(if (isDesktop) 48.dp else 56.dp)
                     .graphicsLayer { alpha = progressProvider() },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
@@ -111,16 +118,17 @@ fun DetailFloatingHeader(
                 Box(
                     modifier = Modifier
                         .width(rightActionsWidth)
-                        .height(40.dp),
+                        .height(if (isDesktop) 48.dp else 40.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     if (interactive) {
                         NuvioBackButton(
+                            usePageStyle = true,
                             onClick = onBack,
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(if (isDesktop) 48.dp else 40.dp),
                             containerColor = Color.Transparent,
                             contentColor = MaterialTheme.colorScheme.onBackground,
-                            buttonSize = 40.dp,
+                            buttonSize = if (isDesktop) 48.dp else 40.dp,
                             iconSize = 24.dp,
                         )
                     }
@@ -165,15 +173,6 @@ fun DetailFloatingHeader(
                         enabled = interactive,
                         onClick = onToggleSaved,
                     )
-                    if (isFullscreenActionSupported) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        FullscreenActionButton(
-                            enabled = interactive,
-                            buttonSize = 40.dp,
-                            iconSize = 22.dp,
-                            contentColor = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
                 }
             }
 
@@ -213,7 +212,7 @@ private fun DetailFloatingHeaderAction(
     Box(
         modifier = Modifier
             .size(40.dp)
-            .clickable(enabled = enabled, onClick = onClick),
+            .remoteNavigationTarget().clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(

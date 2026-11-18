@@ -23,10 +23,17 @@ import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.MetaScreenBackgroundMode
+import com.nuvio.app.features.details.MetaScreenSettingsRepository
+import com.nuvio.app.features.streams.DesktopStreamsBackdrop
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
+import com.nuvio.app.features.player.MediaClassifier
+import com.nuvio.app.features.player.MediaClassificationHint
+import com.nuvio.app.features.player.classificationFilename
+import com.nuvio.app.features.player.classificationReleaseText
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.player.SubtitleRequestExtras
 import com.nuvio.app.features.player.resolveContentLanguage
@@ -38,6 +45,7 @@ import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
+import com.nuvio.app.features.streams.toPlaybackStream
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
 import com.nuvio.app.features.streams.shouldShowAutoPlayLoading
@@ -57,6 +65,8 @@ import com.nuvio.app.features.party.matches
 import com.nuvio.app.features.party.partyMediaKey
 import com.nuvio.app.features.streams.LocalSharedStream
 import com.nuvio.app.features.streams.LocalStreamHighlight
+import com.nuvio.app.features.streams.StreamResumeState
+import com.nuvio.app.features.streams.forPlayback
 import com.nuvio.app.features.streams.SharedStream
 
 private data class PendingP2pStreamOpen(
@@ -66,6 +76,7 @@ private data class PendingP2pStreamOpen(
     val forceExternal: Boolean,
     val forceInternal: Boolean,
     val isAutoPlay: Boolean,
+    val startFromBeginning: Boolean,
 )
 
 @Composable
@@ -78,22 +89,21 @@ internal fun StreamDestination(
     onLandscapeLoadingChanged: (Boolean) -> Unit,
 ) {
     val onBack = rememberGuardedPopBackStack(navController, route)
-    val launch = remember(route.launchId) {
-        StreamLaunchStore.get(route.launchId)
-    }
+    val launch = StreamLaunchStore.get(route.launchId)
     if (launch == null) {
         LaunchedEffect(route.launchId) {
             onBack()
         }
         return
     }
+    com.nuvio.app.features.player.PrefetchOpeningArtwork(launch.background ?: launch.poster)
     val pauseDescription = launch.pauseDescription
     val streamRouteScope = rememberCoroutineScope()
-    var autoPlayNavigationStarted by remember(route.launchId) { mutableStateOf(false) }
-    var resolvingDebridStream by rememberSaveable(route.launchId) { mutableStateOf(false) }
-    var resolvingYouTubeStream by rememberSaveable(route.launchId) { mutableStateOf(false) }
-    var preparingServerStream by remember(route.launchId) { mutableStateOf(false) }
-    var pendingP2pStreamOpen by remember { mutableStateOf<PendingP2pStreamOpen?>(null) }
+    var autoPlayNavigationStarted by remember(route.launchId, launch.seasonNumber, launch.episodeNumber) { mutableStateOf(false) }
+    var resolvingDebridStream by rememberSaveable(route.launchId, launch.seasonNumber, launch.episodeNumber) { mutableStateOf(false) }
+    var resolvingYouTubeStream by rememberSaveable(route.launchId, launch.seasonNumber, launch.episodeNumber) { mutableStateOf(false) }
+    var preparingServerStream by remember(route.launchId, launch.seasonNumber, launch.episodeNumber) { mutableStateOf(false) }
+    var pendingP2pStreamOpen by remember(launch.seasonNumber, launch.episodeNumber) { mutableStateOf<PendingP2pStreamOpen?>(null) }
     val shouldResolveEpisodeVideoId =
         launch.parentMetaId != null &&
             launch.seasonNumber != null &&
@@ -134,7 +144,7 @@ internal fun StreamDestination(
         val metaId = launch.parentMetaId ?: return@LaunchedEffect
         val resolvedVideoId = runCatching {
             MetaDetailsRepository.fetch(metaType, metaId)
-        }.getOrNull()
+        }.onFailure { if (it is CancellationException) throw it }.getOrNull()
             ?.videos
             ?.firstOrNull { video ->
                 video.season == launch.seasonNumber &&
@@ -163,8 +173,26 @@ internal fun StreamDestination(
         )
     }
 
-    suspend fun serverResumePositionMs(stream: StreamItem): Long? {
-        if (stream.serverTarget == null || launch.startFromBeginning) return null
+    fun resolveLaunchClassification(stream: StreamItem? = null, filename: String? = null, streamTitle: String? = null,
+        releaseText: String? = null, hint: MediaClassificationHint? = null): com.nuvio.app.features.player.MediaClassification {
+        val meta = MetaDetailsRepository.peek(
+            type = launch.parentMetaType ?: launch.type,
+            id = launch.parentMetaId ?: effectiveVideoId,
+        )
+        return MediaClassifier.detectPlayback(
+            meta = meta,
+            fallbackItemType = launch.parentMetaType ?: launch.type,
+            fallbackItemId = launch.parentMetaId ?: effectiveVideoId,
+            stream = stream,
+            filename = filename,
+            streamTitle = streamTitle ?: launch.title,
+            streamSubtitle = releaseText,
+            hint = hint,
+        )
+    }
+
+    suspend fun serverResumePositionMs(stream: StreamItem, startFromBeginning: Boolean = launch.startFromBeginning): Long? {
+        if (stream.serverTarget == null || startFromBeginning) return null
         val saved = WatchProgressRepository.progressForVideo(
             videoId = effectiveVideoId,
             parentMetaId = launch.parentMetaId,
@@ -179,7 +207,10 @@ internal fun StreamDestination(
         resolvedResumePositionMs: Long?,
         resolvedResumeProgressFraction: Float?,
         replaceStreamRoute: Boolean,
+        startFromBeginning: Boolean = launch.startFromBeginning,
     ) {
+        val playbackResume = StreamResumeState(resolvedResumePositionMs, resolvedResumeProgressFraction)
+            .forPlayback(startFromBeginning)
         val infoHash = stream.p2pInfoHash ?: return
         val sentinelUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
         if (playerSettings.streamReuseLastLinkEnabled) {
@@ -198,7 +229,7 @@ internal fun StreamDestination(
                 addonId = stream.addonId,
                 requestHeaders = emptyMap(),
                 responseHeaders = emptyMap(),
-                filename = stream.behaviorHints.filename,
+                filename = stream.classificationFilename,
                 videoHash = stream.behaviorHints.videoHash,
                 videoSize = stream.behaviorHints.videoSize,
                 infoHash = infoHash,
@@ -208,6 +239,8 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(),
                 addonLogo = stream.addonLogo,
                 streamDescription = stream.streamSubtitle,
+                releaseText = stream.classificationReleaseText,
+                classificationHint = resolveLaunchClassification(stream).toHint(),
             )
         }
         val playerLaunch = PlayerLaunch(
@@ -236,13 +269,17 @@ internal fun StreamDestination(
             parentMetaType = launch.parentMetaType ?: launch.type,
             torrentInfoHash = infoHash,
             torrentFileIdx = stream.p2pFileIdx,
-            torrentFilename = stream.behaviorHints.filename,
+            torrentFilename = stream.classificationFilename,
             torrentTrackers = stream.p2pTrackers,
             subtitleExtras = SubtitleRequestExtras.from(stream.behaviorHints),
-            initialPositionMs = resolvedResumePositionMs ?: 0L,
-            initialProgressFraction = resolvedResumeProgressFraction,
+            initialPositionMs = playbackResume.positionMs ?: 0L,
+            initialProgressFraction = playbackResume.progressFraction,
             contentLanguage = resolveLaunchContentLanguage(),
-            sourceFilename = stream.behaviorHints.filename,
+            streamLaunchId = route.launchId,
+            mediaContentType = resolveLaunchClassification(stream).type,
+            classificationHint = resolveLaunchClassification(stream).toHint(),
+            playbackOrigin = if (launch.manualSelection) "manual_p2p" else "auto_p2p",
+            sourceFilename = stream.classificationFilename,
             stream = stream,
         )
 
@@ -263,6 +300,7 @@ internal fun StreamDestination(
         forceExternal: Boolean,
         forceInternal: Boolean,
         isAutoPlay: Boolean,
+        startFromBeginning: Boolean = launch.startFromBeginning,
     ) {
         if (stream.p2pInfoHash == null) {
             if (isAutoPlay) StreamsRepository.skipAutoPlayStream(stream)
@@ -280,6 +318,7 @@ internal fun StreamDestination(
                 forceExternal = forceExternal,
                 forceInternal = forceInternal,
                 isAutoPlay = isAutoPlay,
+                startFromBeginning = startFromBeginning,
             )
             return
         }
@@ -288,11 +327,12 @@ internal fun StreamDestination(
             resolvedResumePositionMs = resolvedResumePositionMs,
             resolvedResumeProgressFraction = resolvedResumeProgressFraction,
             replaceStreamRoute = isAutoPlay,
+            startFromBeginning = startFromBeginning,
         )
     }
 
-    var reuseHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
-    var reuseNavigated by remember { mutableStateOf(false) }
+    var reuseHandled by rememberSaveable(launch.videoId, effectiveVideoId, launch.seasonNumber, launch.episodeNumber) { mutableStateOf(false) }
+    var reuseNavigated by remember(route.launchId, launch.seasonNumber, launch.episodeNumber) { mutableStateOf(false) }
     LaunchedEffect(effectiveVideoId, hasResolvedVideoId, playerSettings.streamReuseLastLinkEnabled, launch.manualSelection) {
         if (!hasResolvedVideoId) return@LaunchedEffect
         if (reuseHandled) return@LaunchedEffect
@@ -309,23 +349,8 @@ internal fun StreamDestination(
         val maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
         val cached = StreamLinkCacheRepository.getValid(cacheKey, maxAgeMs)
         if (cached != null) {
+            val cachedStream = cached.toPlaybackStream()
             if (cached.url.isBlank() && !cached.infoHash.isNullOrBlank()) {
-                val cachedStream = StreamItem(
-                    name = cached.streamName,
-                    description = cached.streamDescription,
-                    url = null,
-                    infoHash = cached.infoHash,
-                    fileIdx = cached.fileIdx,
-                    sources = cached.sources,
-                    addonName = cached.addonName,
-                    addonId = cached.addonId,
-                    addonLogo = cached.addonLogo,
-                    behaviorHints = StreamBehaviorHints(
-                        filename = cached.filename,
-                        videoSize = cached.videoSize,
-                        bingeGroup = cached.bingeGroup,
-                    ),
-                )
                 requestOrOpenP2pStream(
                     stream = cachedStream,
                     resolvedResumePositionMs = launch.resumePositionMs,
@@ -353,7 +378,7 @@ internal fun StreamDestination(
                 episodeTitle = launch.episodeTitle,
                 episodeThumbnail = launch.episodeThumbnail,
                 streamTitle = cached.streamName,
-                streamSubtitle = cached.streamDescription,
+                streamSubtitle = cached.releaseText ?: cached.streamDescription,
                 bingeGroup = cached.bingeGroup,
                 pauseDescription = pauseDescription,
                 providerName = cached.addonName,
@@ -368,23 +393,14 @@ internal fun StreamDestination(
                     StreamBehaviorHints(filename = cached.filename, videoHash = cached.videoHash, videoSize = cached.videoSize),
                 ),
                 contentLanguage = resolveLaunchContentLanguage(cached.contentLanguage),
+                streamLaunchId = route.launchId,
+                mediaContentType = resolveLaunchClassification(filename = cached.filename, streamTitle = cached.streamName,
+                    releaseText = cached.releaseText ?: cached.streamDescription, hint = cached.classificationHint).type,
+                classificationHint = resolveLaunchClassification(filename = cached.filename, streamTitle = cached.streamName,
+                    releaseText = cached.releaseText ?: cached.streamDescription, hint = cached.classificationHint).toHint(),
+                playbackOrigin = "saved_link",
                 sourceFilename = cached.filename,
-                stream = StreamItem(
-                    name = cached.streamName,
-                    description = cached.streamDescription,
-                    url = cached.url,
-                    infoHash = cached.infoHash,
-                    fileIdx = cached.fileIdx,
-                    addonName = cached.addonName,
-                    addonId = cached.addonId,
-                    addonLogo = cached.addonLogo,
-                    streamType = cached.streamType,
-                    behaviorHints = StreamBehaviorHints(
-                        filename = cached.filename,
-                        videoSize = cached.videoSize,
-                        bingeGroup = cached.bingeGroup,
-                    ),
-                ),
+                stream = cachedStream,
                 sourceFromLinkCache = true,
                 sourceAutoSelected = true,
             )
@@ -424,7 +440,7 @@ internal fun StreamDestination(
         manualSelection = launch.manualSelection,
     )
     SideEffect { onLandscapeLoadingChanged(useLandscapeLoading) }
-    var autoPlayHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
+    var autoPlayHandled by rememberSaveable(launch.videoId, effectiveVideoId, launch.seasonNumber, launch.episodeNumber) { mutableStateOf(false) }
     LaunchedEffect(
         streamsUiState.autoPlayStream,
         streamsUiState.requestToken,
@@ -515,7 +531,7 @@ internal fun StreamDestination(
                 addonId = stream.addonId,
                 requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
                 responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                filename = stream.behaviorHints.filename,
+                filename = stream.classificationFilename,
                 videoHash = stream.behaviorHints.videoHash,
                 videoSize = stream.behaviorHints.videoSize,
                 infoHash = stream.p2pInfoHash,
@@ -525,6 +541,8 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(),
                 addonLogo = stream.addonLogo,
                 streamDescription = stream.streamSubtitle,
+                releaseText = stream.classificationReleaseText,
+                classificationHint = resolveLaunchClassification(stream).toHint(),
             )
         }
         val playerLaunch = PlayerLaunch(
@@ -552,11 +570,19 @@ internal fun StreamDestination(
             videoId = effectiveVideoId,
             parentMetaId = launch.parentMetaId ?: effectiveVideoId,
             parentMetaType = launch.parentMetaType ?: launch.type,
+            torrentInfoHash = stream.p2pInfoHash ?: stream.infoHash,
+            torrentFileIdx = stream.p2pFileIdx ?: stream.fileIdx,
+            torrentFilename = stream.classificationFilename,
+            torrentTrackers = stream.p2pTrackers,
             initialPositionMs = serverResumeMs ?: launch.resumePositionMs ?: 0L,
             initialProgressFraction = launch.resumeProgressFraction.takeIf { serverResumeMs == null },
             subtitleExtras = SubtitleRequestExtras.from(stream.behaviorHints, sourceUrl),
             contentLanguage = resolveLaunchContentLanguage(),
-            sourceFilename = stream.behaviorHints.filename,
+            streamLaunchId = route.launchId,
+            mediaContentType = resolveLaunchClassification(stream).type,
+            classificationHint = resolveLaunchClassification(stream).toHint(),
+            playbackOrigin = "auto_stream",
+            sourceFilename = stream.classificationFilename,
             stream = stream,
             sourceAutoSelected = true,
         )
@@ -576,20 +602,29 @@ internal fun StreamDestination(
     }
 
     if (!hasResolvedVideoId) {
-        if (showLoadingScreen) {
-            StreamLoadingScreen(
-                launch = launch,
-                state = StreamsUiState(),
-                showStatus = playerSettings.showPlayerLoadingStatus,
-                resolvingDebridStream = false,
-                onBack = onBack,
-            )
-            return
-        }
+        StreamLoadingScreen(
+            visible = showLoadingScreen,
+            launch = launch,
+            state = StreamsUiState(),
+            showStatus = playerSettings.showPlayerLoadingStatus,
+            resolvingDebridStream = false,
+            onBack = onBack,
+        )
+        if (showLoadingScreen && !isDesktop) return
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
+            // Hold the carried hero artwork while the episode resolves so the page never drops to blank.
+            route.persistentHeroDetails?.backdrop?.let { carried ->
+                val metaSettings by MetaScreenSettingsRepository.uiState.collectAsStateWithLifecycle()
+                DesktopStreamsBackdrop(
+                    backdrop = launch.background ?: launch.poster,
+                    carriedArtwork = carried,
+                    dominantColorEnabled = metaSettings.backgroundMode == MetaScreenBackgroundMode.DominantColor,
+                    hazeState = null,
+                )
+            }
             NuvioLoadingIndicator()
         }
         return
@@ -602,7 +637,10 @@ internal fun StreamDestination(
         forceExternal: Boolean,
         forceInternal: Boolean,
         saveForReuse: Boolean = true,
+        startFromBeginning: Boolean = launch.startFromBeginning,
     ) {
+        val playbackResume = StreamResumeState(resolvedResumePositionMs, resolvedResumeProgressFraction)
+            .forPlayback(startFromBeginning)
         if (stream.needsServerPreparation) {
             if (preparingServerStream) return
             streamRouteScope.launch {
@@ -614,14 +652,15 @@ internal fun StreamDestination(
                         NuvioToastController.show(error.serverPlaybackMessage())
                         return@launch
                     }
-                val serverResumeMs = serverResumePositionMs(prepared)
+                val serverResumeMs = serverResumePositionMs(prepared, startFromBeginning)
                 preparingServerStream = false
                 openSelectedStream(
                     stream = prepared,
-                    resolvedResumePositionMs = serverResumeMs ?: resolvedResumePositionMs,
-                    resolvedResumeProgressFraction = resolvedResumeProgressFraction.takeIf { serverResumeMs == null },
+                    resolvedResumePositionMs = serverResumeMs ?: playbackResume.positionMs,
+                    resolvedResumeProgressFraction = playbackResume.progressFraction.takeIf { serverResumeMs == null },
                     forceExternal = false,
                     forceInternal = true,
+                    startFromBeginning = startFromBeginning,
                 )
             }
             return
@@ -639,10 +678,11 @@ internal fun StreamDestination(
                 when (resolved) {
                     is DirectDebridPlayableResult.Success -> openSelectedStream(
                         stream = resolved.stream,
-                        resolvedResumePositionMs = resolvedResumePositionMs,
-                        resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                        resolvedResumePositionMs = playbackResume.positionMs,
+                        resolvedResumeProgressFraction = playbackResume.progressFraction,
                         forceExternal = forceExternal,
                         forceInternal = forceInternal,
+                        startFromBeginning = startFromBeginning,
                     )
                     else -> {
                         resolved.toastMessage()?.let { NuvioToastController.show(it) }
@@ -664,11 +704,12 @@ internal fun StreamDestination(
         if (stream.needsLocalDebridResolve && stream.p2pInfoHash != null) {
             requestOrOpenP2pStream(
                 stream = stream,
-                resolvedResumePositionMs = resolvedResumePositionMs,
-                resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                resolvedResumePositionMs = playbackResume.positionMs,
+                resolvedResumeProgressFraction = playbackResume.progressFraction,
                 forceExternal = forceExternal,
                 forceInternal = forceInternal,
                 isAutoPlay = false,
+                startFromBeginning = startFromBeginning,
             )
             return
         }
@@ -684,10 +725,11 @@ internal fun StreamDestination(
                 }
                 openSelectedStream(
                     stream = resolved,
-                    resolvedResumePositionMs = resolvedResumePositionMs,
-                    resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                    resolvedResumePositionMs = playbackResume.positionMs,
+                    resolvedResumeProgressFraction = playbackResume.progressFraction,
                     forceExternal = forceExternal,
                     forceInternal = forceInternal,
+                    startFromBeginning = startFromBeginning,
                     // The resolved URL expires after a few hours, so it isn't kept for reuse.
                     saveForReuse = false,
                 )
@@ -718,7 +760,7 @@ internal fun StreamDestination(
                 addonId = stream.addonId,
                 requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
                 responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                filename = stream.behaviorHints.filename,
+                filename = stream.classificationFilename,
                 videoHash = stream.behaviorHints.videoHash,
                 videoSize = stream.behaviorHints.videoSize,
                 infoHash = stream.p2pInfoHash,
@@ -728,6 +770,8 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(),
                 addonLogo = stream.addonLogo,
                 streamDescription = stream.streamSubtitle,
+                releaseText = stream.classificationReleaseText,
+                classificationHint = resolveLaunchClassification(stream).toHint(),
             )
         }
         val playerLaunch = PlayerLaunch(
@@ -755,11 +799,19 @@ internal fun StreamDestination(
             videoId = effectiveVideoId,
             parentMetaId = launch.parentMetaId ?: effectiveVideoId,
             parentMetaType = launch.parentMetaType ?: launch.type,
-            initialPositionMs = resolvedResumePositionMs ?: 0L,
-            initialProgressFraction = resolvedResumeProgressFraction,
+            torrentInfoHash = stream.p2pInfoHash ?: stream.infoHash,
+            torrentFileIdx = stream.p2pFileIdx ?: stream.fileIdx,
+            torrentFilename = stream.classificationFilename,
+            torrentTrackers = stream.p2pTrackers,
+            initialPositionMs = playbackResume.positionMs ?: 0L,
+            initialProgressFraction = playbackResume.progressFraction,
             subtitleExtras = SubtitleRequestExtras.from(stream.behaviorHints, sourceUrl),
             contentLanguage = resolveLaunchContentLanguage(),
-            sourceFilename = stream.behaviorHints.filename,
+            streamLaunchId = route.launchId,
+            mediaContentType = resolveLaunchClassification(stream).type,
+            classificationHint = resolveLaunchClassification(stream).toHint(),
+            playbackOrigin = "manual_stream",
+            sourceFilename = stream.classificationFilename,
             stream = stream,
         )
 
@@ -812,7 +864,9 @@ internal fun StreamDestination(
             LocalSharedStream provides sharedStream,
         ) {
             StreamsScreen(
+                description = pauseDescription,
                 showLoadingScreen = showLoadingScreen,
+                carriedBackdrop = route.persistentHeroDetails?.backdrop,
                 type = launch.type,
                 videoId = effectiveVideoId,
                 parentMetaId = launch.parentMetaId ?: effectiveVideoId,
@@ -829,7 +883,7 @@ internal fun StreamDestination(
                 resumeProgressFraction = launch.resumeProgressFraction,
                 manualSelection = launch.manualSelection,
                 startFromBeginning = launch.startFromBeginning,
-                onStreamSelected = { stream, resolvedResumePositionMs, resolvedResumeProgressFraction ->
+                onStreamSelected = { stream, resolvedResumePositionMs, resolvedResumeProgressFraction, restartSelected ->
                     openSelectedStream(
                         stream = stream,
                         resolvedResumePositionMs = resolvedResumePositionMs,
@@ -837,15 +891,17 @@ internal fun StreamDestination(
                         forceExternal = false,
                         forceInternal = false,
                         saveForReuse = stream != sharedStream?.stream,
+                        startFromBeginning = restartSelected,
                     )
                 },
-                onStreamActionOpen = { stream, openExternally, resolvedResumePositionMs, resolvedResumeProgressFraction ->
+                onStreamActionOpen = { stream, openExternally, resolvedResumePositionMs, resolvedResumeProgressFraction, restartSelected ->
                     openSelectedStream(
                         stream = stream,
                         resolvedResumePositionMs = resolvedResumePositionMs,
                         resolvedResumeProgressFraction = resolvedResumeProgressFraction,
                         forceExternal = openExternally,
                         forceInternal = !openExternally,
+                        startFromBeginning = restartSelected,
                     )
                 },
                 onBack = onBack,
@@ -862,6 +918,7 @@ internal fun StreamDestination(
                         resolvedResumePositionMs = pending.resumePositionMs,
                         resolvedResumeProgressFraction = pending.resumeProgressFraction,
                         replaceStreamRoute = pending.isAutoPlay,
+                        startFromBeginning = pending.startFromBeginning,
                     )
                 },
                 onDismiss = {
@@ -873,16 +930,15 @@ internal fun StreamDestination(
                 },
             )
         }
-        if (showLoadingScreen) {
-            StreamLoadingScreen(
-                launch = launch,
-                state = streamsUiState.takeIf { it.requestToken == expectedStreamsRequestToken } ?: StreamsUiState(),
-                showStatus = playerSettings.showPlayerLoadingStatus,
-                resolvingDebridStream = resolvingDebridStream,
-                resolvingYouTubeStream = resolvingYouTubeStream,
-                onBack = onBack,
-                preparingPlayback = preparingServerStream,
-            )
-        }
+        StreamLoadingScreen(
+            visible = showLoadingScreen,
+            launch = launch,
+            state = streamsUiState.takeIf { it.requestToken == expectedStreamsRequestToken } ?: StreamsUiState(),
+            showStatus = playerSettings.showPlayerLoadingStatus,
+            resolvingDebridStream = resolvingDebridStream,
+            resolvingYouTubeStream = resolvingYouTubeStream,
+            onBack = onBack,
+            preparingPlayback = preparingServerStream,
+        )
     }
 }

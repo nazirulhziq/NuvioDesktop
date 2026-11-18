@@ -1,5 +1,10 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.SettingsAwareSurface
+
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Column
@@ -13,7 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -31,7 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -266,7 +270,7 @@ private fun StreamBackgroundModeDialog(
         )
         StreamBackgroundMode.entries.forEach { mode ->
             Row(
-                modifier = Modifier.fillMaxWidth().selectable(
+                modifier = Modifier.fillMaxWidth().remoteNavigationTarget().selectable(
                     selected = mode == selectedMode,
                     role = Role.RadioButton,
                     onClick = { onModeSelected(mode) },
@@ -274,7 +278,7 @@ private fun StreamBackgroundModeDialog(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
             ) {
-                RadioButton(selected = mode == selectedMode, onClick = null)
+                RadioButton(selected = mode == selectedMode, onClick = null, modifier = Modifier.remoteNavigationTarget())
                 Text(
                     text = streamBackgroundModeLabel(mode),
                     style = MaterialTheme.typography.bodyLarge,
@@ -372,7 +376,7 @@ private fun StreamBadgePositionDialog(
                 RadioButton(
                     selected = placement == selectedPlacement,
                     onClick = { onPlacementSelected(placement) },
-                )
+                 modifier = Modifier.remoteNavigationTarget())
                 Text(
                     text = streamBadgePlacementLabel(placement),
                     style = MaterialTheme.typography.bodyLarge,
@@ -418,7 +422,7 @@ private fun BadgeUrlManagerDialog(
                 draftUrl = it
                 errorMessage = null
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = (Modifier.fillMaxWidth()).remoteNavigationTarget(textField = true),
             label = { Text(stringResource(Res.string.settings_fusion_badge_url_label)) },
             singleLine = false,
             minLines = 2,
@@ -485,10 +489,10 @@ private fun BadgeUrlManagerDialog(
                 color = tokens.colors.textMuted,
             )
         } else {
-            LazyColumn(
-                modifier = Modifier
+            NuvioLazyColumn(
+                modifier = Modifier.remoteNavigationGroup().then(Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 300.dp),
+                    .heightIn(max = 300.dp)),
                 verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
             ) {
                 items(
@@ -545,7 +549,7 @@ private fun BadgeUrlRow(
     } else {
         tokens.colors.surfaceCard
     }
-    Surface(
+    SettingsAwareSurface(
         modifier = Modifier.fillMaxWidth(),
         shape = tokens.shapes.compactCard,
         color = containerColor,
@@ -566,7 +570,7 @@ private fun BadgeUrlRow(
                         selected = import.isActive,
                         onClick = onActivate,
                         enabled = enabled,
-                    )
+                     modifier = Modifier.remoteNavigationTarget())
                 }
                 Text(
                     text = import.sourceUrl,
@@ -601,7 +605,7 @@ private fun BadgeUrlRow(
                 TextButton(
                     enabled = enabled,
                     onClick = onPreview,
-                ) {
+                 modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.material3.ButtonDefaults.shape)) {
                     Icon(
                         imageVector = Icons.Rounded.Visibility,
                         contentDescription = null,
@@ -613,7 +617,7 @@ private fun BadgeUrlRow(
                 IconButton(
                     enabled = enabled,
                     onClick = onDelete,
-                ) {
+                 modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                     Icon(
                         imageVector = Icons.Rounded.Delete,
                         contentDescription = stringResource(Res.string.action_delete),
@@ -657,10 +661,10 @@ private fun BadgePreviewDialog(
                 color = tokens.colors.textMuted,
             )
         } else {
-            LazyColumn(
-                modifier = Modifier
+            NuvioLazyColumn(
+                modifier = Modifier.remoteNavigationGroup().then(Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 460.dp),
+                    .heightIn(max = 460.dp)),
                 verticalArrangement = Arrangement.spacedBy(tokens.spacing.railGap),
             ) {
                 items(

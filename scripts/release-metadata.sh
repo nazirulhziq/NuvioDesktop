@@ -72,7 +72,11 @@ if [[ -z "$current_bump" || -z "$previous_bump" ]]; then
     exit 1
 fi
 
-if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+parsed_version="$current_version"
+if [[ "$version_key" == VERSION_NAME && "$build_key" == VERSION_CODE ]]; then
+    parsed_version="${current_version#v}"
+fi
+if [[ ! "$parsed_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
     echo "Invalid release version: ${current_version}" >&2
     exit 1
 fi
@@ -88,7 +92,7 @@ if (( 10#$current_build <= 10#$previous_build )); then
 fi
 
 release_title="$current_version"
-version_core="${current_version%%-*}"
+version_core="${parsed_version%%-*}"
 version_suffix=""
 if [[ "$current_version" == *-* ]]; then
     version_suffix="${current_version#*-}"
@@ -103,7 +107,7 @@ elif [[ "$version_suffix" == rc.* ]]; then
     release_title="Release Candidate ${version_core} (${version_suffix#rc.})"
 fi
 release_prerelease="false"
-version_major="${current_version%%.*}"
+version_major="${parsed_version%%.*}"
 if [[ -n "$version_suffix" ]] && (( 10#$version_major >= 1 )); then
     release_prerelease="true"
 fi

@@ -22,6 +22,7 @@ actual object PlayerSettingsStorage {
     private const val pendingExternalPlaybackKey = "pending_external_playback"
     private const val playbackBrightnessKey = "playback_brightness"
     private const val useLegacyPlayerLayoutKey = "use_legacy_player_layout"
+    private const val playerUiModeKey = "player_ui_mode"
     private const val showLoadingOverlayKey = "show_loading_overlay"
     private const val showPlayerLoadingStatusKey = "show_player_loading_status"
     private const val pauseOverlayEnabledKey = "pause_overlay_enabled"
@@ -44,6 +45,8 @@ actual object PlayerSettingsStorage {
     private const val subtitleOutlineColorKey = "subtitle_outline_color"
     private const val subtitleOutlineEnabledKey = "subtitle_outline_enabled"
     private const val subtitleOutlineWidthKey = "subtitle_outline_width"
+    private const val subtitleOutlineEffectKey = "subtitle_outline_effect"
+    private const val subtitleFontKey = "subtitle_font"
     private const val subtitleBoldKey = "subtitle_bold"
     private const val subtitleFontSizeSpKey = "subtitle_font_size_sp"
     private const val subtitleBottomOffsetKey = "subtitle_bottom_offset"
@@ -125,7 +128,17 @@ actual object PlayerSettingsStorage {
     private const val iosSaturationKey = "ios_saturation"
     private const val iosGammaKey = "ios_gamma"
     private const val nvidiaRtxSuperResolutionEnabledKey = "nvidia_rtx_super_resolution_enabled"
-    private const val nvidiaRtxHdrEnabledKey = "nvidia_rtx_hdr_enabled"
+    private const val animeUpscalerEnabledKey = "anime_upscaler_enabled"
+    private const val animeUpscalerModeKey = "anime_upscaler_mode"
+    private const val audioNightModeEnabledKey = "audio_night_mode_enabled"
+    private const val showSeekbarWhileSeekingKey = "show_seekbar_while_seeking"
+    private const val seekPreviewEnabledKey = "seek_preview_enabled"
+    private const val seekrApiKeyKey = "seekr_api_key"
+    private const val showRemainingTimeKey = "show_remaining_time"
+    private const val eyeFilterEnabledKey = "eye_filter_enabled"
+    private const val eyeFilterColorKey = "eye_filter_color"
+    private const val eyeFilterOpacityKey = "eye_filter_opacity"
+    private const val grainFilterEnabledKey = "grain_filter_enabled"
     private val syncKeys = listOf(
         showLoadingOverlayKey,
         showPlayerLoadingStatusKey,
@@ -135,8 +148,13 @@ actual object PlayerSettingsStorage {
         holdToSpeedEnabledKey,
         holdToSpeedValueKey,
         nvidiaRtxSuperResolutionEnabledKey,
-        nvidiaRtxHdrEnabledKey,
-
+        animeUpscalerEnabledKey,
+        animeUpscalerModeKey,
+        audioNightModeEnabledKey,
+        showSeekbarWhileSeekingKey,
+        seekPreviewEnabledKey,
+        seekrApiKeyKey,
+        showRemainingTimeKey,
         touchGesturesEnabledKey,
         externalPlayerEnabledKey,
         externalPlayerForwardSubtitlesKey,
@@ -303,6 +321,23 @@ actual object PlayerSettingsStorage {
         preferences
             ?.edit()
             ?.putBoolean(ProfileScopedKey.of(useLegacyPlayerLayoutKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadPlayerUiMode(): String? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(playerUiModeKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getString(key, null)
+            } else {
+                null
+            }
+        }
+
+    actual fun savePlayerUiMode(mode: String) {
+        preferences
+            ?.edit()
+            ?.putString(ProfileScopedKey.of(playerUiModeKey), mode)
             ?.apply()
     }
 
@@ -574,6 +609,32 @@ actual object PlayerSettingsStorage {
         preferences
             ?.edit()
             ?.putInt(ProfileScopedKey.of(subtitleOutlineWidthKey), width)
+            ?.apply()
+    }
+
+    actual fun loadSubtitleOutlineEffect(): String? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(subtitleOutlineEffectKey)
+            if (sharedPreferences.contains(key)) sharedPreferences.getString(key, null) else null
+        }
+
+    actual fun saveSubtitleOutlineEffect(effect: String) {
+        preferences
+            ?.edit()
+            ?.putString(ProfileScopedKey.of(subtitleOutlineEffectKey), effect)
+            ?.apply()
+    }
+
+    actual fun loadSubtitleFont(): String? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(subtitleFontKey)
+            if (sharedPreferences.contains(key)) sharedPreferences.getString(key, null) else null
+        }
+
+    actual fun saveSubtitleFont(font: String) {
+        preferences
+            ?.edit()
+            ?.putString(ProfileScopedKey.of(subtitleFontKey), font)
             ?.apply()
     }
 
@@ -1620,9 +1681,9 @@ actual object PlayerSettingsStorage {
             ?.apply()
     }
 
-    actual fun loadNvidiaRtxHdrEnabled(): Boolean? =
+    actual fun loadAnimeUpscalerEnabled(): Boolean? =
         preferences?.let { sharedPreferences ->
-            val key = ProfileScopedKey.of(nvidiaRtxHdrEnabledKey)
+            val key = ProfileScopedKey.of(animeUpscalerEnabledKey)
             if (sharedPreferences.contains(key)) {
                 sharedPreferences.getBoolean(key, false)
             } else {
@@ -1630,13 +1691,141 @@ actual object PlayerSettingsStorage {
             }
         }
 
-    actual fun saveNvidiaRtxHdrEnabled(enabled: Boolean) {
+    actual fun saveAnimeUpscalerEnabled(enabled: Boolean) {
         preferences
             ?.edit()
-            ?.putBoolean(ProfileScopedKey.of(nvidiaRtxHdrEnabledKey), enabled)
+            ?.putBoolean(ProfileScopedKey.of(animeUpscalerEnabledKey), enabled)
             ?.apply()
     }
 
+    actual fun loadAnimeUpscalerMode(): String? =
+        preferences?.getString(ProfileScopedKey.of(animeUpscalerModeKey), null)
+
+    actual fun saveAnimeUpscalerMode(mode: String) {
+        preferences
+            ?.edit()
+            ?.putString(ProfileScopedKey.of(animeUpscalerModeKey), mode)
+            ?.apply()
+    }
+
+    actual fun loadAudioNightModeEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(audioNightModeEnabledKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, false)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveAudioNightModeEnabled(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(audioNightModeEnabledKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadShowSeekbarWhileSeeking(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(showSeekbarWhileSeekingKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, false)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveShowSeekbarWhileSeeking(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(showSeekbarWhileSeekingKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadSeekPreviewEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(seekPreviewEnabledKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, false)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveSeekPreviewEnabled(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(seekPreviewEnabledKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadSeekrApiKey(): String? =
+        preferences?.getString(ProfileScopedKey.of(seekrApiKeyKey), null)
+
+    actual fun saveSeekrApiKey(apiKey: String) {
+        preferences
+            ?.edit()
+            ?.putString(ProfileScopedKey.of(seekrApiKeyKey), apiKey)
+            ?.apply()
+    }
+
+    actual fun loadShowRemainingTime(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(showRemainingTimeKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, false)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveShowRemainingTime(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(showRemainingTimeKey), enabled)
+            ?.apply()
+    }
+
+    actual fun loadEyeFilterEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(eyeFilterEnabledKey)
+            if (sharedPreferences.contains(key)) sharedPreferences.getBoolean(key, false) else null
+        }
+
+    actual fun saveEyeFilterEnabled(enabled: Boolean) {
+        preferences?.edit()?.putBoolean(ProfileScopedKey.of(eyeFilterEnabledKey), enabled)?.apply()
+    }
+
+    actual fun loadEyeFilterColor(): String? =
+        preferences?.getString(ProfileScopedKey.of(eyeFilterColorKey), null)
+
+    actual fun saveEyeFilterColor(color: String) {
+        preferences?.edit()?.putString(ProfileScopedKey.of(eyeFilterColorKey), color)?.apply()
+    }
+
+    actual fun loadEyeFilterOpacity(): Float? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(eyeFilterOpacityKey)
+            if (sharedPreferences.contains(key)) sharedPreferences.getFloat(key, 0.35f) else null
+        }
+
+    actual fun saveEyeFilterOpacity(opacity: Float) {
+        preferences?.edit()?.putFloat(ProfileScopedKey.of(eyeFilterOpacityKey), opacity)?.apply()
+    }
+
+    actual fun loadGrainFilterEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(grainFilterEnabledKey)
+            if (sharedPreferences.contains(key)) sharedPreferences.getBoolean(key, false) else null
+        }
+
+    actual fun saveGrainFilterEnabled(enabled: Boolean) {
+        preferences?.edit()?.putBoolean(ProfileScopedKey.of(grainFilterEnabledKey), enabled)?.apply()
+    }
+
+    actual fun loadPlayerUiScale(): Int? = null
+
+    actual fun savePlayerUiScale(scale: Int) {}
 
     actual fun exportToSyncPayload(): JsonObject = buildJsonObject {
         loadShowLoadingOverlay()?.let { put(showLoadingOverlayKey, encodeSyncBoolean(it)) }
@@ -1737,7 +1926,13 @@ actual object PlayerSettingsStorage {
         loadIosSaturation()?.let { put(iosSaturationKey, encodeSyncInt(it)) }
         loadIosGamma()?.let { put(iosGammaKey, encodeSyncInt(it)) }
         loadNvidiaRtxSuperResolutionEnabled()?.let { put(nvidiaRtxSuperResolutionEnabledKey, encodeSyncBoolean(it)) }
-        loadNvidiaRtxHdrEnabled()?.let { put(nvidiaRtxHdrEnabledKey, encodeSyncBoolean(it)) }
+        loadAnimeUpscalerEnabled()?.let { put(animeUpscalerEnabledKey, encodeSyncBoolean(it)) }
+        loadAnimeUpscalerMode()?.let { put(animeUpscalerModeKey, encodeSyncString(it)) }
+        loadAudioNightModeEnabled()?.let { put(audioNightModeEnabledKey, encodeSyncBoolean(it)) }
+        loadShowSeekbarWhileSeeking()?.let { put(showSeekbarWhileSeekingKey, encodeSyncBoolean(it)) }
+        loadSeekPreviewEnabled()?.let { put(seekPreviewEnabledKey, encodeSyncBoolean(it)) }
+        loadSeekrApiKey()?.let { put(seekrApiKeyKey, encodeSyncString(it)) }
+        loadShowRemainingTime()?.let { put(showRemainingTimeKey, encodeSyncBoolean(it)) }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
@@ -1837,6 +2032,12 @@ actual object PlayerSettingsStorage {
         payload.decodeSyncInt(iosSaturationKey)?.let(::saveIosSaturation)
         payload.decodeSyncInt(iosGammaKey)?.let(::saveIosGamma)
         payload.decodeSyncBoolean(nvidiaRtxSuperResolutionEnabledKey)?.let(::saveNvidiaRtxSuperResolutionEnabled)
-        payload.decodeSyncBoolean(nvidiaRtxHdrEnabledKey)?.let(::saveNvidiaRtxHdrEnabled)
+        payload.decodeSyncBoolean(animeUpscalerEnabledKey)?.let(::saveAnimeUpscalerEnabled)
+        payload.decodeSyncString(animeUpscalerModeKey)?.let(::saveAnimeUpscalerMode)
+        payload.decodeSyncBoolean(audioNightModeEnabledKey)?.let(::saveAudioNightModeEnabled)
+        payload.decodeSyncBoolean(showSeekbarWhileSeekingKey)?.let(::saveShowSeekbarWhileSeeking)
+        payload.decodeSyncBoolean(seekPreviewEnabledKey)?.let(::saveSeekPreviewEnabled)
+        payload.decodeSyncString(seekrApiKeyKey)?.let(::saveSeekrApiKey)
+        payload.decodeSyncBoolean(showRemainingTimeKey)?.let(::saveShowRemainingTime)
     }
 }

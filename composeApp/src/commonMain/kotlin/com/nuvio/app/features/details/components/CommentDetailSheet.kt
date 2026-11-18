@@ -1,5 +1,7 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -16,7 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -117,7 +119,7 @@ fun CommentDetailSheet(
                                 if (canGoBack) MaterialTheme.colorScheme.surfaceVariant
                                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             )
-                            .then(if (canGoBack) Modifier.clickable(onClick = onPrevious) else Modifier),
+                            .then(if (canGoBack) Modifier.remoteNavigationTarget().clickable(onClick = onPrevious) else Modifier),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -143,7 +145,7 @@ fun CommentDetailSheet(
                                 if (canGoForward) MaterialTheme.colorScheme.surfaceVariant
                                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             )
-                            .then(if (canGoForward) Modifier.clickable(onClick = onNext) else Modifier),
+                            .then(if (canGoForward) Modifier.remoteNavigationTarget().clickable(onClick = onNext) else Modifier),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -168,7 +170,7 @@ fun CommentDetailSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = false)
-                    .verticalScroll(scrollState),
+                    .nuvioVerticalScroll(scrollState),
             ) {
                 Text(
                     text = if (isSpoilerHidden) {
@@ -184,7 +186,7 @@ fun CommentDetailSheet(
                     },
                     modifier = Modifier.then(
                         if (isSpoilerHidden) {
-                            Modifier.clickable { isSpoilerRevealed.value = true }
+                            Modifier.remoteNavigationTarget().clickable { isSpoilerRevealed.value = true }
                         } else {
                             Modifier
                         },

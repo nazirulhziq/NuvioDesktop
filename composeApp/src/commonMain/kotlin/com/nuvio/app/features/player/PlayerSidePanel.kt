@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.ui.LocalFrostedGlassEnabled
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -62,6 +63,7 @@ import nuvio.composeapp.generated.resources.collections_tab_all
 import nuvio.composeapp.generated.resources.streams_refresh
 import org.jetbrains.compose.resources.stringResource
 
+
 @Composable
 internal fun PlayerSidePanel(
     visible: Boolean,
@@ -114,7 +116,14 @@ internal fun PlayerSidePanel(
                     .width(resolvedWidth)
                     .fillMaxHeight()
                     .clip(shape)
-                    .background(tokens.colors.surfaceElevated)
+                    .then(
+                        Modifier.background(if (LocalFrostedGlassEnabled.current) Color.Black.copy(alpha = 0.90f) else tokens.colors.surfacePopover.copy(alpha = 1f)),
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (LocalFrostedGlassEnabled.current) Color.White.copy(alpha = 0.10f) else tokens.colors.borderDefault,
+                        shape = shape,
+                    )
                     .clickable(
                         interactionSource = panelInteraction,
                         indication = null,
@@ -170,7 +179,14 @@ internal fun PlayerDialogButton(
         modifier = modifier
             .alpha(if (enabled) 1f else tokens.opacity.disabled)
             .clip(RoundedCornerShape(12.dp))
-            .background(tokens.colors.surfaceCard)
+            .then(
+                Modifier.background(if (LocalFrostedGlassEnabled.current) Color.Black.copy(alpha = 0.88f) else MaterialTheme.nuvio.colors.surfaceCard.copy(alpha = 1f)),
+            )
+            .border(
+                width = 1.dp,
+                color = if (!LocalFrostedGlassEnabled.current) tokens.colors.borderDefault else Color.Transparent,
+                shape = RoundedCornerShape(12.dp),
+            )
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
@@ -251,7 +267,7 @@ private fun AddonFilterChip(
     val containerColor = when {
         hasError -> tokens.colors.danger.copy(alpha = 0.06f)
         isSelected -> tokens.colors.accent
-        else -> tokens.colors.surfaceCard
+        else -> Color.Black.copy(alpha = 0.70f)
     }
     val contentColor = when {
         hasError -> tokens.colors.danger
@@ -262,10 +278,16 @@ private fun AddonFilterChip(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(containerColor)
+            .then(
+                Modifier.background(if (!LocalFrostedGlassEnabled.current && !isSelected) tokens.colors.surfaceCard.copy(alpha = 1f) else if (hasError || isSelected) containerColor else Color.Black.copy(alpha = 0.88f)),
+            )
             .border(
                 1.dp,
-                if (hasError) tokens.colors.danger.copy(alpha = 0.7f) else tokens.colors.borderDefault,
+                when {
+                    hasError -> tokens.colors.danger.copy(alpha = 0.7f)
+                    isSelected -> Color.Transparent
+                    else -> tokens.colors.borderDefault
+                },
                 RoundedCornerShape(20.dp),
             )
             .clickable(onClick = onClick)

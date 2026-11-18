@@ -23,9 +23,26 @@ data class CachedStreamLink(
     val contentLanguage: String? = null,
     val addonLogo: String? = null,
     val streamDescription: String? = null,
+    val releaseText: String? = null,
+    val classificationHint: com.nuvio.app.features.player.MediaClassificationHint? = null,
 )
 
 internal expect fun epochMs(): Long
+
+internal fun CachedStreamLink.toPlaybackStream(): StreamItem = StreamItem(
+    name = streamName,
+    description = releaseText ?: streamDescription,
+    url = url.takeIf(String::isNotBlank),
+    infoHash = infoHash,
+    fileIdx = fileIdx,
+    sources = sources,
+    addonName = addonName,
+    addonId = addonId,
+    addonLogo = addonLogo,
+    streamType = streamType,
+    classificationHint = classificationHint,
+    behaviorHints = StreamBehaviorHints(filename = filename, videoSize = videoSize, videoHash = videoHash, bingeGroup = bingeGroup),
+)
 
 object StreamLinkCacheRepository {
     private val json = Json { ignoreUnknownKeys = true }
@@ -64,6 +81,8 @@ object StreamLinkCacheRepository {
         contentLanguage: String? = null,
         addonLogo: String? = null,
         streamDescription: String? = null,
+        releaseText: String? = null,
+        classificationHint: com.nuvio.app.features.player.MediaClassificationHint? = null,
     ) {
         val entry = CachedStreamLink(
             url = url,
@@ -84,6 +103,8 @@ object StreamLinkCacheRepository {
             contentLanguage = contentLanguage,
             addonLogo = addonLogo,
             streamDescription = streamDescription,
+            releaseText = releaseText,
+            classificationHint = com.nuvio.app.features.player.MediaClassification.fromHint(classificationHint)?.toHint(),
         )
         val payload = json.encodeToString(CachedStreamLink.serializer(), entry)
         StreamLinkCacheStorage.saveEntry(hashedKey(contentKey), payload)
@@ -91,6 +112,18 @@ object StreamLinkCacheRepository {
 
     fun remove(contentKey: String) {
         StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
+    }
+
+    internal fun updateClassification(contentKey: String, sourceUrl: String, infoHash: String?, fileIdx: Int?,
+        hint: com.nuvio.app.features.player.MediaClassificationHint) {
+        val validated = com.nuvio.app.features.player.MediaClassification.fromHint(hint)?.toHint() ?: return
+        val key = hashedKey(contentKey)
+        val raw = StreamLinkCacheStorage.loadEntry(key) ?: return
+        val entry = runCatching { json.decodeFromString(CachedStreamLink.serializer(), raw) }.getOrNull() ?: return
+        val matches = if (infoHash != null) entry.infoHash == infoHash && entry.fileIdx == fileIdx else entry.url == sourceUrl
+        if (!matches || entry.classificationHint == validated) return
+        // Retain the original timestamp and credentials: learning a type must not extend a link's lifetime.
+        StreamLinkCacheStorage.saveEntry(key, json.encodeToString(CachedStreamLink.serializer(), entry.copy(classificationHint = validated)))
     }
 
     fun getValid(contentKey: String, maxAgeMs: Long): CachedStreamLink? {

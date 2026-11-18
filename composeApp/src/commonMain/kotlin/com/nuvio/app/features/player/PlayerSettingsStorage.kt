@@ -9,6 +9,8 @@ internal expect object PlayerSettingsStorage {
     fun savePlaybackBrightness(level: Float)
     fun loadUseLegacyPlayerLayout(): Boolean?
     fun saveUseLegacyPlayerLayout(enabled: Boolean)
+    fun loadPlayerUiMode(): String?
+    fun savePlayerUiMode(mode: String)
     fun loadShowLoadingOverlay(): Boolean?
     fun saveShowLoadingOverlay(enabled: Boolean)
     fun loadAutoSwitchPlaybackEngineOnError(): Boolean?
@@ -61,6 +63,10 @@ internal expect object PlayerSettingsStorage {
     fun saveSubtitleOutlineEnabled(enabled: Boolean)
     fun loadSubtitleOutlineWidth(): Int?
     fun saveSubtitleOutlineWidth(width: Int)
+    fun loadSubtitleOutlineEffect(): String?
+    fun saveSubtitleOutlineEffect(effect: String)
+    fun loadSubtitleFont(): String?
+    fun saveSubtitleFont(font: String)
     fun loadSubtitleBold(): Boolean?
     fun saveSubtitleBold(enabled: Boolean)
     fun loadSubtitleFontSizeSp(): Int?
@@ -216,8 +222,45 @@ internal expect object PlayerSettingsStorage {
     fun saveIosGamma(value: Int)
     fun loadNvidiaRtxSuperResolutionEnabled(): Boolean?
     fun saveNvidiaRtxSuperResolutionEnabled(enabled: Boolean)
-    fun loadNvidiaRtxHdrEnabled(): Boolean?
-    fun saveNvidiaRtxHdrEnabled(enabled: Boolean)
+    fun loadAnimeUpscalerEnabled(): Boolean?
+    fun saveAnimeUpscalerEnabled(enabled: Boolean)
+    fun loadAnimeUpscalerOption(): String?
+    fun saveAnimeUpscalerOption(option: String)
+    fun loadAnimeUpscalerMode(): String?
+    fun saveAnimeUpscalerMode(mode: String)
+    fun loadSvpMotionOption(): String?
+    fun saveSvpMotionOption(option: String)
+    fun loadAudioNightModeEnabled(): Boolean?
+    fun saveAudioNightModeEnabled(enabled: Boolean)
+    fun loadShowSeekbarWhileSeeking(): Boolean?
+    fun saveShowSeekbarWhileSeeking(enabled: Boolean)
+    fun loadShowClockInPlayer(): Boolean?
+    fun saveShowClockInPlayer(enabled: Boolean)
+    fun loadSeekPreviewEnabled(): Boolean?
+    fun saveSeekPreviewEnabled(enabled: Boolean)
+    fun loadSeekPreviewWhileDragging(): Boolean?
+    fun saveSeekPreviewWhileDragging(value: Boolean)
+    fun loadSeekPreviewWhileHovering(): Boolean?
+    fun saveSeekPreviewWhileHovering(value: Boolean)
+    fun loadSeekPreviewWhileKeyboardSeeking(): Boolean?
+    fun saveSeekPreviewWhileKeyboardSeeking(value: Boolean)
+    fun loadSeekPreviewThumbnailCount(): Int?
+    fun saveSeekPreviewThumbnailCount(value: Int)
+
+    fun loadSeekrApiKey(): String?
+    fun saveSeekrApiKey(apiKey: String)
+    fun loadShowRemainingTime(): Boolean?
+    fun saveShowRemainingTime(enabled: Boolean)
+    fun loadEyeFilterEnabled(): Boolean?
+    fun saveEyeFilterEnabled(enabled: Boolean)
+    fun loadEyeFilterColor(): String?
+    fun saveEyeFilterColor(color: String)
+    fun loadEyeFilterOpacity(): Float?
+    fun saveEyeFilterOpacity(opacity: Float)
+    fun loadGrainFilterEnabled(): Boolean?
+    fun saveGrainFilterEnabled(enabled: Boolean)
+    fun loadPlayerUiScale(): Int?
+    fun savePlayerUiScale(scale: Int)
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }

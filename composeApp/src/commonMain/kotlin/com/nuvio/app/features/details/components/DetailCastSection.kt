@@ -1,5 +1,8 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -37,7 +40,6 @@ import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
-import com.nuvio.app.core.ui.nuvioFocusBorder
 import com.nuvio.app.core.ui.nuvioHorizontalScrollBleed
 import com.nuvio.app.core.ui.nuvioCardDepth
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
@@ -70,10 +72,10 @@ fun DetailCastSection(
 
             LazyRow(
                 state = rowState,
-                modifier = Modifier
+                modifier = Modifier.remoteNavigationGroup(rememberRow = true).then(Modifier
                     .nuvioHorizontalScrollBleed(horizontalScrollPadding)
                     .fillMaxWidth()
-                    .nuvioDesktopDragScroll(rowState),
+                    .nuvioDesktopDragScroll(rowState)),
                 contentPadding = PaddingValues(horizontal = horizontalScrollPadding),
                 horizontalArrangement = Arrangement.spacedBy(sizing.avatarGap),
             ) {
@@ -151,9 +153,7 @@ private fun CastItem(
             .width(sizing.itemWidth)
             .then(
                 if (onClick != null) {
-                    Modifier
-                        .nuvioFocusBorder(CircleShape)
-                        .clickable(
+                    Modifier.remoteNavigationTarget().clickable(
                         interactionSource = clickInteractionSource,
                         indication = null,
                         onClick = onClick,
@@ -177,8 +177,7 @@ private fun CastItem(
                 .nuvioCardDepth(
                     shape = CircleShape,
                     surface = NuvioCardDepthSurface.Cast,
-                )
-                .nuvioFocusBorder(CircleShape),
+                ),
             contentAlignment = Alignment.Center,
         ) {
             if (person.photo != null) {

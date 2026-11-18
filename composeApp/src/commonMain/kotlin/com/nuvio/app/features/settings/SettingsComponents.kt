@@ -1,5 +1,13 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.SettingsAwareSurface
+import com.nuvio.app.core.ui.isRemoteKeyboardNavigationActive
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -51,11 +59,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.NuvioActionLabel
+import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioSectionLabel
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.nuvioConsumePointerEvents
-import com.nuvio.app.core.ui.nuvioFocusBorder
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_homescreen_collection_with_addon
@@ -77,7 +85,7 @@ private fun SettingsCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    Surface(
+    SettingsAwareSurface(
         modifier = modifier.fillMaxWidth(),
         color = tokens.colors.surface,
         shape = tokens.shapes.card,
@@ -86,7 +94,7 @@ private fun SettingsCard(
             tokens.colors.borderSubtle,
         ),
     ) {
-        Column(content = content)
+        Column(modifier = Modifier.padding(vertical = 4.dp), content = content)
     }
 }
 
@@ -136,13 +144,17 @@ internal fun TabletPageHeader(
         ) {
             if (showBack) {
                 NuvioBackButton(
+                    showWithDesktopSidebar = true,
+                    usePageStyle = true,
+                    backgroundOnly = true,
+                    keyboardNavigationEnabled = false,
                     onClick = onBack,
                     modifier = Modifier
-                        .size(36.dp),
+                        .size(if (isDesktop) 48.dp else 36.dp),
                     shape = tokens.shapes.compactCard,
                     containerColor = tokens.colors.surface,
                     contentColor = tokens.colors.textPrimary,
-                    buttonSize = NuvioTokens.Space.s36,
+                    buttonSize = if (isDesktop) 48.dp else NuvioTokens.Space.s36,
                     iconSize = tokens.icons.md,
                 )
             }
@@ -169,13 +181,13 @@ internal fun SettingsSidebarItem(
     val iconChip = if (selected) primary.copy(alpha = tokens.opacity.selected) else Color.Transparent
     val contentColor = if (selected) tokens.colors.textPrimary else tokens.colors.textMuted
 
-    val sidebarItemShape = RoundedCornerShape(NuvioTokens.Space.s10)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = tokens.spacing.listGap, vertical = NuvioTokens.Space.s2)
-            .background(background, sidebarItemShape)
-            .nuvioFocusBorder(sidebarItemShape)
+            .remoteNavigationTarget(shape = RoundedCornerShape(NuvioTokens.Space.s10),
+                role = com.nuvio.app.core.ui.RemoteNavigationRole.SectionNavigation, sidebarEntry = selected)
+            .background(background, RoundedCornerShape(NuvioTokens.Space.s10))
             .clickable(onClick = onClick)
             .padding(horizontal = tokens.spacing.screenHorizontal, vertical = tokens.spacing.listGap),
         verticalAlignment = Alignment.CenterVertically,
@@ -254,9 +266,10 @@ internal fun SettingsNavigationRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .nuvioFocusBorder(RoundedCornerShape(NuvioTokens.Space.s4))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .remoteNavigationTarget(shape = RoundedCornerShape(NuvioTokens.Radius.lg))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding)
+            .padding(horizontal = (horizontalPadding - 6.dp).coerceAtLeast(0.dp), vertical = (verticalPadding - 2.dp).coerceAtLeast(0.dp))
             .alpha(if (enabled) NuvioTokens.Opacity.visible else tokens.opacity.medium),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
@@ -335,9 +348,10 @@ internal fun SettingsSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .nuvioFocusBorder(RoundedCornerShape(NuvioTokens.Space.s4))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .remoteNavigationTarget(shape = RoundedCornerShape(NuvioTokens.Radius.lg))
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            .padding(horizontal = (horizontalPadding - 6.dp).coerceAtLeast(0.dp), vertical = (verticalPadding - 2.dp).coerceAtLeast(0.dp)),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -437,6 +451,7 @@ internal fun HomescreenCatalogRow(
     onPinnedDragAttempt: () -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
+    var isEditing by remember { mutableStateOf(false) }
     val horizontalPadding = if (isTablet) 20.dp else 16.dp
     val verticalPadding = if (isTablet) 18.dp else 16.dp
     val hapticFeedback = LocalHapticFeedback.current
@@ -444,8 +459,10 @@ internal fun HomescreenCatalogRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .remoteNavigationTarget(shape = RoundedCornerShape(NuvioTokens.Radius.lg))
             .clickable { onExpandedChange(!expanded) }
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            .padding(horizontal = (horizontalPadding - 6.dp).coerceAtLeast(0.dp), vertical = (verticalPadding - 2.dp).coerceAtLeast(0.dp)),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
@@ -519,11 +536,11 @@ internal fun HomescreenCatalogRow(
                         uncheckedThumbColor = tokens.colors.textMuted,
                         uncheckedTrackColor = tokens.colors.borderDefault,
                     ),
-                )
+                 modifier = Modifier.remoteNavigationTarget())
                 if (item.isPinnedToTop) {
                     IconButton(
                         onClick = onPinnedDragAttempt,
-                    ) {
+                     modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                         Icon(
                             imageVector = Icons.Rounded.Lock,
                             contentDescription = stringResource(Res.string.settings_homescreen_pinned),
@@ -532,7 +549,7 @@ internal fun HomescreenCatalogRow(
                     }
                 } else {
                     IconButton(
-                        modifier = with(dragHandleScope) {
+                        modifier = (with(dragHandleScope) {
                             Modifier.draggableHandle(
                                 onDragStarted = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -541,7 +558,7 @@ internal fun HomescreenCatalogRow(
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 },
                             )
-                        },
+                        }).remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
                         onClick = {},
                     ) {
                         Icon(
@@ -561,7 +578,8 @@ internal fun HomescreenCatalogRow(
                 OutlinedTextField(
                     value = item.customTitle,
                     onValueChange = onTitleChange,
-                    modifier = Modifier.fillMaxWidth(),
+                    readOnly = isRemoteKeyboardNavigationActive && !isEditing,
+                    modifier = (Modifier.fillMaxWidth()).remoteNavigationTarget(textField = true, onEditingChange = { isEditing = it }),
                     singleLine = true,
                     label = { Text(stringResource(Res.string.settings_homescreen_display_name)) },
                     placeholder = { Text(item.defaultTitle) },

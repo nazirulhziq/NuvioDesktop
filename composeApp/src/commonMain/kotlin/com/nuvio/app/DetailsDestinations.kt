@@ -70,6 +70,7 @@ internal fun DetailsDestination(
     navController: NuvioNavigator,
     onPlay: ContentPlayAction,
     onPlayManually: ContentPlayAction,
+    onStartFromBeginning: ContentPlayAction,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
@@ -81,9 +82,11 @@ internal fun DetailsDestination(
     MetaDetailsScreen(
         type = route.type,
         id = route.id,
+        heroDetails = route.persistentHeroDetails,
         onBack = onBack,
         onPlay = onPlay,
         onPlayManually = onPlayManually,
+        onStartFromBeginning = onStartFromBeginning,
         onOpenMeta = onOpenMeta,
         onCastClick = { person, avatarTransitionKey ->
             val tmdbId = person.tmdbId

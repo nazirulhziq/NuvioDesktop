@@ -16,10 +16,12 @@ import com.nuvio.app.features.servers.serverPlaybackMessage
 import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
+import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.YouTubeStreamResolver
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
+import com.nuvio.app.isDesktop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -203,7 +205,7 @@ internal fun PlayerScreenRuntime.saveP2pStreamForReuse(
         addonId = stream.addonId,
         requestHeaders = emptyMap(),
         responseHeaders = emptyMap(),
-        filename = stream.behaviorHints.filename,
+        filename = stream.classificationFilename,
         videoHash = stream.behaviorHints.videoHash,
         videoSize = stream.behaviorHints.videoSize,
         infoHash = infoHash,
@@ -212,6 +214,8 @@ internal fun PlayerScreenRuntime.saveP2pStreamForReuse(
         bingeGroup = stream.behaviorHints.bingeGroup,
         addonLogo = stream.addonLogo,
         streamDescription = stream.streamSubtitle,
+        releaseText = stream.classificationReleaseText,
+        classificationHint = detectContentClassification(stream).toHint(),
     )
 }
 
@@ -232,15 +236,18 @@ internal fun PlayerScreenRuntime.switchToP2pSourceStream(stream: StreamItem) {
         episode = activeEpisodeNumber,
     )
     externalSubtitles = stream.externalSubtitles
-    activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
+    val url = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
+    resetSourceFallback(url.takeIf { isDesktop })
+    activeSourceUrl = url
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
     activeStreamType = null
     activeTorrentInfoHash = infoHash
     activeTorrentFileIdx = stream.p2pFileIdx
-    activeTorrentFilename = stream.behaviorHints.filename
-    activeSourceFilename = stream.behaviorHints.filename
+    activeTorrentFilename = stream.classificationFilename
+    activeSourceFilename = stream.classificationFilename
+    activeClassificationHint = stream.classificationHint
     activeTorrentTrackers = stream.p2pTrackers
     activeSourceIdentityKey = stream.playerSourceIdentityKey()
     activeStreamTitle = stream.streamLabel
@@ -250,7 +257,7 @@ internal fun PlayerScreenRuntime.switchToP2pSourceStream(stream: StreamItem) {
     activeStream = stream
     currentStreamBingeGroup = stream.behaviorHints.bingeGroup
     activeSubtitleExtras = SubtitleRequestExtras.from(stream.behaviorHints)
-    currentStreamFilename = stream.behaviorHints.filename
+    currentStreamFilename = stream.classificationFilename
     currentStreamInfoHash = stream.infoHash
     activeInitialPositionMs = currentPositionMs
     activeInitialProgressFraction = null
@@ -282,16 +289,16 @@ internal fun PlayerScreenRuntime.switchToP2pEpisodeStream(
         episode = episode.episode,
     )
     externalSubtitles = stream.externalSubtitles
-    activeSourceUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
-    // A torrent is never an auto-selected source here, so the episode has nothing to fall back from.
-    restartSourceFallback(activeSourceUrl, autoSelection = null)
+    val url = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
+    resetSourceFallback(url.takeIf { isDesktop })
+    activeSourceUrl = url
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
     activeStreamType = null
     activeTorrentInfoHash = infoHash
     activeTorrentFileIdx = stream.p2pFileIdx
-    activeTorrentFilename = stream.behaviorHints.filename
+    activeTorrentFilename = stream.classificationFilename
     activeTorrentTrackers = stream.p2pTrackers
     activeSubtitleExtras = SubtitleRequestExtras.from(stream.behaviorHints)
     applyEpisodeStreamMetadata(stream, episode, resume)
@@ -333,6 +340,11 @@ internal fun PlayerScreenRuntime.switchToSource(
     val sourceIdentityKey = stream.playerSourceIdentityKey()
     if (url == activeSourceUrl) {
         activeSourceIdentityKey = sourceIdentityKey ?: activeSourceIdentityKey
+        activeStream = stream
+        activeSourceFilename = stream.classificationFilename
+        activeClassificationHint = stream.classificationHint
+        activeStreamTitle = stream.streamLabel
+        activeStreamSubtitle = stream.streamSubtitle
         return
     }
     val currentPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
@@ -343,13 +355,15 @@ internal fun PlayerScreenRuntime.switchToSource(
         saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber)
     }
     externalSubtitles = stream.externalSubtitles
+    resetSourceFallback(url.takeIf { isDesktop })
     activeSourceUrl = url
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
     activeStreamType = stream.streamType
     activeSourceIdentityKey = sourceIdentityKey
-    activeSourceFilename = stream.behaviorHints.filename
+    activeSourceFilename = stream.classificationFilename
+    activeClassificationHint = stream.classificationHint
     activeStreamTitle = stream.streamLabel
     activeStreamSubtitle = stream.streamSubtitle
     activeStreamFilename = streamPlaybackFilename(stream, url)
@@ -358,7 +372,7 @@ internal fun PlayerScreenRuntime.switchToSource(
     activeStream = stream
     currentStreamBingeGroup = stream.behaviorHints.bingeGroup
     activeSubtitleExtras = SubtitleRequestExtras.from(stream.behaviorHints, url)
-    currentStreamFilename = stream.behaviorHints.filename
+    currentStreamFilename = stream.classificationFilename
     currentStreamInfoHash = stream.infoHash
     activeInitialPositionMs = currentPositionMs
     activeInitialProgressFraction = null
@@ -425,8 +439,8 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
         saveDirectStreamForReuse(stream, url, epVideoId, episode.season, episode.episode)
     }
     externalSubtitles = stream.externalSubtitles
-    activeSourceUrl = url
     restartSourceFallback(url, autoSelection)
+    activeSourceUrl = url
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
@@ -461,14 +475,15 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
     val epResumePositionMs = epEntry?.lastPositionMs?.takeIf { it > 0L } ?: 0L
 
     externalSubtitles = DownloadSubtitles.localSubtitles(localFileUri)
+    resetSourceFallback()
     activeSourceUrl = localFileUri
-    restartSourceFallback(activeSourceUrl, autoSelection = null)
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
     activeStreamType = null
     activeSourceIdentityKey = null
-    activeSourceFilename = null
+    activeSourceFilename = downloadItem.originalFilename ?: downloadItem.fileName
+    activeClassificationHint = downloadItem.classificationHint
     activeStreamTitle = downloadItem.streamTitle.ifBlank {
         episode.title.ifBlank { title }
     }
@@ -479,7 +494,7 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
     activeStream = null
     currentStreamBingeGroup = null
     activeSubtitleExtras = null
-    currentStreamFilename = null
+    currentStreamFilename = downloadItem.originalFilename
     currentStreamInfoHash = null
     activeSeasonNumber = episode.season
     activeEpisodeNumber = episode.episode
@@ -490,6 +505,17 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
     activeInitialPositionMs = epResumePositionMs
     activeInitialProgressFraction = epResumeFraction
     controlsVisible = true
+    controlsActivityTick += 1
+    syncStreamLaunch(
+        seasonNumber = episode.season,
+        episodeNumber = episode.episode,
+        episodeTitle = episode.title,
+        episodeThumbnail = episode.thumbnail,
+        pauseDescription = episode.overview,
+        videoId = resolvedVideoId,
+        resumePositionMs = epResumePositionMs,
+        resumeProgressFraction = epResumeFraction,
+    )
 }
 
 internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
@@ -504,6 +530,9 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
                 !nextEpisodeCardDismissed && isAtNextEpisodeThreshold()
             ))
     if (!isCurrentRequest()) return
+    controlsVisible = true
+    controlsActivityTick += 1
+    playerMetaVideos.firstOrNull { it.id == nextVideoId }?.let { syncStreamLaunch(it) }
     nextEpisodeAutoPlayAutomatic = automatic
 
     scope.launchPlayerNextEpisodeAutoPlay(
@@ -524,6 +553,7 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
         },
         onManualSelectionRequired = { nextVideo ->
             if (isCurrentRequest()) {
+                syncStreamLaunch(nextVideo)
                 nextEpisodeCardDismissed = true
                 episodeStreamsPanelState = EpisodeStreamsPanelState(
                     showStreams = true,
@@ -569,13 +599,62 @@ internal fun PlayerScreenRuntime.openEpisodesPanel() {
             playerMetaVideos = MetaDetailsRepository.fetch(parentMetaType, parentMetaId)?.videos ?: emptyList()
         }
     }
+    episodeStreamsPanelState = EpisodeStreamsPanelState()
+    PlayerStreamsRepository.clearEpisodeStreams()
     showEpisodesPanel = true
     showSourcesPanel = false
     showChaptersPanel = false
     controlsVisible = false
 }
 
-private data class EpisodeResume(val positionMs: Long, val fraction: Float?)
+internal data class EpisodeResume(val positionMs: Long, val fraction: Float?)
+
+internal fun PlayerScreenRuntime.syncStreamLaunch(
+    seasonNumber: Int?,
+    episodeNumber: Int?,
+    episodeTitle: String?,
+    episodeThumbnail: String?,
+    pauseDescription: String?,
+    videoId: String?,
+    resumePositionMs: Long? = null,
+    resumeProgressFraction: Float? = null,
+) {
+    if (!isSeries) return
+    StreamLaunchStore.updateEpisode(
+        streamLaunchId = args.streamLaunchId,
+        parentMetaId = parentMetaId,
+        seasonNumber = seasonNumber,
+        episodeNumber = episodeNumber,
+        episodeTitle = episodeTitle,
+        episodeThumbnail = episodeThumbnail,
+        pauseDescription = pauseDescription,
+        videoId = videoId,
+        resumePositionMs = resumePositionMs,
+        resumeProgressFraction = resumeProgressFraction,
+    )
+}
+
+internal fun PlayerScreenRuntime.syncStreamLaunch(episode: MetaVideo, resume: EpisodeResume? = null) {
+    if (!isSeries) return
+    val resolvedResume = resume ?: resolveEpisodeResume(episode.id, episode)
+    val fallbackVideoId = buildPlaybackVideoId(
+        parentMetaId = parentMetaId,
+        seasonNumber = episode.season,
+        episodeNumber = episode.episode,
+        fallbackVideoId = episode.id,
+    )
+    val epVideoId = episode.id.takeIf { it.isNotBlank() } ?: fallbackVideoId
+    syncStreamLaunch(
+        seasonNumber = episode.season,
+        episodeNumber = episode.episode,
+        episodeTitle = episode.title,
+        episodeThumbnail = episode.thumbnail,
+        pauseDescription = episode.overview,
+        videoId = epVideoId,
+        resumePositionMs = resolvedResume.positionMs,
+        resumeProgressFraction = resolvedResume.fraction,
+    )
+}
 
 private fun PlayerScreenRuntime.resetEpisodePanelAndNextEpisodeState() {
     showNextEpisodeCard = false
@@ -605,7 +684,7 @@ private fun PlayerScreenRuntime.episodeProgress(epVideoId: String, episode: Meta
 private suspend fun PlayerScreenRuntime.newerServerResumeMs(stream: StreamItem, episode: MetaVideo): Long? =
     ServerPlayback.newerResumePositionMs(stream.playableDirectUrl, episodeProgress(episode.id, episode)?.lastUpdatedEpochMs)
 
-private fun PlayerScreenRuntime.resolveEpisodeResume(epVideoId: String, episode: MetaVideo): EpisodeResume {
+internal fun PlayerScreenRuntime.resolveEpisodeResume(epVideoId: String, episode: MetaVideo): EpisodeResume {
     val epEntry = episodeProgress(epVideoId, episode)?.takeIf { !it.isCompleted }
     val epResumeFraction = epEntry?.progressPercent
         ?.takeIf { it > 0f }
@@ -620,7 +699,8 @@ private fun PlayerScreenRuntime.applyEpisodeStreamMetadata(
     resume: EpisodeResume,
 ) {
     activeSourceIdentityKey = stream.playerSourceIdentityKey()
-    activeSourceFilename = stream.behaviorHints.filename
+    activeSourceFilename = stream.classificationFilename
+    activeClassificationHint = stream.classificationHint
     activeStreamTitle = stream.streamLabel
     activeStreamSubtitle = stream.streamSubtitle
     activeStreamFilename = streamPlaybackFilename(stream, stream.playableDirectUrl.orEmpty())
@@ -628,7 +708,7 @@ private fun PlayerScreenRuntime.applyEpisodeStreamMetadata(
     activeProviderAddonId = stream.addonId
     activeStream = stream
     currentStreamBingeGroup = stream.behaviorHints.bingeGroup
-    currentStreamFilename = stream.behaviorHints.filename
+    currentStreamFilename = stream.classificationFilename
     currentStreamInfoHash = stream.infoHash
     activeSeasonNumber = episode.season
     activeEpisodeNumber = episode.episode
@@ -639,6 +719,8 @@ private fun PlayerScreenRuntime.applyEpisodeStreamMetadata(
     activeInitialPositionMs = resume.positionMs
     activeInitialProgressFraction = resume.fraction
     controlsVisible = true
+    controlsActivityTick += 1
+    syncStreamLaunch(episode, resume)
 }
 
 internal fun PlayerScreenRuntime.saveDirectStreamForReuse(
@@ -664,7 +746,7 @@ internal fun PlayerScreenRuntime.saveDirectStreamForReuse(
         addonId = stream.addonId,
         requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
         responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-        filename = stream.behaviorHints.filename,
+        filename = stream.classificationFilename,
         videoHash = stream.behaviorHints.videoHash,
         videoSize = stream.behaviorHints.videoSize,
         infoHash = stream.p2pInfoHash,
@@ -674,5 +756,7 @@ internal fun PlayerScreenRuntime.saveDirectStreamForReuse(
         contentLanguage = contentLanguage,
         addonLogo = stream.addonLogo,
         streamDescription = stream.streamSubtitle,
+        releaseText = stream.classificationReleaseText,
+        classificationHint = detectContentClassification(stream).toHint(),
     )
 }

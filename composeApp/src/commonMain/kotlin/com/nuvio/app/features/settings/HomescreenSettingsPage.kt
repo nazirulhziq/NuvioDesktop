@@ -1,5 +1,8 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
@@ -11,7 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.nuvio.app.core.ui.PlatformBackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -29,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -38,7 +43,9 @@ import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.core.ui.NuvioLoadingIndicator
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.home.AppInterface
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
+import com.nuvio.app.features.home.PosterGutterSize
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import nuvio.composeapp.generated.resources.Res
@@ -61,24 +68,33 @@ import nuvio.composeapp.generated.resources.settings_homescreen_section_collecti
 import nuvio.composeapp.generated.resources.settings_homescreen_section_hero
 import nuvio.composeapp.generated.resources.settings_homescreen_section_hero_sources
 import nuvio.composeapp.generated.resources.settings_homescreen_selected_count
+import nuvio.composeapp.generated.resources.settings_homescreen_always_animate_collections
+import nuvio.composeapp.generated.resources.settings_homescreen_always_animate_collections_description
 import nuvio.composeapp.generated.resources.settings_homescreen_show_hero
 import nuvio.composeapp.generated.resources.settings_homescreen_show_hero_description
 import nuvio.composeapp.generated.resources.settings_homescreen_summary
+import nuvio.composeapp.generated.resources.settings_homescreen_visible_catalogs
 import nuvio.composeapp.generated.resources.settings_homescreen_summary_hint
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
+import com.nuvio.app.isDesktop
+
 internal fun LazyListScope.homescreenSettingsContent(
     isTablet: Boolean,
     heroEnabled: Boolean,
     showCatalogType: Boolean,
     hideUnreleasedContent: Boolean,
+    appInterface: AppInterface = AppInterface.Default,
+    posterGutterSize: PosterGutterSize = PosterGutterSize.Narrow,
+    alwaysAnimateCollectionCards: Boolean = false,
     items: List<HomeCatalogSettingsItem>,
     isCatalogLoading: Boolean,
     catalogErrorMessage: String?,
 ) {
+    val persistentHero = appInterface == AppInterface.PersistentHero
     val selectedHeroSourceCount = items.count { it.heroSourceEnabled }
     val enabledCatalogCount = items.count { it.enabled }
     item {
@@ -86,7 +102,7 @@ internal fun LazyListScope.homescreenSettingsContent(
             isTablet = isTablet,
             enabledCatalogCount = enabledCatalogCount,
             totalCatalogCount = items.size,
-            selectedHeroSourceCount = selectedHeroSourceCount,
+            selectedHeroSourceCount = selectedHeroSourceCount.takeUnless { persistentHero },
         )
     }
     item {
@@ -98,7 +114,8 @@ internal fun LazyListScope.homescreenSettingsContent(
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_homescreen_show_hero),
                     description = stringResource(Res.string.settings_homescreen_show_hero_description),
-                    checked = heroEnabled,
+                    checked = persistentHero || heroEnabled,
+                    enabled = !persistentHero,
                     isTablet = isTablet,
                     onCheckedChange = HomeCatalogSettingsRepository::setHeroEnabled,
                 )
@@ -118,12 +135,26 @@ internal fun LazyListScope.homescreenSettingsContent(
                     isTablet = isTablet,
                     onCheckedChange = HomeCatalogSettingsRepository::setHideUnreleasedContent,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_homescreen_always_animate_collections),
+                    description = stringResource(Res.string.settings_homescreen_always_animate_collections_description),
+                    checked = alwaysAnimateCollectionCards,
+                    isTablet = isTablet,
+                    onCheckedChange = HomeCatalogSettingsRepository::setAlwaysAnimateCollectionCards,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                AppInterfaceSettingsRow(value = appInterface, isTablet = isTablet)
+                if (isDesktop && appInterface == AppInterface.ScrollPosters) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    PosterGutterSizeSettingsRow(size = posterGutterSize, isTablet = isTablet)
+                }
             }
         }
     }
     item {
         val catalogOnlyItems = items.filter { !it.isCollection }
-        if (heroEnabled && catalogOnlyItems.isNotEmpty()) {
+        if (!persistentHero && heroEnabled && catalogOnlyItems.isNotEmpty()) {
             var heroSourcesExpanded by remember { mutableStateOf(false) }
             SettingsSection(
                 title = stringResource(Res.string.settings_homescreen_section_hero_sources),
@@ -206,12 +237,13 @@ private fun HeroSourcesDropdown(
     onExpandedChange: (Boolean) -> Unit,
 ) {
     val noSourcesSelected = stringResource(Res.string.settings_homescreen_no_sources_selected)
+    PlatformBackHandler(enabled = expanded, onBack = { onExpandedChange(false) })
     SettingsGroup(isTablet = isTablet) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
-                .clickable { onExpandedChange(!expanded) },
+                .remoteNavigationTarget().clickable { onExpandedChange(!expanded) },
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(
@@ -280,7 +312,7 @@ private fun HomescreenSummaryCard(
     isTablet: Boolean,
     enabledCatalogCount: Int,
     totalCatalogCount: Int,
-    selectedHeroSourceCount: Int,
+    selectedHeroSourceCount: Int?,
 ) {
     SettingsGroup(isTablet = isTablet) {
         Column(
@@ -294,12 +326,11 @@ private fun HomescreenSummaryCard(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = stringResource(
-                    Res.string.settings_homescreen_summary,
-                    enabledCatalogCount,
-                    totalCatalogCount,
-                    selectedHeroSourceCount,
-                ),
+                text = if (selectedHeroSourceCount == null) {
+                    stringResource(Res.string.settings_homescreen_visible_catalogs, enabledCatalogCount, totalCatalogCount)
+                } else {
+                    stringResource(Res.string.settings_homescreen_summary, enabledCatalogCount, totalCatalogCount, selectedHeroSourceCount)
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -334,10 +365,10 @@ private fun HomescreenCatalogList(
     }
 
     SettingsGroup(isTablet = isTablet) {
-        LazyColumn(
-            modifier = Modifier
+        NuvioLazyColumn(
+            modifier = Modifier.remoteNavigationGroup().then(Modifier
                 .fillMaxWidth()
-                .heightIn(max = if (isTablet) 900.dp else 680.dp),
+                .heightIn(max = if (isTablet) 900.dp else 680.dp)),
             state = lazyListState,
         ) {
             itemsIndexed(items, key = { _, item -> item.key }) { index, item ->
@@ -348,7 +379,11 @@ private fun HomescreenCatalogList(
                 ) { isDragging ->
                     val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
 
-                    Surface(shadowElevation = elevation) {
+                    Surface(
+                        color = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        shadowElevation = elevation,
+                    ) {
                         Column {
                             if (index > 0) {
                                 SettingsGroupDivider(isTablet = isTablet)

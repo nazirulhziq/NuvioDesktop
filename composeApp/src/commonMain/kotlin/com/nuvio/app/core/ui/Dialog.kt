@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,18 +18,17 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -54,17 +54,16 @@ fun DialogSurface(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    BasicAlertDialog(
-        onDismissRequest = onDismissRequest,
-        modifier = Modifier.platformTouchScroll(),
-        properties = properties,
-    ) {
-        Surface(
+    PlatformBackHandler(enabled = true, onBack = onDismissRequest)
+    AppBasicAlertDialog(onDismissRequest = onDismissRequest, properties = properties) {
+        SettingsAwareSurface(
             modifier = modifier
+                .remoteNavigationModal()
                 .fillMaxWidth()
                 .widthIn(max = tokens.components.dialogMaxWidth),
             shape = tokens.shapes.dialog,
             color = tokens.colors.surfaceDialog,
+            panel = true,
             contentColor = tokens.colors.textPrimary,
             border = BorderStroke(tokens.borders.thin, SurfaceEdge),
         ) {
@@ -145,7 +144,10 @@ fun DialogButton(
     val contentColor = if (style == DialogButtonStyle.Secondary) tokens.colors.textPrimary else tokens.colors.onAccent
     Button(
         onClick = onClick,
-        modifier = modifier.heightIn(min = NuvioTokens.Space.s48),
+        modifier = (modifier.heightIn(min = NuvioTokens.Space.s48)).remoteNavigationTarget(
+            shape = tokens.shapes.button,
+            focusOutlineColor = if (style == DialogButtonStyle.Primary) Color.White else null,
+        ),
         enabled = enabled && !loading,
         elevation = ButtonDefaults.buttonElevation(
             hoveredElevation = 0.dp,
@@ -198,7 +200,7 @@ fun DialogOption(
                     tokens.colors.textPrimary.copy(alpha = tokens.opacity.subtle)
                 },
             )
-            .selectable(selected = selected, enabled = enabled, role = role, onClick = onClick)
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).selectable(selected = selected, enabled = enabled, role = role, onClick = onClick)
             .padding(horizontal = NuvioTokens.Space.s14, vertical = NuvioTokens.Space.s12),
         horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
         verticalAlignment = Alignment.CenterVertically,

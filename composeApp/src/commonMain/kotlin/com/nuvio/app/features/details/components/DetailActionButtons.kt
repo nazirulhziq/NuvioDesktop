@@ -1,11 +1,17 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+import com.nuvio.app.core.ui.remoteNavigationDown
+
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -24,10 +30,15 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -45,8 +57,20 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.AppIconResource
 import com.nuvio.app.core.ui.appIconPainter
-import com.nuvio.app.core.ui.nuvioFocusBorder
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import com.nuvio.app.core.ui.ActionMenuInvocation
+import com.nuvio.app.core.ui.ActionMenuInvocationHolder
+import com.nuvio.app.core.ui.secondaryClickAt
 import com.nuvio.app.core.ui.secondaryClick
+import com.nuvio.app.core.ui.navigationGlass
+import com.nuvio.app.core.ui.navigationGlassFeedback
+import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.backdropControlColor
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_play
@@ -68,7 +92,7 @@ data class DetailSecondaryAction(
     val onLongClick: (() -> Unit)? = null,
 )
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DetailActionButtons(
     modifier: Modifier = Modifier,
@@ -76,17 +100,36 @@ fun DetailActionButtons(
     playEnabled: Boolean = true,
     pinnedAction: DetailSecondaryAction? = null,
     secondaryActions: List<DetailSecondaryAction> = emptyList(),
+    alwaysShowSecondaryActions: Boolean = false,
     actionsMenuLabel: String = stringResource(Res.string.details_actions_menu_label),
     isTablet: Boolean = false,
     onPlayClick: () -> Unit = {},
     onPlayLongClick: (() -> Unit)? = null,
+    onPlayDown: (suspend () -> Unit)? = null,
 ) {
     val playPainter = appIconPainter(AppIconResource.PlayerPlay)
     val buttonHeight = if (isTablet) 56.dp else 52.dp
     val iconButtonSize = buttonHeight
     val playShape = RoundedCornerShape(40.dp)
+    val playFocusRequester = remember { FocusRequester() }
+    var playBounds by remember { mutableStateOf<Rect?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { playBounds = null }
+    }
+    fun openPlayMenu(pointer: Offset? = null) {
+        if (!playEnabled || onPlayLongClick == null) return
+        ActionMenuInvocationHolder.stash(ActionMenuInvocation(
+            cardBounds = playBounds,
+            pointerPosition = pointer,
+            sourceAvailable = { playBounds != null },
+            restoreFocus = { playFocusRequester.requestFocus() },
+        ))
+        onPlayLongClick()
+    }
+    val onPlayContext: (() -> Unit)? = onPlayLongClick?.takeIf { playEnabled }?.let { { openPlayMenu() } }
     val hapticFeedback = LocalHapticFeedback.current
     var actionsExpanded by remember { mutableStateOf(false) }
+    val menuInteractionSource = remember { MutableInteractionSource() }
     val menuProgress by animateFloatAsState(
         targetValue = if (actionsExpanded) 1f else 0f,
         animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
@@ -103,6 +146,8 @@ fun DetailActionButtons(
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .remoteNavigationGroup(rememberRow = true)
+                .remoteNavigationDown(onPlayDown)
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
@@ -111,23 +156,33 @@ fun DetailActionButtons(
                 modifier = Modifier
                     .weight(1f)
                     .height(buttonHeight)
-                    .nuvioFocusBorder(playShape),
+                    .navigationGlass(shape = playShape, backgroundOnly = true),
                 shape = playShape,
-                color = if (playEnabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = if (playEnabled) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                color = Color.Transparent,
+                contentColor = Color.White.copy(alpha = if (playEnabled) 1f else 0.38f),
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .focusRequester(playFocusRequester)
+                        .onGloballyPositioned { playBounds = it.boundsInRoot() }
+                        .remoteNavigationTarget(
+                            shape = playShape,
+                            initialFocus = true,
+                            onSelect = onPlayClick.takeIf { playEnabled },
+                            onContext = onPlayContext,
+                            insetFocusOutline = true,
+                            focusOutlineWidth = 3.dp,
+                        )
                         .combinedClickable(
                             enabled = playEnabled,
                             onClick = {
                                 onPlayClick()
                             },
-                            onLongClick = onPlayLongClick,
+                            onLongClick = onPlayContext,
                             role = Role.Button,
                         )
-                        .secondaryClick(onPlayLongClick)
+                        .secondaryClickAt(onPlayContext?.let { { local -> openPlayMenu(playBounds?.topLeft?.plus(local)) } })
                         .height(buttonHeight),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
@@ -167,66 +222,133 @@ fun DetailActionButtons(
             }
 
             if (hasSecondaryActions) {
-                Spacer(modifier = Modifier.width(12.dp))
-                secondaryActions.forEachIndexed { index, action ->
-                    Box(
-                        modifier = Modifier
-                            .width(iconButtonSize * menuProgress)
-                            .height(iconButtonSize)
-                            .graphicsLayer {
-                                clip = true
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (actionsExpanded || menuProgress > 0.01f) {
-                            DetailIconAction(
-                                label = action.label,
-                                icon = action.icon,
-                                active = action.isActive,
-                                progress = menuProgress,
-                                size = iconButtonSize,
-                                onClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    action.onClick()
-                                },
-                                onLongClick = action.onLongClick?.let { longClick ->
-                                    {
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        longClick()
-                                    }
-                                },
-                            )
+                if (alwaysShowSecondaryActions) {
+                    secondaryActions.forEach { action ->
+                        Spacer(modifier = Modifier.width(12.dp))
+                        val actionInteractionSource = remember { MutableInteractionSource() }
+                        TooltipBox(
+                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                            tooltip = { PlainTooltip { Text(action.label) } },
+                            state = rememberTooltipState(),
+                            focusable = false,
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(iconButtonSize)
+                                    .navigationGlass(shape = CircleShape, backgroundOnly = true),
+                                shape = CircleShape,
+                                color = Color.Transparent,
+                                contentColor = if (action.isActive) MaterialTheme.nuvio.colors.accent else MaterialTheme.nuvio.colors.textPrimary,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(iconButtonSize)
+                                        .navigationGlassFeedback(actionInteractionSource, CircleShape, selected = action.isActive)
+                                        .hoverable(actionInteractionSource)
+                                        .remoteNavigationTarget(
+                                            shape = CircleShape,
+                                            onSelect = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                action.onClick()
+                                            },
+                                            onContext = action.onLongClick?.let { longClick ->
+                                                {
+                                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    longClick()
+                                                }
+                                            },
+                                        ).combinedClickable(
+                                            interactionSource = actionInteractionSource,
+                                            indication = androidx.compose.foundation.LocalIndication.current,
+                                            onClick = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                action.onClick()
+                                            },
+                                            onLongClick = action.onLongClick?.let { longClick ->
+                                                {
+                                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    longClick()
+                                                }
+                                            },
+                                            role = Role.Button,
+                                        )
+                                        .secondaryClick(action.onLongClick),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = action.icon,
+                                        contentDescription = action.label,
+                                        modifier = Modifier.size(21.dp),
+                                    )
+                                }
+                            }
                         }
                     }
+                } else {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Row(
+                        modifier = if (menuProgress > 0.01f) {
+                            Modifier.navigationGlass(shape = playShape, panel = true, backgroundOnly = true)
+                        } else Modifier,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        secondaryActions.forEachIndexed { index, action ->
+                            Box(
+                                modifier = Modifier
+                                    .width(iconButtonSize * menuProgress)
+                                    .height(iconButtonSize)
+                                    .graphicsLayer {
+                                        clip = true
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (actionsExpanded || menuProgress > 0.01f) {
+                                    DetailIconAction(
+                                        label = action.label,
+                                        icon = action.icon,
+                                        active = action.isActive,
+                                        progress = menuProgress,
+                                        size = iconButtonSize,
+                                        glassMenuItem = true,
+                                        onClick = {
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            action.onClick()
+                                        },
+                                        onLongClick = action.onLongClick?.let { longClick ->
+                                            {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                longClick()
+                                            }
+                                        },
+                                    )
+                                }
+                            }
 
-                    if (index != secondaryActions.lastIndex) {
+                            if (index != secondaryActions.lastIndex) {
+                                Spacer(modifier = Modifier.width(12.dp * menuProgress))
+                            }
+                        }
                         Spacer(modifier = Modifier.width(12.dp * menuProgress))
                     }
-                }
-                Spacer(modifier = Modifier.width(12.dp * menuProgress))
-            }
 
-            if (hasSecondaryActions) {
-                Surface(
-                    modifier = Modifier
-                        .size(iconButtonSize),
-                    shape = CircleShape,
-                    color = if (actionsExpanded) {
-                        MaterialTheme.colorScheme.onBackground
-                    } else {
-                        backdropControlColor(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f))
-                    },
-                    contentColor = if (actionsExpanded) {
-                        MaterialTheme.colorScheme.background
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(iconButtonSize)
-                            .nuvioFocusBorder(CircleShape)
-                            .clickable(role = Role.Button) {
+                    Surface(
+                        modifier = Modifier.size(iconButtonSize)
+                            .navigationGlass(shape = CircleShape, backgroundOnly = true),
+                        shape = CircleShape,
+                        color = Color.Transparent,
+                        contentColor = MaterialTheme.nuvio.colors.textPrimary,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(iconButtonSize)
+                                .navigationGlassFeedback(menuInteractionSource, CircleShape, selected = actionsExpanded)
+                            .hoverable(menuInteractionSource)
+                            .remoteNavigationTarget(
+                                shape = CircleShape,
+                                onSelect = {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    actionsExpanded = !actionsExpanded
+                                },
+                            ).clickable(interactionSource = menuInteractionSource, indication = null, role = Role.Button) {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 actionsExpanded = !actionsExpanded
                             },
@@ -244,6 +366,7 @@ fun DetailActionButtons(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -312,7 +435,9 @@ internal fun DetailIconAction(
     modifier: Modifier = Modifier,
     size: Dp,
     onLongClick: (() -> Unit)? = null,
+    glassMenuItem: Boolean = false,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         modifier = modifier.graphicsLayer {
             alpha = progress
@@ -320,22 +445,32 @@ internal fun DetailIconAction(
             scaleY = 0.86f + (0.14f * progress)
         },
         shape = CircleShape,
-        color = if (active) {
+        color = if (glassMenuItem) {
+            Color.Transparent
+        } else if (active) {
             MaterialTheme.colorScheme.onBackground
         } else {
             backdropControlColor(MaterialTheme.colorScheme.surfaceVariant)
         },
-        contentColor = if (active) {
+        contentColor = if (glassMenuItem) {
+            if (active) MaterialTheme.nuvio.colors.accent else MaterialTheme.nuvio.colors.textPrimary
+        } else if (active) {
             MaterialTheme.colorScheme.background
         } else {
             MaterialTheme.colorScheme.onSurface
         },
-        tonalElevation = 6.dp,
+        tonalElevation = if (glassMenuItem) 0.dp else 6.dp,
     ) {
         Box(
             modifier = Modifier
                 .size(size)
-                .combinedClickable(
+                .then(if (glassMenuItem) {
+                    Modifier.navigationGlassFeedback(interactionSource, CircleShape, selected = active)
+                        .hoverable(interactionSource)
+                } else Modifier)
+                .remoteNavigationTarget(shape = CircleShape, onSelect = onClick, onContext = onLongClick).combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
                     onLongClick = onLongClick,
                     role = Role.Button,

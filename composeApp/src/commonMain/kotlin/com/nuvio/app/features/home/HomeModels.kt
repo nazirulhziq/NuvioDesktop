@@ -27,6 +27,9 @@ data class MetaPreview(
     val ageRating: String? = null,
     val language: String? = null,
     val externalRatings: List<MetaExternalRating> = emptyList(),
+    val imdbScore: Double? = null,
+    val tmdbScore: Double? = null,
+    val imdbId: String? = null,
 )
 
 fun MetaPreview.stableKey(): String = "$type:$id"

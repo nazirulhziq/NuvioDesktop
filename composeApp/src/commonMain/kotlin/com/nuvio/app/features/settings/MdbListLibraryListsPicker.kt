@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.AppBasicAlertDialog
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,11 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.BasicAlertDialog
+import com.nuvio.app.core.ui.nuvioVerticalScroll
+import com.nuvio.app.core.ui.PlatformBackHandler
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import com.nuvio.app.core.ui.SettingsAwareSurface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -36,7 +38,6 @@ import com.nuvio.app.core.ui.NuvioModalBottomSheet
 import com.nuvio.app.core.ui.SurfaceEdge
 import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.core.ui.platformTouchScroll
 import com.nuvio.app.features.mdblist.MdbListLibraryListOption
 import com.nuvio.app.features.mdblist.localizedMdbListMessage
 import kotlinx.coroutines.launch
@@ -122,11 +123,13 @@ private fun MdbListLibraryListsDialog(
     onDismiss: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    BasicAlertDialog(onDismissRequest = onDismiss, modifier = Modifier.platformTouchScroll()) {
-        Surface(
+    PlatformBackHandler(enabled = true, onBack = onDismiss)
+    AppBasicAlertDialog(onDismissRequest = onDismiss) {
+        SettingsAwareSurface(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = tokens.components.dialogMaxWidth),
+            panel = true,
             shape = tokens.shapes.dialog,
             color = tokens.colors.surfaceDialog,
             border = BorderStroke(tokens.borders.thin, SurfaceEdge),
@@ -194,7 +197,7 @@ private fun MdbListLibraryListsContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .nuvioVerticalScroll(rememberScrollState()),
             ) {
                 options.forEachIndexed { index, option ->
                     if (index > 0) {

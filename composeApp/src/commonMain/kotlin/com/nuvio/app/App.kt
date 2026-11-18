@@ -1,8 +1,12 @@
 package com.nuvio.app
 
+import com.nuvio.app.core.ui.LocalSurfaceStyle
+import com.nuvio.app.features.settings.SurfaceStyle
+
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -17,14 +21,13 @@ import coil3.svg.SvgDecoder
 import com.nuvio.app.core.poster.CustomPosterFallbackInterceptor
 import com.nuvio.app.core.ui.NativeProfileSwitcherController
 import com.nuvio.app.core.ui.NuvioTheme
-import com.nuvio.app.core.ui.nuvioTrackFocusPresence
-import com.nuvio.app.core.ui.PlatformKeyboardNavigationHost
+import com.nuvio.app.core.ui.LocalFrostedGlassEnabled
+import com.nuvio.app.core.ui.LocalNavigationGlassState
+import dev.chrisbanes.haze.rememberHazeState
 import com.nuvio.app.core.ui.addPlatformDecoders
 import com.nuvio.app.core.ui.configurePlatformImageLoader
 import com.nuvio.app.core.ui.desktopUiScaleForWindow
 import com.nuvio.app.core.ui.platformProvidesImageLoader
-import com.nuvio.app.features.servers.plex.PlexArtworkInterceptor
-import com.nuvio.app.features.servers.silo.SiloArtworkInterceptor
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.navigation.AppRoute
 import com.nuvio.app.navigation.TabsRoute
@@ -87,8 +90,6 @@ internal fun AppEnvironment(content: @Composable () -> Unit) {
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .components {
                     add(CustomPosterFallbackInterceptor())
-                    add(PlexArtworkInterceptor())
-                    add(SiloArtworkInterceptor())
                     addPlatformDecoders()
                     add(SvgDecoder.Factory())
                     add(
@@ -105,21 +106,41 @@ internal fun AppEnvironment(content: @Composable () -> Unit) {
         ThemeSettingsRepository.ensureLoaded()
         ThemeSettingsRepository.selectedTheme
     }.collectAsStateWithLifecycle()
+    val surfaceStyle by ThemeSettingsRepository.surfaceStyle.collectAsStateWithLifecycle()
     val amoledEnabled by remember {
         ThemeSettingsRepository.amoledEnabled
     }.collectAsStateWithLifecycle()
 
-    val customThemeColors by ThemeSettingsRepository.customThemeColors.collectAsStateWithLifecycle()
+    val auraBackgroundEnabled by remember {
+        ThemeSettingsRepository.ensureLoaded()
+        ThemeSettingsRepository.auraBackgroundEnabled
+    }.collectAsStateWithLifecycle()
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().nuvioTrackFocusPresence()) {
+    val auraSettings by ThemeSettingsRepository.auraSettings.collectAsStateWithLifecycle()
+    val customThemeColors by ThemeSettingsRepository.customThemeColors.collectAsStateWithLifecycle()
+    val appScale by remember {
+        ThemeSettingsRepository.ensureLoaded()
+        ThemeSettingsRepository.appScale
+    }.collectAsStateWithLifecycle()
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val baseScale = desktopUiScaleForWindow(maxWidth.value, maxHeight.value)
+        val effectiveScale = if (isDesktop) baseScale * (appScale / 100f) else baseScale
         NuvioTheme(
             appTheme = selectedTheme,
             amoled = amoledEnabled,
             customThemeColors = customThemeColors,
-            desktopUiScale = desktopUiScaleForWindow(maxWidth.value, maxHeight.value),
+            desktopUiScale = effectiveScale,
+            auraEnabled = auraBackgroundEnabled,
+            auraSettings = auraSettings,
         ) {
-            PlatformKeyboardNavigationHost()
-            content()
+            CompositionLocalProvider(
+                LocalSurfaceStyle provides surfaceStyle,
+                LocalFrostedGlassEnabled provides (surfaceStyle == SurfaceStyle.FrostedGlass),
+                LocalNavigationGlassState provides rememberHazeState(),
+            ) {
+                content()
+            }
         }
     }
 }

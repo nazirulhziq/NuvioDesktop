@@ -1,5 +1,6 @@
 package com.nuvio.app.features.p2p
 
+import com.nuvio.app.features.player.DesktopBufferPreset
 import com.nuvio.engine.NuvioEngineConfig
 import com.nuvio.engine.NuvioTorrentProfile
 import com.nuvio.engine.NuvioUploadMode
@@ -11,9 +12,11 @@ internal fun buildNuvioEngineConfig(
     uploadEnabled: Boolean,
     torrentProfile: P2pTorrentProfile,
     diskCacheCapacityBytes: Long,
+    windowBytes: Long = nuvioEngineWindowBytes(DesktopBufferPreset.Balanced),
 ): NuvioEngineConfig = NuvioEngineConfig(
     dataDirectory = stateDirectory,
     cacheDirectory = cacheDirectory,
+    memoryCacheCapacityBytes = windowBytes,
     diskCacheCapacityBytes = diskCacheCapacityBytes,
     torrentProfile = when (torrentProfile) {
         P2pTorrentProfile.SOFT -> NuvioTorrentProfile.Soft

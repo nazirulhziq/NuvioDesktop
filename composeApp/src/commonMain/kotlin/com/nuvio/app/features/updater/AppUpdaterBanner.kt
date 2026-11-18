@@ -1,5 +1,7 @@
 package com.nuvio.app.features.updater
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -21,12 +23,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -45,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,6 +75,7 @@ import nuvio.composeapp.generated.resources.updates_downloading_progress
 import nuvio.composeapp.generated.resources.updates_message_allow_installs
 import nuvio.composeapp.generated.resources.updates_message_ready
 import nuvio.composeapp.generated.resources.updates_no_release_notes
+import nuvio.composeapp.generated.resources.updates_open_release_title
 import nuvio.composeapp.generated.resources.updates_preparing_download
 import nuvio.composeapp.generated.resources.updates_release_notes
 import nuvio.composeapp.generated.resources.updates_title_allow_installs
@@ -100,6 +105,7 @@ fun AppUpdaterHost(
 
     val update = state.update
     val showBanner = state.showDialog && update != null
+    val uriHandler = LocalUriHandler.current
 
     Column(modifier = modifier) {
         AnimatedVisibility(
@@ -114,6 +120,7 @@ fun AppUpdaterHost(
             ) + fadeOut(animationSpec = tween(durationMillis = 150)),
         ) {
             update?.let { availableUpdate ->
+                val releaseUrl = availableUpdate.releaseUrl?.takeIf { it.isNotBlank() }
                 AppUpdateBanner(
                     state = state,
                     update = availableUpdate,
@@ -121,6 +128,7 @@ fun AppUpdaterHost(
                     onInstall = controller::installDownloadedUpdate,
                     onShowReleaseNotes = { showReleaseNotes = true },
                     onDismiss = controller::dismissDialog,
+                    onOpenReleasePage = releaseUrl?.let { url -> { uriHandler.openUri(url) } },
                 )
             }
         }
@@ -164,6 +172,7 @@ private fun AppUpdateBanner(
     onInstall: () -> Unit,
     onShowReleaseNotes: () -> Unit,
     onDismiss: () -> Unit,
+    onOpenReleasePage: (() -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val targetProgress = when {
@@ -261,7 +270,7 @@ private fun AppUpdateBanner(
             IconButton(
                 onClick = onShowReleaseNotes,
                 enabled = update.notes.isNotBlank(),
-                modifier = Modifier.size(40.dp),
+                modifier = (Modifier.size(40.dp)).remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Info,
@@ -270,11 +279,24 @@ private fun AppUpdateBanner(
                 )
             }
 
+            if (onOpenReleasePage != null) {
+                IconButton(
+                    onClick = onOpenReleasePage,
+                    modifier = (Modifier.size(40.dp)).remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.OpenInBrowser,
+                        contentDescription = stringResource(Res.string.updates_open_release_title),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+
             if (!state.isDownloading && !debugTestComplete) {
                 Button(
                     onClick = if (state.downloadedUpdatePath != null) onInstall else onDownload,
                     enabled = state.downloadedUpdatePath != null || state.isUpdateAvailable,
-                    modifier = Modifier.heightIn(min = 40.dp),
+                    modifier = (Modifier.heightIn(min = 40.dp)).remoteNavigationTarget(shape = androidx.compose.material3.ButtonDefaults.shape),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 ) {
                     Text(
@@ -292,7 +314,7 @@ private fun AppUpdateBanner(
             if (!state.isDownloading) {
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.size(40.dp),
+                    modifier = (Modifier.size(40.dp)).remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
@@ -336,7 +358,7 @@ private fun ReleaseNotesDialog(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(onClick = onDismiss) {
+            IconButton(onClick = onDismiss, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = stringResource(Res.string.action_close),
@@ -352,7 +374,7 @@ private fun ReleaseNotesDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 420.dp)
-                .verticalScroll(rememberScrollState()),
+                .nuvioVerticalScroll(rememberScrollState()),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

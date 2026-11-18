@@ -2,6 +2,8 @@ package com.nuvio.app.features.details
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.features.tmdb.TmdbMetadataService
+import com.nuvio.app.features.tmdb.TmdbService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +27,7 @@ object ImdbEpisodeRatingsRepository {
     suspend fun getEpisodeRatings(
         imdbId: String?,
         tmdbId: Int?,
+        seasonNumbers: List<Int> = emptyList(),
     ): Map<Pair<Int, Int>, Double> {
         val normalizedImdbId = normalizeImdbId(imdbId)
         val normalizedTmdbId = tmdbId?.takeIf { it > 0 }
@@ -45,6 +48,7 @@ object ImdbEpisodeRatingsRepository {
                     fetchEpisodeRatings(
                         imdbId = normalizedImdbId,
                         tmdbId = normalizedTmdbId,
+                        seasonNumbers = seasonNumbers,
                     ).also { ratings ->
                         mutex.withLock {
                             cache[cacheKey] = CacheEntry(
@@ -74,15 +78,23 @@ object ImdbEpisodeRatingsRepository {
     private suspend fun fetchEpisodeRatings(
         imdbId: String?,
         tmdbId: Int?,
+        seasonNumbers: List<Int>,
     ): Map<Pair<Int, Int>, Double> {
-        if (!imdbId.isNullOrBlank()) {
-            val primary = toRatingsMap(ImdbTapframeApi.getSeasonRatings(imdbId))
+        val resolvedImdbId = imdbId ?: tmdbId?.let { TmdbService.tmdbToImdb(it, "series") }
+        if (!resolvedImdbId.isNullOrBlank()) {
+            val primary = toRatingsMap(ImdbTapframeApi.getSeasonRatings(resolvedImdbId))
             if (primary.isNotEmpty()) return primary
-            log.w { "Primary episode ratings empty for imdbId=$imdbId, trying fallback" }
+            log.w { "Primary episode ratings empty for imdbId=$resolvedImdbId, trying fallback" }
         }
 
-        if (tmdbId != null) {
-            return toRatingsMap(SeriesGraphApi.getSeasonRatings(tmdbId))
+        val resolvedTmdbId = tmdbId ?: resolvedImdbId
+            ?.let { TmdbService.ensureTmdbId(it, "series") }
+            ?.toIntOrNull()
+
+        if (resolvedTmdbId != null) {
+            val configuredServiceRatings = toRatingsMap(SeriesGraphApi.getSeasonRatings(resolvedTmdbId))
+            if (configuredServiceRatings.isNotEmpty()) return configuredServiceRatings
+            return TmdbMetadataService.fetchEpisodeRatings(resolvedTmdbId, seasonNumbers)
         }
 
         return emptyMap()

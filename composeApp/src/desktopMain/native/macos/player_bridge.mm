@@ -155,6 +155,7 @@ static constexpr double kMaxVolumePercent = 200.0;
 - (void)setAudioLanguages:(NSString *)languages;
 - (void)selectSubtitleTrackId:(int)trackId;
 - (void)addSubtitleUrl:(NSString *)url;
+- (void)addAudioUrl:(NSString *)url;
 - (void)removeExternalSubtitles;
 - (void)removeExternalSubtitlesAndSelect:(int)trackId;
 - (void)setSubtitleDelayMs:(int)delayMs;
@@ -1759,25 +1760,43 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     setMpvOptionString(_mpv, "target-colorspace-hint-mode", "source");
     setMpvOptionString(_mpv, "target-colorspace-hint-strict", "no");
     setMpvOptionString(_mpv, "tone-mapping", "auto");
-    setMpvOptionString(_mpv, "hdr-compute-peak", "no");
     setMpvOptionString(_mpv, "dither-depth", "auto");
-    setMpvOptionString(_mpv, "demuxer-max-bytes", "150MiB");
+    setMpvOptionString(_mpv, "cache", "yes");
+    setMpvOptionString(_mpv, "demuxer-max-bytes", "1024MiB");
+    setMpvOptionString(_mpv, "demuxer-readahead-secs", "36000");
+    setMpvOptionString(_mpv, "demuxer-seekable-cache", "yes");
+    setMpvOptionString(_mpv, "force-seekable", "yes");
     setMpvOptionString(
         _mpv,
         "stream-lavf-o",
-        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=%23%408,429,500,502,503,504,reconnect_delay_max=15"
+        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=408,429,500,502,503,504,reconnect_delay_max=15,multiple_requests=1"
     );
+    setMpvOptionString(_mpv, "demuxer-lavf-buffersize", "262144");
+    setMpvOptionString(_mpv, "stream-buffer-size", "524288");
+    setMpvOptionString(_mpv, "cache-pause-initial", "no");
+    setMpvOptionString(_mpv, "hr-seek", "default");
 
+    NSString *userAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
     if (headerLines.count > 0) {
         NSMutableArray *escaped = [NSMutableArray arrayWithCapacity:headerLines.count];
         for (NSString *line in headerLines) {
+            if ([line.lowercaseString hasPrefix:@"user-agent:"]) {
+                NSString *val = [[line substringFromIndex:11] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                if (val.length > 0) {
+                    userAgent = val;
+                }
+                continue;
+            }
             NSString *esc = [[line stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"]
                              stringByReplacingOccurrencesOfString:@"," withString:@"\\,"];
             [escaped addObject:esc];
         }
-        NSString *headers = [escaped componentsJoinedByString:@","];
-        setMpvOptionString(_mpv, "http-header-fields", headers.UTF8String);
+        if (escaped.count > 0) {
+            NSString *headers = [escaped componentsJoinedByString:@","];
+            setMpvOptionString(_mpv, "http-header-fields", headers.UTF8String);
+        }
     }
+    setMpvOptionString(_mpv, "user-agent", userAgent.UTF8String);
 
     int initResult = mpv_initialize(_mpv);
     if (initResult < 0) {
@@ -1870,11 +1889,12 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
                                        position:position
                                          paused:paused
                                           speed:speed];
+                long long bufferedMs = [self bufferedPositionMs];
                 NSString *script = [NSString stringWithFormat:
-                    @"window.playerUpdate({duration:%0.3f,position:%0.3f,bufferedPosition:%0.3f,volumeLevel:%0.3f,paused:%@,loading:%@,audioTracks:%@,subtitleTracks:%@})",
+                    @"window.playerUpdate({duration:%0.3f,position:%0.3f,bufferedMs:%lld,volumeLevel:%0.3f,paused:%@,loading:%@,audioTracks:%@,subtitleTracks:%@})",
                     duration,
                     position,
-                    bufferedPosition,
+                    bufferedMs,
                     volumeLevel,
                     paused ? @"true" : @"false",
                     loading ? @"true" : @"false",
@@ -2148,8 +2168,11 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
 
 - (void)seekToMilliseconds:(long long)positionMs {
     if (!_mpv) return;
+    long long currentPosMs = (long long)llround([self doubleProperty:"time-pos" fallback:0.0] * 1000.0);
+    long long deltaMs = std::abs(positionMs - currentPosMs);
+    const char *mode = (deltaMs <= 3000) ? "absolute+exact" : "absolute+keyframes";
     std::string seconds = std::to_string((double)positionMs / 1000.0);
-    const char *command[] = {"seek", seconds.c_str(), "absolute+exact", NULL};
+    const char *command[] = {"seek", seconds.c_str(), mode, NULL};
     mpv_command(_mpv, command);
     [self storeCachedPosition:(double)positionMs / 1000.0 at:CACurrentMediaTime()];
 }
@@ -2157,7 +2180,8 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
 - (void)seekByMilliseconds:(long long)offsetMs {
     if (!_mpv) return;
     std::string seconds = std::to_string((double)offsetMs / 1000.0);
-    const char *command[] = {"seek", seconds.c_str(), "relative+exact", NULL};
+    const char *mode = (std::abs(offsetMs) <= 3000) ? "relative+exact" : "relative+keyframes";
+    const char *command[] = {"seek", seconds.c_str(), mode, NULL};
     mpv_command(_mpv, command);
     [self storeCachedPosition:[self estimatedPositionSeconds] + ((double)offsetMs / 1000.0) at:CACurrentMediaTime()];
 }
@@ -2396,17 +2420,17 @@ static void nuvioMpvWakeup(void *ctx) {
     if (_initialStartSeconds > 0.0 && safePosition + 5.0 < _initialStartSeconds) {
         effectivePosition = _initialStartSeconds;
     }
-    double cacheTime = [self doubleProperty:"demuxer-cache-time" fallback:0.0];
-    if (std::isfinite(cacheTime) && cacheTime > 0.0) {
-        if (cacheTime >= effectivePosition - 5.0) {
-            return fmax(cacheTime - effectivePosition, 0.0);
-        }
-        return fmax(cacheTime - safePosition, 0.0);
-    }
-
     double cacheDuration = [self doubleProperty:"demuxer-cache-duration" fallback:0.0];
     if (std::isfinite(cacheDuration) && cacheDuration > 0.0) {
         return cacheDuration;
+    }
+
+    double cacheTime = [self doubleProperty:"demuxer-cache-time" fallback:0.0];
+    if (std::isfinite(cacheTime) && cacheTime > 0.0) {
+        if (cacheTime >= effectivePosition) {
+            return fmax(cacheTime - effectivePosition, 0.0);
+        }
+        return 0.0;
     }
 
     return 0.0;
@@ -2493,6 +2517,11 @@ static void nuvioMpvWakeup(void *ctx) {
     [self command:@[@"sub-add", url, @"select"]];
 }
 
+- (void)addAudioUrl:(NSString *)url {
+    if (!_mpv || url.length == 0) return;
+    [self command:@[@"audio-add", url, @"select"]];
+}
+
 - (void)removeExternalSubtitles {
     if (!_mpv) return;
     [self removeExternalSubtitleTracks];
@@ -2543,7 +2572,7 @@ static void nuvioMpvWakeup(void *ctx) {
                                 stripSdh:(BOOL)stripSdh {
     if (!_mpv) return;
     double size = MAX(18.0, MIN(96.0, fontSize));
-    double scale = 1.0;
+    double scale = useLibass ? size / 54.0 : 1.0;
     int64_t position = MAX(0, MIN(150, subPos));
     double outline = MAX(0.0, MIN(8.0, outlineSize));
     NSString *resolvedTextColor = textColor ?: @"#FFFFFFFF";
@@ -2563,10 +2592,14 @@ static void nuvioMpvWakeup(void *ctx) {
     BOOL stripSdhChanged = !_hasAppliedSubtitleStyle || _appliedSubtitleStripSdh != stripSdh;
 
     if (modeChanged) {
-        [self setStringProperty:"sub-ass-override" value:@"no"];
+        [self setStringProperty:"sub-ass-override" value:useLibass ? @"scale" : @"force"];
     }
-    if (modeChanged) {
-        const char *styleOverridesCommand[] = {"change-list", "sub-ass-style-overrides", "clr", "", NULL};
+    if (modeChanged || (!useLibass && boldChanged)) {
+        const char *styleOverridesCommand[] = {
+            "change-list", "sub-ass-style-overrides",
+            useLibass ? "clr" : "set",
+            useLibass ? "" : (bold ? "Bold=1" : "Bold=0"), NULL
+        };
         mpv_command(_mpv, styleOverridesCommand);
     }
     if (modeChanged || sizeChanged) {
@@ -2585,6 +2618,9 @@ static void nuvioMpvWakeup(void *ctx) {
             [self setStringProperty:"sub-back-color" value:resolvedBackgroundColor];
             [self setStringProperty:"sub-border-style"
                               value:[resolvedBackgroundColor hasPrefix:@"#00"] ? @"outline-and-shadow" : @"background-box"];
+            [self setStringProperty:"sub-shadow-offset"
+                              value:[resolvedBackgroundColor hasPrefix:@"#00"] ? @"0" : @"4"];
+            [self setStringProperty:"sub-blur" value:@"0"];
         }
         if (modeChanged || outlineColorChanged) {
             [self setStringProperty:"sub-outline-color" value:resolvedOutlineColor];
@@ -3222,13 +3258,13 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jobject /* bridge */,
     jlong hostViewPtr,
     jstring sourceUrl,
+    jstring /*audioUrl*/,
     jobjectArray headerLines,
     jboolean playWhenReady,
     jlong initialPositionMs,
     jstring controlsPageUrl,
     jint decoderPriority,
     jboolean nvidiaRtxSuperResolutionEnabled,
-    jboolean /*nvidiaRtxHdrEnabled*/,
     jobject eventSink
 ) {
     NSView *hostView = (__bridge NSView *)(void *)(intptr_t)hostViewPtr;
@@ -3667,6 +3703,89 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectSubtitleTrac
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setGlslShaders(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle,
+    jstring shaders
+) {
+    if (handle == 0) return;
+    std::string s = jstringToString(env, shaders);
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player setStringProperty:"glsl-shaders" value:[NSString stringWithUTF8String:s.c_str()]];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setAudioFilter(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle,
+    jstring filter
+) {
+    if (handle == 0) return;
+    std::string s = jstringToString(env, filter);
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player setStringProperty:"af" value:[NSString stringWithUTF8String:s.c_str()]];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setVideoFilter(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle,
+    jstring filter
+) {
+    if (handle == 0) return;
+    std::string s = jstringToString(env, filter);
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        if (s.empty()) {
+            [player command:@[@"vf", @"clr"]];
+        } else {
+            [player command:@[@"vf", @"set", [NSString stringWithUTF8String:s.c_str()]]];
+        }
+    });
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isSvpAvailable(JNIEnv *, jobject) {
+    void *h = dlopen("libvsscript.dylib", RTLD_LAZY | RTLD_NOLOAD);
+    if (!h) h = dlopen("libvsscript.dylib", RTLD_LAZY);
+    if (!h) h = dlopen("libvapoursynth-script.dylib", RTLD_LAZY);
+    if (h) { dlclose(h); return JNI_TRUE; }
+    return JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSvpFilter(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle,
+    jboolean enabled,
+    jstring vpyPath
+) {
+    if (handle == 0) return JNI_FALSE;
+    std::string path = jstringToString(env, vpyPath);
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        if (enabled && !path.empty()) {
+            [player setStringProperty:"hwdec" value:@"auto-copy"];
+            [player setStringProperty:"demuxer-max-bytes" value:@"1024MiB"];
+            NSString *filter = [NSString stringWithFormat:@"@SVP:vapoursynth=\"%s\":buffered-frames=8:concurrent-frames=16", path.c_str()];
+            [player command:@[@"vf", @"set", filter]];
+        } else {
+            [player setStringProperty:"hwdec" value:@"auto"];
+            [player command:@[@"vf", @"clr"]];
+        }
+    });
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_addSubtitleUrl(
     JNIEnv *env,
     jobject /* bridge */,
@@ -3678,6 +3797,21 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_addSubtitleUrl(
     MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
     runOnMainAsync(^{
         [player addSubtitleUrl:[NSString stringWithUTF8String:subtitleUrl.c_str()]];
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_addAudioUrl(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle,
+    jstring url
+) {
+    if (handle == 0) return;
+    std::string audioUrl = jstringToString(env, url);
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    runOnMainAsync(^{
+        [player addAudioUrl:[NSString stringWithUTF8String:audioUrl.c_str()]];
     });
 }
 

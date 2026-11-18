@@ -13,9 +13,16 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.rememberCoroutineScope
+import com.nuvio.app.core.ui.AppPresenceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -91,7 +98,7 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
     val addonSubtitles by SubtitleRepository.addonSubtitles.collectAsStateWithLifecycle()
     val isLoadingAddonSubtitles by SubtitleRepository.isLoading.collectAsStateWithLifecycle()
 
-    val runtime = remember { PlayerScreenRuntime(args) }
+    val runtime = remember(args.launchId) { PlayerScreenRuntime(args) }
     runtime.args = args
     val controllerScope = rememberCoroutineScope()
 
@@ -130,6 +137,12 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
         onDispose {
             ControllerFocusEngine.setPlayerEventHandler(null)
             PlayerControllerBridge.register(null, null)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            AppPresenceState.clearPlayer()
         }
     }
 
@@ -200,7 +213,16 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
         runtime.episodeStreamsRepoState = episodeStreamsRepoState
         runtime.metaUiState = metaUiState
         runtime.addonsUiState = addonsUiState
-        runtime.addonSubtitles = mergeStreamAndAddonSubtitles(addonSubtitles, runtime.externalSubtitles)
+        val engineSubtitlesFlow = remember(runtime.playerController) {
+            runtime.playerController?.engineStreamSubtitles
+                ?: MutableStateFlow(emptyList<com.nuvio.app.features.streams.StreamSubtitle>())
+        }
+        val engineStreamSubtitles by engineSubtitlesFlow.collectAsStateWithLifecycle()
+        runtime.engineStreamSubtitles = engineStreamSubtitles
+        runtime.addonSubtitles = mergeStreamAndAddonSubtitles(
+            addonSubtitles,
+            runtime.externalSubtitles + engineStreamSubtitles,
+        )
         runtime.isLoadingAddonSubtitles = isLoadingAddonSubtitles
         runtime.horizontalSafePadding = horizontalSafePadding
         runtime.metrics = metrics

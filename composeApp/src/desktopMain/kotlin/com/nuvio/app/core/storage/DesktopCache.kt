@@ -26,8 +26,12 @@ internal object DesktopCache {
         resources.forEach { (relativePath, url) ->
             val target = resolveTarget(directory, relativePath)
             if (!Files.exists(target)) {
-                url.openStream().use { input ->
+                val connection = url.openConnection().apply { useCaches = false }
+                connection.getInputStream().use { input ->
                     writeAtomically(target) { pending -> Files.copy(input, pending, StandardCopyOption.REPLACE_EXISTING) }
+                }
+                if (connection is JarURLConnection) {
+                    runCatching { connection.jarFile.close() }
                 }
             }
         }
@@ -54,11 +58,18 @@ internal object DesktopCache {
         return target
     }
 
-    private fun resourceStamp(url: URL): String =
-        when (val connection = url.openConnection()) {
-            is JarURLConnection -> connection.jarEntry.let { entry -> "${entry.size}:${entry.crc}" }
+    private fun resourceStamp(url: URL): String {
+        val connection = url.openConnection().apply { useCaches = false }
+        return when (connection) {
+            is JarURLConnection -> {
+                val entry = connection.jarEntry
+                val stamp = "${entry.size}:${entry.crc}"
+                runCatching { connection.jarFile.close() }
+                stamp
+            }
             else -> "${connection.contentLengthLong}:${connection.lastModified}"
         }
+    }
 
     private fun writeIfChanged(target: Path, bytes: ByteArray) {
         if (Files.exists(target) && Files.readAllBytes(target).contentEquals(bytes)) return

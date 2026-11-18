@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -113,6 +115,9 @@ import nuvio.composeapp.generated.resources.settings_poster_animated_artwork_alw
 import nuvio.composeapp.generated.resources.settings_poster_animated_artwork_off
 import nuvio.composeapp.generated.resources.settings_poster_animated_artwork_on_hover
 import nuvio.composeapp.generated.resources.settings_poster_hide_labels
+import nuvio.composeapp.generated.resources.settings_poster_hide_year
+import nuvio.composeapp.generated.resources.settings_poster_glow
+import nuvio.composeapp.generated.resources.settings_poster_glow_description
 import nuvio.composeapp.generated.resources.settings_poster_always_show_landscape_clearlogo
 import nuvio.composeapp.generated.resources.settings_poster_landscape_mode
 import nuvio.composeapp.generated.resources.settings_poster_live_preview
@@ -168,14 +173,18 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
                     cornerRadiusDp = uiState.cornerRadiusDp,
                     catalogLandscapeModeEnabled = uiState.catalogLandscapeModeEnabled,
                     hideLabelsEnabled = uiState.hideLabelsEnabled,
+                    hideYearEnabled = uiState.hideYearEnabled,
                     alwaysShowLandscapeClearlogo = uiState.alwaysShowLandscapeClearlogo,
                     animatedArtworkMode = uiState.animatedArtworkMode,
+                    glowEnabled = uiState.glowEnabled,
                     onWidthSelected = PosterCardStyleRepository::setWidthDp,
                     onCornerRadiusSelected = PosterCardStyleRepository::setCornerRadiusDp,
                     onCatalogLandscapeModeChange = PosterCardStyleRepository::setCatalogLandscapeModeEnabled,
                     onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
+                    onHideYearChange = PosterCardStyleRepository::setHideYearEnabled,
                     onAlwaysShowLandscapeClearlogoChange = PosterCardStyleRepository::setAlwaysShowLandscapeClearlogo,
                     onAnimatedArtworkModeSelected = PosterCardStyleRepository::setAnimatedArtworkMode,
+                    onGlowEnabledChange = PosterCardStyleRepository::setGlowEnabled,
                 )
             }
         }
@@ -214,7 +223,7 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
                     OutlinedTextField(
                         value = editingPattern,
                         onValueChange = { editingPattern = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = (Modifier.fillMaxWidth()).remoteNavigationTarget(textField = true),
                         placeholder = {
                             Text(
                                 text = stringResource(Res.string.settings_custom_poster_placeholder),
@@ -235,7 +244,7 @@ internal fun LazyListScope.posterCustomizationSettingsContent(
                                 CustomPosterUrlRepository.setPattern(editingPattern)
                             },
                             enabled = editingPattern.trim() != currentPattern,
-                        ) {
+                         modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.material3.ButtonDefaults.shape)) {
                             Text(text = stringResource(Res.string.settings_custom_poster_save))
                         }
                     }
@@ -367,7 +376,7 @@ private fun CardDepthStyleControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable { showFineTune = true },
+                    .remoteNavigationTarget(shape = RoundedCornerShape(10.dp)).clickable { showFineTune = true },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -727,14 +736,18 @@ private fun PosterCardStyleControls(
     cornerRadiusDp: Int,
     catalogLandscapeModeEnabled: Boolean,
     hideLabelsEnabled: Boolean,
+    hideYearEnabled: Boolean,
     alwaysShowLandscapeClearlogo: Boolean,
     animatedArtworkMode: AnimatedArtworkMode,
+    glowEnabled: Boolean,
     onWidthSelected: (Int) -> Unit,
     onCornerRadiusSelected: (Int) -> Unit,
     onCatalogLandscapeModeChange: (Boolean) -> Unit,
     onHideLabelsChange: (Boolean) -> Unit,
+    onHideYearChange: (Boolean) -> Unit,
     onAlwaysShowLandscapeClearlogoChange: (Boolean) -> Unit,
     onAnimatedArtworkModeSelected: (AnimatedArtworkMode) -> Unit,
+    onGlowEnabledChange: (Boolean) -> Unit,
 ) {
     val animatedArtworkOptions = listOf(
         PresetOption(stringResource(Res.string.settings_poster_animated_artwork_always), AnimatedArtworkMode.Always.ordinal),
@@ -789,9 +802,20 @@ private fun PosterCardStyleControls(
             onCheckedChange = onCatalogLandscapeModeChange,
         )
         PosterToggleRow(
+            title = stringResource(Res.string.settings_poster_glow),
+            description = stringResource(Res.string.settings_poster_glow_description),
+            checked = glowEnabled,
+            onCheckedChange = onGlowEnabledChange,
+        )
+        PosterToggleRow(
             title = stringResource(Res.string.settings_poster_hide_labels),
             checked = hideLabelsEnabled,
             onCheckedChange = onHideLabelsChange,
+        )
+        PosterToggleRow(
+            title = stringResource(Res.string.settings_poster_hide_year),
+            checked = hideYearEnabled,
+            onCheckedChange = onHideYearChange,
         )
         PosterToggleRow(
             title = stringResource(Res.string.settings_poster_always_show_landscape_clearlogo),
@@ -826,19 +850,37 @@ private fun PosterToggleRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    description: String? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .remoteNavigationTarget(
+                shape = RoundedCornerShape(8.dp),
+                onSelect = { onCheckedChange(!checked) },
+            )
+            .clickable { onCheckedChange(!checked) },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
+        Column(
             modifier = Modifier.weight(1f).padding(end = 16.dp),
-        )
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            )
+            if (description != null) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
@@ -975,7 +1017,7 @@ private fun PosterStyleOptionRow(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     ),
-                )
+                 modifier = Modifier.remoteNavigationTarget())
             }
         }
     }

@@ -1,80 +1,118 @@
 <div align="center">
 
-  <img src="https://nuvio.tv/assets/nuvio-app-logo-wordmark.webp" alt="Nuvio" width="320" />
-
+  <h1>NuvioCodeineXO Desktop</h1>
+  
   <p>
-    A free, open-source media app for Windows, macOS, and Linux.
-    <br />
-    Bring your own sources. Nuvio turns them into a library with artwork, ratings, subtitles, and your place saved on every screen.
+    An enhanced edition of Nuvio Desktop with Anime4K shaders, 60 FPS smooth motion interpolation, anime filler markers, seek preview, deep subtitle styling with dual subtitles, mobile remote, keyboard navigation, watch party feature, minimal player UI, better discord rpc, UI optimizations, better navigation layout, faster and smoother playback .
   </p>
 
-  [Website](https://nuvio.tv) · [GitHub releases](https://github.com/NuvioMedia/NuvioDesktop/releases/latest) · [Support Nuvio](https://nuvio.tv/support)
+  <a href="https://github.com/codeineXO/NuvioCodeineXO/releases/latest">
+    <img src="https://placehold.co/300x60/2ea44f/ffffff.png?text=DOWNLOAD" alt="DOWNLOAD" />
+  </a>
+
+  <p><sub>Click the button above → find the <b>.exe</b> file under <b>Assets</b> and download it.</sub></p>
 
 </div>
 
-## ⚠️ Alpha Software - Slow Development - Testers Only
+---
 
-Nuvio Desktop is currently in alpha and is intended only for testers. It is under development and is not suitable for daily use.
+## ✨ Features & Fork Highlights
 
-Expect breaking changes with every update. Features, settings, stored data, and compatibility may change or stop working without notice. Do not rely on this build as your primary media app, and report any issues you encounter during testing.
+Here is the breakdown of features and improvements on **NuvioCodeineXO** that are not present in official Nuvio Desktop:
 
-## Get Nuvio Desktop
+### 🌸 Anime Features
+* **Anime Upscaler Shaders (Anime4K):** Integrated MPV post-processing shader pipelines (`Anime4K Fast`, `Anime4K Sharp HQ`, and `Line Recovery`) switchable in-player on the fly.
+* **Anime Filler Markers:** Automatic anime filler detection that highlights episodes with Mixed Canon and Anime Filler badges across episode lists, quick drawers, and player overlays. Option to hide and skip pure filler episodes is included. 
 
-Download the latest build from [GitHub Releases](https://github.com/NuvioMedia/NuvioDesktop/releases/latest).
+### 🎬 Player & Playback
+* **Motion Smoothing (Frame Interpolation):** Converts videos into fluid high-framerate playback (60fps+) in real time. Automatically applies tailored smoothness for anime versus live-action movies and TV shows, switchable on the fly (`Off`, `Anime Only`, `All Media`) from the player Enhancements menu.
+* **Random Title Picker ("Shuffle"):** Shuffle tool that lets you roll for random movies, shows and anime with handy filters and a quick preview before diving in.
+* **Seek Previews (Seekr.tv):** Highly customizable animated seek preview thumbnails on hover and scrub powered by the Seekr.tv API.
+* **Eye Filter:** Optional night-light or dimmer overlay with configurable color and opacity, plus an instant keyboard toggle. Frosted haze filter for people with hemophobia.
+* **Stream Fallback:** Option to enable stream fallback to automatically fallback to another stream if the first one fails.
+* **In Player Playback Statistics Overlay:** View Stats for Nerds in player with all kinds of statistics.
+* **In-App Floating Mini Player:** Draggable in-app picture-in-picture overlay that lets you navigate menus and browse catalogs without interrupting playback, featuring instant play/pause, progress tracking, and one-click expand.
+* **CodeineXO Player UI & Quick Drawer:** Alternate modern player layout with natural text shadows, faint buffer progress bar, sliding quick drawer, soft-blurred panels with black tint, and episode rating badges.
+* **Streamlined In-Player Controls:** Right-click to cycle audio/subtitle tracks instantly, toggle between elapsed and remaining time, "show seekbar while seeking" toggle, rounded track styling, and refined Picture-in-Picture (PiP) controls.
+* **Live Network & Stream Stats:** Real-time overlay showing download speed, seeders, and peers directly on the player for both P2P and HTTP streams.
+* **Audio Night Mode (Dynamic Range Compression):** Real-time loudness normalization filter accessible in the player audio panel and settings to boost soft dialogue while reducing loud dynamic peaks.
+* **Precision Seeking & Stutter Fixes:** Smooth precision seeking, 10-second seek, 3-second seek and  1-second micro-seeking and optimized streaming buffer cache.
+* **In-app Trailer:** Plays trailer inside the app without opening in a browser.
 
-- Windows: MSI installer
-- macOS: DMG installer
-- Linux: DEB, RPM, Flatpak, or AppImage
+### 🎨 Subtitle Customizations
+* **Granular Subtitle Styling:** Custom hex color picker for text, outline, and background box (with adjustable box opacity).
+* **Typography & Outline Styles:** 10 curated clean fonts (and custom fonts), outline thickness modifier, and selectable outline effects (`Classic Outline`, `Glow`, `Halo`, `Background Box`, and `None`).
+* **Import External Subtitles:** Option to import external subtitle of choice.
+* **Dual Subtitles:** Select a secondary subtitle to show above primary subtitle for whatever reason.  
 
-## Build from source
+### ✨ Visuals, UX & Settings
+* **CodeineXO Aura & Frosted Glass Aesthetics:** Ambient interactive background glow with frosted glass styling across panels, cards and surfaces.
+* **Redesigned the Sidebar:** Floating sidebar with frosted glass style.
+* **Mobile Remote:** Use your phone as a remote for navigating the app and controlling playback. 
+* **Keyboard Navigation:** Use keyboard arrow keys, enter, backspace and escape for navigating posters, settings, pages etc.
+* **Touchscreen Navigation:** Supports full touchscreen navigation with scrolling momentum.
+* **Posters and Cards Glow:** Ambient adaptive glow around the edges of posters, collections and episode cards. 
+* **Updated Interface:** Three dedicated interface layouts for effortless navigation- Persistent Hero, Scroll Posters and Official.
+* **Poster Hover Previews:** Redesigned landscape hover preview with details and ratings.
+* **Clickable Ratings:** All rating badges are clickable to open in browser. 
+* **Dedicated CodeineXO Settings:** Consolidated fork options into a dedicated settings page with full search indexing, Seekr API key integration, and mirrored playback controls.
+* **Sharp Vector Badges & Ratings:** Crisp vector SVG rating badges across catalog cards, hero headers, and episode rows for high-DPI clarity.
+* **Catalog Navigation & Polish:** Drag-to-scroll and directional arrow buttons on carousels, sidebar quick exit button, and copy addon manifest link shortcuts.
+* **App & Player UI Scaling:** Independently adjust the application interface and player-control size.
+* **Enhanced Discord Rich Presence:** Richer Discord RPC with customizable activity types ("Watching" vs. "Playing"), uncropped full portrait posters, small badge display for episode thumbnails, active mini-player tracking, and interactive artwork linking directly to IMDb.
+* **Addon & Plugin Management:** One-click bulk refresh for addons and plugins, plus master switches to enable or disable entire plugin sources.
+* **Custom Download Folder:** Uncapped download speed and option to choose download folder with auto transfer from old folder. 
+* **Show Metadata Info:** Show metadata source and ID with other useful information on details and stream selection screens.
 
-```bash
-git clone https://github.com/NuvioMedia/NuvioDesktop.git
-cd NuvioDesktop
-```
+### ⚡ P2P Engine & Core Performance
+* **NuvioEngine-Only Streaming:** Fully dropped external TorrServer dependency in favor of native NuvioEngine backend with configurable persistent torrent caching, optimized HTTP stream buffering, audio channel routing fixes, and fast mid-file resume.
 
-### Run the app
+### 🪟 Windows Desktop Isolation & Installer
+* **Isolated Environment:** Runs entirely out of dedicated `NuvioCodeineXO` data directories without conflicting with or overwriting official Nuvio settings or shortcuts.
+* **Custom Installer & In-App Updater:** Dedicated Windows .exe installer, an interactive uninstall prompt asking whether to retain or wipe data, and an updater tracking the fork’s GitHub latest releases.
 
-```bash
-./gradlew :composeApp:run
-```
+---
 
-On Windows PowerShell:
+## ⌨️ Keyboard Shortcuts
 
-```powershell
-.\gradlew.bat :composeApp:run
-```
+| Shortcut | Action |
+| :--- | :--- |
+| `Space` / `K` | Play / Pause *(hold to boost speed)* |
+| `F` / `F11` | Toggle Fullscreen |
+| `←` / `→` | Seek backward / forward (3s) |
+| `J` / `L` | Seek backward / forward (10s) |
+| `Shift` + `←` / `→` or `J` / `L` | 1-second micro-seek |
+| `↑` / `↓` | Volume up / down |
+| `M` | Mute / Unmute audio |
+| `P` | Toggle Picture-in-Picture |
+| `B` | Quick cycle audio track |
+| `V` | Toggle subtitles on / off |
+| `G` / `H` | Adjust subtitle delay (-100ms / +100ms) |
+| `O` | Toggle subtitle text opacity (50% / full) |
+| `Shift` + `<` / `>` | Adjust playback speed (`/` to reset to 1x) |
+| `` ` `` | Open playback speed panel |
+| `N` | Play next episode |
+| `E` | Open episode selector drawer |
+| `Q` | Open stream sources drawer |
+| `A` / `S` | Open audio / subtitle selection panels |
+| `U` | Open enhancements panel |
+| `C` | Open chapters panel |
+| `W` | Open watch party panel |
+| `.` | Open the more playback controls menu |
+| `R` | Cycle aspect ratio |
+| `Y` | Switch to mini player / back to full player |
+| `Right-Click` on Audio / Subtitle button | Instantly cycle through audio or subtitle tracks without opening menus |
+| `I`  | Show / Hide Playback Stats for Nerds |
+| `0` (Zero) | Toggle eye filter |
+| `9` | Toggle frosted matte filter |
+| `Enter` | Skip intro / recap when the skip prompt is shown |
+| `Esc` / `Backspace` | Close the open panel, or exit the player |
+| `Ctrl` + `+` / `=` | Increase UI scale by 10 percentage points |
+| `Ctrl` + `−` | Decrease UI scale by 10 percentage points |
+| `Ctrl` + `0` | Reset UI scale to 100% |
 
-### Package the app
+---
 
-Build a release package for the current host:
+## ⚖️ Disclaimer
 
-```bash
-./gradlew :composeApp:packageReleaseDistributionForCurrentOS
-```
-
-For platform-specific packaging:
-
-Windows PowerShell:
-
-```powershell
-.\gradlew.bat :composeApp:packageReleaseMsi --rerun-tasks
-```
-
-macOS:
-
-```bash
-./scripts/build-macos-release-dmgs.sh --package-only
-```
-
-Linux:
-
-```bash
-./gradlew :composeApp:packageReleaseDeb
-```
-
-The shared app is built with Kotlin Multiplatform and Compose Multiplatform.
-
-## License
-
-[GNU General Public License v3.0](./LICENSE)
+Nuvio is a client-side media browser and player for user-provided sources and extensions. It does not host, store, or distribute any media content.

@@ -1,5 +1,10 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.SettingsAwareSurface
+
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.expandVertically
@@ -18,7 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -46,6 +51,7 @@ import nuvio.composeapp.generated.resources.shuffle_save_failed
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -89,6 +95,8 @@ import nuvio.composeapp.generated.resources.settings_meta_episode_style_horizont
 import nuvio.composeapp.generated.resources.settings_meta_episode_style_horizontal_description
 import nuvio.composeapp.generated.resources.settings_meta_episode_style_list
 import nuvio.composeapp.generated.resources.settings_meta_episode_style_list_description
+import nuvio.composeapp.generated.resources.settings_meta_episode_style_enhanced
+import nuvio.composeapp.generated.resources.settings_meta_episode_style_enhanced_description
 import nuvio.composeapp.generated.resources.settings_meta_episodes
 import nuvio.composeapp.generated.resources.settings_meta_episodes_description
 import nuvio.composeapp.generated.resources.settings_meta_blur_unwatched_episodes
@@ -181,6 +189,8 @@ internal fun LazyListScope.metaScreenSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 RatingsSettings(isTablet = isTablet, uiState = uiState)
                 SettingsGroupDivider(isTablet = isTablet)
+                MetadataInfoSettings(isTablet = isTablet, checked = uiState.showMetadataInfo)
+                SettingsGroupDivider(isTablet = isTablet)
                 val shuffleProfile by remember {
                     EpisodeShuffleRepository.ensureLoaded()
                     EpisodeShuffleRepository.uiState
@@ -261,17 +271,21 @@ private fun MetaSectionReorderableList(
         emptyMap()
     }
 
-    LazyColumn(
-        modifier = Modifier
+    NuvioLazyColumn(
+        modifier = Modifier.remoteNavigationGroup().then(Modifier
             .fillMaxWidth()
-            .heightIn(max = if (isTablet) 820.dp else 640.dp),
+            .heightIn(max = if (isTablet) 820.dp else 640.dp)),
         state = lazyListState,
     ) {
         itemsIndexed(items, key = { _, item -> item.key.name }) { index, item ->
             ReorderableItem(reorderableLazyListState, key = item.key.name) { isDragging ->
                 val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
 
-                Surface(shadowElevation = elevation) {
+                Surface(
+                    color = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shadowElevation = elevation,
+                ) {
                     Column {
                         if (index > 0) {
                             SettingsGroupDivider(isTablet = isTablet)
@@ -374,9 +388,9 @@ private fun MetaSectionRow(
                     uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
                 ),
-            )
+             modifier = Modifier.remoteNavigationTarget())
             IconButton(
-                modifier = with(dragHandleScope) {
+                modifier = (with(dragHandleScope) {
                     Modifier.draggableHandle(
                         onDragStarted = {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -385,7 +399,7 @@ private fun MetaSectionRow(
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         },
                     )
-                },
+                }).remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
                 onClick = {},
             ) {
                 Icon(
@@ -450,7 +464,7 @@ private val MetaScreenBackgroundMode.descriptionRes: StringResource
     }
 
 @Composable
-private fun MetaEpisodeCardStyleSelector(
+internal fun MetaEpisodeCardStyleSelector(
     isTablet: Boolean,
     selectedStyle: MetaEpisodeCardStyle,
     onStyleSelected: (MetaEpisodeCardStyle) -> Unit,
@@ -497,10 +511,10 @@ private fun MetaEpisodeCardStyleOption(
     isTablet: Boolean,
     onClick: () -> Unit,
 ) {
-    Surface(
+    SettingsAwareSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+            .remoteNavigationTarget(shape = RoundedCornerShape(12.dp)).selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
         color = if (selected) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
         } else {
@@ -550,12 +564,14 @@ private val MetaEpisodeCardStyle.labelRes: StringResource
     get() = when (this) {
         MetaEpisodeCardStyle.Horizontal -> Res.string.settings_meta_episode_style_horizontal
         MetaEpisodeCardStyle.List -> Res.string.settings_meta_episode_style_list
+        MetaEpisodeCardStyle.Enhanced -> Res.string.settings_meta_episode_style_enhanced
     }
 
 private val MetaEpisodeCardStyle.descriptionRes: StringResource
     get() = when (this) {
         MetaEpisodeCardStyle.Horizontal -> Res.string.settings_meta_episode_style_horizontal_description
         MetaEpisodeCardStyle.List -> Res.string.settings_meta_episode_style_list_description
+        MetaEpisodeCardStyle.Enhanced -> Res.string.settings_meta_episode_style_enhanced_description
     }
 
 private val MetaScreenSectionKey.titleRes: StringResource
@@ -677,6 +693,74 @@ private fun MetaEpisodeCardStylePreview(
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
                         )
                     }
+                }
+            }
+
+            MetaEpisodeCardStyle.Enhanced -> {
+                Column(
+                    modifier = Modifier
+                        .width(128.dp)
+                        .height(80.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
+                        .padding(horizontal = 7.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(24.dp)
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .width(18.dp)
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(42.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(13.dp)
+                                    .align(Alignment.BottomCenter)
+                                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.38f)),
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(0.7f)
+                                .height(42.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .width(16.dp)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)),
+                    )
                 }
             }
         }

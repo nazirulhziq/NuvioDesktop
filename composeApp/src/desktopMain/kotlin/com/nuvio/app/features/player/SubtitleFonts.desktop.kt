@@ -6,12 +6,15 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Font
 import com.nuvio.app.core.storage.DesktopStorage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import java.awt.FileDialog
 import javax.swing.SwingUtilities
 import java.awt.Frame
+import java.awt.KeyboardFocusManager
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -50,22 +53,26 @@ internal actual fun rememberSubtitleFontImporter(onResult: (Result<SubtitleFont>
     val latestResult = rememberUpdatedState(onResult)
     return {
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    var picked: Path? = null
-                    SwingUtilities.invokeAndWait {
-                        val dialog = FileDialog(null as Frame?, "Import font", FileDialog.LOAD).apply {
-                            setFilenameFilter { _, name -> name.lowercase().let { it.endsWith(".ttf") || it.endsWith(".otf") } }
-                            isVisible = true
-                        }
-                        picked = dialog.file?.let { Path.of(dialog.directory, it) }
+            val result = runCatching {
+                val path = withContext(Dispatchers.Swing) {
+                    val parent = KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow as? Frame
+                        ?: Frame.getFrames().firstOrNull { it.isVisible }
+                    val dialog = FileDialog(parent, "Import font", FileDialog.LOAD)
+                    try {
+                        dialog.setFilenameFilter { _, name -> name.lowercase().let { it.endsWith(".ttf") || it.endsWith(".otf") } }
+                        dialog.isVisible = true
+                        val name = dialog.file ?: return@withContext null
+                        Path.of(dialog.directory, name)
+                    } finally {
+                        dialog.dispose()
                     }
-                    val path = picked ?: return@runCatching null
-                    val name = path.fileName.toString()
+                } ?: return@runCatching null
+                withContext(Dispatchers.IO) {
                     require(Files.size(path) <= MaxSubtitleFontBytes)
-                    SubtitleFonts.import(name, Files.readAllBytes(path))
+                    SubtitleFonts.import(path.fileName.toString(), Files.readAllBytes(path))
                 }
             }
+            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             result.getOrNull()?.let { latestResult.value(Result.success(it)) }
                 ?: result.exceptionOrNull()?.let { latestResult.value(Result.failure(it)) }
         }
@@ -82,37 +89,30 @@ internal object SubtitleFontResolver {
         else -> activate(id) ?: "sans-serif"
     }
 
-    fun fontsDir(): String = activeDir.takeIf(Files::isDirectory)?.toString().orEmpty()
+    fun fontsDir(id: String? = activeId): String = id?.let { activeDir.resolve(it) }
+        ?.takeIf(Files::isDirectory)?.toString().orEmpty()
 
+    fun resolveImported(id: String): String? = runCatching { activate(id) }.getOrNull()
+
+    private var activeId: String? = null
+    private var activeFamily: String? = null
+
+    @Synchronized
     private fun activate(id: String): String? {
+        val directory = activeDir.resolve(id)
+        if (activeId == id && Files.isRegularFile(DesktopStorage.rootDir.resolve("subtitle-fonts").resolve(id)) && Files.isRegularFile(directory.resolve("$id.ttf"))) return activeFamily
         val bytes = SubtitleFontStorage.read(id) ?: return null
         val family = familyName(bytes) ?: return null
-        Files.createDirectories(activeDir)
-        Files.list(activeDir).use { it.forEach(Files::deleteIfExists) }
-        Files.write(activeDir.resolve("$id.ttf"), bytes)
+        // A distinct directory also distinguishes fonts that share the same family name.
+        Files.createDirectories(directory)
+        Files.write(directory.resolve("$id.ttf"), bytes)
+        activeId = id
+        activeFamily = family
         return family
     }
 
     private fun familyName(bytes: ByteArray): String? = runCatching {
-        fun u16(offset: Int) = ((bytes[offset].toInt() and 255) shl 8) or (bytes[offset + 1].toInt() and 255)
-        fun u32(offset: Int) = (u16(offset) shl 16) or u16(offset + 2)
-        val tableCount = u16(4)
-        val nameTable = (0 until tableCount)
-            .map { 12 + it * 16 }
-            .first { String(bytes, it, 4, Charsets.US_ASCII) == "name" }
-            .let { u32(it + 8) }
-        val count = u16(nameTable + 2)
-        val strings = nameTable + u16(nameTable + 4)
-        val records = (0 until count).map { nameTable + 6 + it * 12 }
-        fun read(nameId: Int): String? = records
-            .filter { u16(it + 6) == nameId }
-            .sortedBy { if (u16(it) == 3) 0 else 1 }
-            .firstNotNullOfOrNull { record ->
-                val length = u16(record + 8)
-                val offset = strings + u16(record + 10)
-                val charset = if (u16(record) == 3 || u16(record) == 0) Charsets.UTF_16BE else Charsets.ISO_8859_1
-                String(bytes, offset, length, charset).takeIf { it.isNotBlank() }
-            }
-        read(16) ?: read(1)
+        java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, java.io.ByteArrayInputStream(bytes)).family
     }.getOrNull()
+
 }

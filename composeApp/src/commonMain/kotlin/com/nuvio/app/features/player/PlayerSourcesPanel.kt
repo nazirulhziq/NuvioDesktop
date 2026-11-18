@@ -1,8 +1,10 @@
 package com.nuvio.app.features.player
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +37,10 @@ fun PlayerSourcesPanel(
     onReload: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    releaseDate: String? = null,
+    imdbRating: String? = null,
+    isFiller: Boolean = false,
+    isMixed: Boolean = false,
 ) {
     val tokens = MaterialTheme.nuvio
     val contentLabel = if (currentSeason != null && currentEpisode != null) {
@@ -70,13 +76,24 @@ fun PlayerSourcesPanel(
 
             Spacer(Modifier.height(16.dp))
 
-            Text(
-                text = contentLabel,
-                color = tokens.colors.textSecondary,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = contentLabel,
+                    color = tokens.colors.textSecondary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                PlayerMediaMetaRow(
+                    releaseDate = releaseDate,
+                    imdbRating = imdbRating,
+                    showFillerBadge = isFiller,
+                    showMixedBadge = isMixed,
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
 
@@ -121,10 +138,15 @@ data class PlayerCurrentStream(
     val infoHash: String? = null,
     val fileIdx: Int? = null,
     val filename: String? = null,
+    val identityKey: String? = null,
 )
 
 internal fun List<StreamItem>.currentPlayerStreamIndex(current: PlayerCurrentStream?): Int {
     if (current == null) return -1
+    current.identityKey?.let { key ->
+        val identityMatch = indexOfFirst { it.playerSourceIdentityKey() == key }
+        if (identityMatch >= 0) return identityMatch
+    }
     val isSameAddon = { stream: StreamItem ->
         current.addonId.isNullOrBlank() || stream.addonId == current.addonId
     }

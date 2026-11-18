@@ -364,7 +364,7 @@ private fun SubtitleHelperText(text: String) {
     )
 }
 
-private fun formatSubtitleDelay(delayMs: Int): String {
+internal fun formatSubtitleDelay(delayMs: Int): String {
     val sign = if (delayMs >= 0) "+" else "-"
     val absoluteMs = abs(delayMs)
     val seconds = absoluteMs / 1000
@@ -378,10 +378,3 @@ private fun formatCueTimestamp(timeMs: Long): String {
     val seconds = totalSeconds % 60L
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
-
-internal val SubtitleOutlineColorSwatches = listOf(
-    Color.Black,
-    Color.White,
-    Color(0xFF00E5FF),
-    Color(0xFFFF5C5C),
-)

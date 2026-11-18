@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.ui.frostedGlassSecondaryContentColor
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -33,8 +35,8 @@ import com.nuvio.app.core.ui.themePalette
 import com.nuvio.app.core.ui.accentBrush
 import kotlinx.coroutines.delay
 
-private val ParentalGuideRowHeight = 18.dp
-private val ParentalGuideRowGap = 2.dp
+private val ParentalGuideRowHeight = 21.6.dp
+private val ParentalGuideRowGap = 2.4.dp
 
 @Composable
 internal fun ParentalGuideOverlay(
@@ -104,14 +106,14 @@ internal fun ParentalGuideOverlay(
     ) {
         Box(
             modifier = Modifier
-                .width(3.dp)
+                .width(3.6.dp)
                 .height((totalLineHeight * lineHeightFraction.value).dp)
-                .clip(RoundedCornerShape(1.dp))
+                .clip(RoundedCornerShape(1.2.dp))
                 .background(guideAccentBrush),
         )
 
         Column(
-            modifier = Modifier.padding(start = 10.dp),
+            modifier = Modifier.padding(start = 12.dp),
             verticalArrangement = Arrangement.spacedBy(ParentalGuideRowGap),
         ) {
             warnings.forEachIndexed { index, warning ->
@@ -123,19 +125,19 @@ internal fun ParentalGuideOverlay(
                 ) {
                     Text(
                         text = warning.label,
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.2.sp,
+                        color = frostedGlassSecondaryContentColor(Color.White.copy(alpha = 0.85f)),
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = " · ",
-                        fontSize = 11.sp,
+                        fontSize = 13.2.sp,
                         color = Color.White.copy(alpha = 0.4f),
                     )
                     Text(
                         text = warning.severity,
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 13.2.sp,
+                        color = frostedGlassSecondaryContentColor(Color.White.copy(alpha = 0.5f)),
                     )
                 }
             }

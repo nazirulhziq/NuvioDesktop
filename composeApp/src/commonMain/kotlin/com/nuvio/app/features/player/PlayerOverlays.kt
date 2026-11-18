@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.ui.frostedGlassSecondaryContentColor
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,11 +29,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.nuvio.app.core.format.formatLocalTime
+import com.nuvio.app.core.time.EpisodeReleaseDatePlatform
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -169,8 +175,8 @@ internal fun PauseMetadataOverlay(
             .background(
                 Brush.horizontalGradient(
                     colors = listOf(
-                        Color.Black.copy(alpha = 0.85f),
-                        Color.Black.copy(alpha = 0.45f),
+                        Color.Black.copy(alpha = 0.95f),
+                        Color.Black.copy(alpha = 0.75f),
                         Color.Transparent,
                     ),
                 ),
@@ -179,15 +185,11 @@ internal fun PauseMetadataOverlay(
         val compactHeight = maxHeight < 420.dp
         val veryCompactHeight = maxHeight < 340.dp
         val topPadding = if (compactHeight) 24.dp else 40.dp
-        val bottomPadding = when {
-            veryCompactHeight -> 24.dp
-            compactHeight -> 40.dp
-            else -> 120.dp
-        }
+        val bottomPadding = if (compactHeight) 24.dp else 40.dp
         val logoHeight = when {
-            veryCompactHeight -> 48.dp
-            compactHeight -> 64.dp
-            else -> 96.dp
+            veryCompactHeight -> 58.dp
+            compactHeight -> 77.dp
+            else -> 115.dp
         }
         val titleFontScale = if (compactHeight) 1.35f else 1.8f
         val descriptionStyle = if (compactHeight) {
@@ -197,6 +199,26 @@ internal fun PauseMetadataOverlay(
         }
         val descriptionMaxLines = if (compactHeight) 2 else 3
         val descriptionWidthFraction = if (compactHeight) 0.82f else 0.62f
+        val clockFontSize = if (compactHeight) 38.sp else 58.sp
+        var currentTimeText by remember { mutableStateOf(formatLocalTime(EpisodeReleaseDatePlatform.nowEpochMs())) }
+
+        LaunchedEffect(Unit) {
+            while (true) {
+                currentTimeText = formatLocalTime(EpisodeReleaseDatePlatform.nowEpochMs())
+                delay(1000)
+            }
+        }
+
+        Text(
+            text = currentTimeText,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = clockFontSize,
+            lineHeight = clockFontSize,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = topPadding, end = topPadding),
+        )
 
         Column(
             modifier = Modifier
@@ -207,21 +229,14 @@ internal fun PauseMetadataOverlay(
                     top = topPadding,
                     bottom = bottomPadding,
                 ),
-            verticalArrangement = Arrangement.Bottom,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Text(
-                text = stringResource(Res.string.compose_player_youre_watching),
-                style = MaterialTheme.nuvioTypeScale.bodyLg,
-                color = Color(0xFFB8B8B8),
-            )
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(if (compactHeight) 8.dp else 12.dp))
-
             if (logoUrl != null && !logoLoadError) {
                 AsyncImage(
                     model = logoUrl,
                     contentDescription = title,
                     contentScale = ContentScale.Fit,
-                    alignment = Alignment.BottomStart,
+                    alignment = Alignment.CenterStart,
                     modifier = Modifier.height(logoHeight),
                     onError = { logoLoadError = true },
                 )
@@ -238,18 +253,14 @@ internal fun PauseMetadataOverlay(
                 )
             }
 
-            val episodeInfo = if (isEpisode && seasonNumber != null && episodeNumber != null) {
-                stringResource(Res.string.compose_player_episode_code_full, seasonNumber, episodeNumber)
-            } else {
-                providerName
+            if (isEpisode && seasonNumber != null && episodeNumber != null) {
+                Text(
+                    text = stringResource(Res.string.compose_player_episode_code_full, seasonNumber, episodeNumber),
+                    style = MaterialTheme.nuvioTypeScale.bodyLg,
+                    color = Color(0xFFCCCCCC),
+                    modifier = Modifier.padding(top = if (compactHeight) 6.dp else 8.dp),
+                )
             }
-
-            Text(
-                text = episodeInfo,
-                style = MaterialTheme.nuvioTypeScale.bodyLg,
-                color = Color(0xFFCCCCCC),
-                modifier = Modifier.padding(top = if (compactHeight) 6.dp else 8.dp),
-            )
 
             if (!episodeTitle.isNullOrBlank()) {
                 Text(
@@ -307,7 +318,7 @@ internal fun ErrorModal(
             Text(
                 text = message,
                 style = MaterialTheme.nuvioTypeScale.bodyLg.copy(lineHeight = 24.sp),
-                color = Color.White.copy(alpha = 0.72f),
+                color = frostedGlassSecondaryContentColor(Color.White.copy(alpha = 0.72f)),
                 textAlign = TextAlign.Center,
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,

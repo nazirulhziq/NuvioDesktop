@@ -36,6 +36,7 @@ internal actual object MdbListSettingsStorage {
         showOnHeroKey,
     )
     private val store = DesktopStorage.store("nuvio_mdblist_settings")
+    private val heroPreference = DesktopHeroRatingPreference(store)
 
     actual fun loadEnabled(): Boolean? = loadBoolean(enabledKey)
     actual fun saveEnabled(enabled: Boolean) = saveBoolean(enabledKey, enabled)
@@ -57,8 +58,8 @@ internal actual object MdbListSettingsStorage {
     actual fun saveUseAudience(enabled: Boolean) = saveBoolean(useAudienceKey, enabled)
     actual fun loadUseMal(): Boolean? = loadBoolean(useMalKey)
     actual fun saveUseMal(enabled: Boolean) = saveBoolean(useMalKey, enabled)
-    actual fun loadShowOnHero(): Boolean? = loadBoolean(showOnHeroKey)
-    actual fun saveShowOnHero(enabled: Boolean) = saveBoolean(showOnHeroKey, enabled)
+    actual fun loadShowOnHero(): Boolean? = heroPreference.load()
+    actual fun saveShowOnHero(enabled: Boolean) = heroPreference.save(enabled)
 
     private fun loadString(key: String): String? = store.getString(ProfileScopedKey.of(key))
     private fun saveString(key: String, value: String) = store.putString(ProfileScopedKey.of(key), value)
@@ -93,4 +94,12 @@ internal actual object MdbListSettingsStorage {
         payload.decodeSyncBoolean(useMalKey)?.let(::saveUseMal)
         payload.decodeSyncBoolean(showOnHeroKey)?.let(::saveShowOnHero)
     }
+}
+
+internal class DesktopHeroRatingPreference(
+    private val store: DesktopStorage.Store,
+    private val profileKey: (String) -> String = ProfileScopedKey::of,
+) {
+    fun load(): Boolean? = store.getBoolean(profileKey("mdblist_show_on_hero"))
+    fun save(enabled: Boolean) = store.putBoolean(profileKey("mdblist_show_on_hero"), enabled)
 }

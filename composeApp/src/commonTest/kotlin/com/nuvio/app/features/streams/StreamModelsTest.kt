@@ -210,9 +210,42 @@ class StreamModelsTest {
     }
 
     @Test
+    fun `p2pFileIdx extracts index query parameter from torrent url`() {
+        val stream = stream(url = "torrent://$hexHash?index=3")
+        assertEquals(3, stream.p2pFileIdx)
+    }
+
+    @Test
+    fun `p2pFileIdx extracts index query parameter after other parameters`() {
+        val stream = stream(url = "torrent://$hexHash?source=addon&index=12")
+        assertEquals(12, stream.p2pFileIdx)
+    }
+
+    @Test
+    fun `p2pFileIdx accepts fileIdx query parameter case insensitively`() {
+        val stream = stream(url = "torrent://$hexHash?FILEIDX=5")
+        assertEquals(5, stream.p2pFileIdx)
+    }
+
+    @Test
     fun `dedicated fileIdx field wins over torrent url segment`() {
         val stream = stream(url = "torrent://$hexHash/3", fileIdx = 7)
         assertEquals(7, stream.p2pFileIdx)
+    }
+
+    @Test
+    fun `dedicated fileIdx field wins over torrent url query`() {
+        val stream = stream(url = "torrent://$hexHash?index=3", fileIdx = 7)
+        assertEquals(7, stream.p2pFileIdx)
+    }
+
+    @Test
+    fun `client resolve fileIdx is used when stream fileIdx is missing`() {
+        val stream = stream(
+            infoHash = hexHash,
+            clientResolve = StreamClientResolve(infoHash = hexHash, fileIdx = 4),
+        )
+        assertEquals(4, stream.p2pFileIdx)
     }
 
     @Test
@@ -308,6 +341,72 @@ class StreamModelsTest {
     }
 
     // -----------------------------------------------------------------------
+    // parseStreamSize & resolvedVideoSize
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `parseStreamSize parses size with emoji prefix`() {
+        val gib = 1024L * 1024L * 1024L
+        val mib = 1024L * 1024L
+        assertEquals((8.45 * gib).toLong(), parseStreamSize("Inception.2010.1080p.BluRay.x264\n💾 8.45 GB ⚙️ 24\nTorrentio"))
+        assertEquals((2.3 * gib).toLong(), parseStreamSize("Movie\n💾 2.3 GB"))
+        assertEquals(850L * mib, parseStreamSize("Episode\n💾 850 MB"))
+        assertEquals((1.2 * gib).toLong(), parseStreamSize("💾 1.2 GiB"))
+        assertEquals(550L * mib, parseStreamSize("💾 550 MiB"))
+        assertEquals((1.5 * gib * 1024L).toLong(), parseStreamSize("💾 1.5 TB"))
+        assertEquals((1.45 * gib).toLong(), parseStreamSize("💾 1,45 GB"))
+    }
+
+    @Test
+    fun `parseStreamSize parses bracketed and labeled sizes`() {
+        val gib = 1024L * 1024L * 1024L
+        val mib = 1024L * 1024L
+        assertEquals((2.4 * gib).toLong(), parseStreamSize("Movie.2024.1080p [2.4 GB]"))
+        assertEquals((2.4 * gib).toLong(), parseStreamSize("Movie.2024.1080p (2.4GB)"))
+        assertEquals(450L * mib, parseStreamSize("Show S01E01 [450 MB]"))
+        assertEquals((2.4 * gib).toLong(), parseStreamSize("Size: 2.4 GB"))
+        assertEquals((1.25 * gib).toLong(), parseStreamSize("File Size: 1.25 GB"))
+        assertEquals((2.45 * gib).toLong(), parseStreamSize("1080p | 2.45 GB | 5.1"))
+    }
+
+    @Test
+    fun `parseStreamSize returns null for non-size text`() {
+        assertNull(parseStreamSize(null))
+        assertNull(parseStreamSize(""))
+        assertNull(parseStreamSize("   "))
+        assertNull(parseStreamSize("Movie (2024) 1080p 5.1 CH"))
+        assertNull(parseStreamSize("H.264 10bit HDR"))
+        assertNull(parseStreamSize("S01E02 720p"))
+    }
+
+    @Test
+    fun `resolvedVideoSize falls back through available sources`() {
+        val gib = 1024L * 1024L * 1024L
+        val baseStream = stream(url = "https://example.com/video.mp4")
+
+        // 1. Title/Description fallback
+        val textStream = baseStream.copy(description = "Movie 1080p\n💾 4.5 GB")
+        assertEquals((4.5 * gib).toLong(), textStream.resolvedVideoSize)
+
+        // 2. Cached size overrides text
+        val cachedStream = textStream.copy(
+            debridCacheStatus = StreamDebridCacheStatus(
+                providerId = "rd",
+                providerName = "RealDebrid",
+                state = StreamDebridCacheState.CACHED,
+                cachedSize = 5_000_000_000L,
+            ),
+        )
+        assertEquals(5_000_000_000L, cachedStream.resolvedVideoSize)
+
+        // 3. BehaviorHints videoSize overrides cached size
+        val hintsStream = cachedStream.copy(
+            behaviorHints = StreamBehaviorHints(videoSize = 6_000_000_000L),
+        )
+        assertEquals(6_000_000_000L, hintsStream.resolvedVideoSize)
+    }
+
+    // -----------------------------------------------------------------------
     // Helper
     // -----------------------------------------------------------------------
 
@@ -316,11 +415,13 @@ class StreamModelsTest {
         infoHash: String? = null,
         fileIdx: Int? = null,
         externalUrl: String? = null,
+        clientResolve: StreamClientResolve? = null,
     ): StreamItem = StreamItem(
         url = url,
         infoHash = infoHash,
         fileIdx = fileIdx,
         externalUrl = externalUrl,
+        clientResolve = clientResolve,
         addonName = "TestAddon",
         addonId = "test.addon",
     )

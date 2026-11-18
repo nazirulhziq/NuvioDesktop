@@ -1,5 +1,7 @@
 package com.nuvio.app.features.details
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -26,7 +28,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.nuvio.app.core.ui.nuvioVerticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
@@ -44,6 +46,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.nuvio.app.core.ui.navigationGlass
+import com.nuvio.app.core.ui.navigationGlassSource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -63,6 +67,7 @@ import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import com.nuvio.app.core.i18n.localizedShortMonthName
+import com.nuvio.app.core.ui.desktopBackButtonTopPadding
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioDesktopVerticalScrollbar
 import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
@@ -133,44 +138,46 @@ fun PersonDetailScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        when (val state = uiState) {
-            is PersonDetailUiState.Loading -> PersonDetailSkeleton(
-                personId = personId,
-                personName = personName,
-                profilePhoto = initialProfilePhoto,
-                avatarTransitionKey = resolvedAvatarTransitionKey,
-                sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = animatedVisibilityScope,
-            )
-            is PersonDetailUiState.Error -> PersonDetailError(
-                message = state.message,
-                onRetry = {
-                    uiState = PersonDetailUiState.Loading
-                    // Retry will be triggered by the LaunchedEffect above if we reset
-                },
-            )
-            is PersonDetailUiState.Success -> PersonDetailContent(
-                person = state.personDetail,
-                watchedKeys = watchedUiState.watchedKeys,
-                fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
-                onOpenMeta = onOpenMeta,
-                initialProfilePhoto = initialProfilePhoto,
-                avatarTransitionKey = resolvedAvatarTransitionKey,
-                sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = animatedVisibilityScope,
-            )
+        Box(Modifier.fillMaxSize().navigationGlassSource(zIndex = 1f)) {
+            when (val state = uiState) {
+                is PersonDetailUiState.Loading -> PersonDetailSkeleton(
+                    personId = personId,
+                    personName = personName,
+                    profilePhoto = initialProfilePhoto,
+                    avatarTransitionKey = resolvedAvatarTransitionKey,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                )
+                is PersonDetailUiState.Error -> PersonDetailError(
+                    message = state.message,
+                    onRetry = {
+                        uiState = PersonDetailUiState.Loading
+                        // Retry will be triggered by the LaunchedEffect above if we reset
+                    },
+                )
+                is PersonDetailUiState.Success -> PersonDetailContent(
+                    person = state.personDetail,
+                    watchedKeys = watchedUiState.watchedKeys,
+                    fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                    onOpenMeta = onOpenMeta,
+                    initialProfilePhoto = initialProfilePhoto,
+                    avatarTransitionKey = resolvedAvatarTransitionKey,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                )
             }
-
+        }
         if (!LocalUseNativeNavigation.current) {
             if (isDesktop) {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     NuvioBackButton(
+                        usePageStyle = true,
                         onClick = onBack,
                         modifier = Modifier
                             .windowInsetsPadding(WindowInsets.statusBars)
                             .padding(
                                 start = desktopPageHorizontalPaddingForWidth(maxWidth.value),
-                                top = 32.dp,
+                                top = desktopBackButtonTopPadding,
                             )
                             .align(Alignment.TopStart),
                         containerColor = Color.Transparent,
@@ -182,10 +189,10 @@ fun PersonDetailScreen(
             } else {
                 IconButton(
                     onClick = onBack,
-                    modifier = Modifier
+                    modifier = (Modifier
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(start = 4.dp, top = 4.dp)
-                        .align(Alignment.TopStart),
+                        .align(Alignment.TopStart)).navigationGlass().remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape),
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -322,7 +329,7 @@ private fun PersonDetailContent(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .verticalScroll(scrollState)
+                                .nuvioVerticalScroll(scrollState)
                                 .windowInsetsPadding(WindowInsets.statusBars)
                                 .padding(top = 48.dp),
                         ) {
@@ -440,7 +447,7 @@ private fun WidePersonDetailContent(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(contentScrollState)
+                    .nuvioVerticalScroll(contentScrollState)
                     .padding(start = 40.dp, bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(34.dp),
             ) {
@@ -535,7 +542,7 @@ private fun PersonIdentitySidebar(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
+                .nuvioVerticalScroll(scrollState)
                 .padding(
                     start = 40.dp,
                     end = 36.dp,
@@ -902,7 +909,7 @@ private fun PersonDetailSkeleton(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .nuvioVerticalScroll(rememberScrollState())
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(top = 48.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1029,7 +1036,7 @@ private fun WidePersonDetailSkeleton(
             modifier = Modifier
                 .width(PERSON_DETAIL_WIDE_SIDEBAR_WIDTH)
                 .fillMaxHeight()
-                .verticalScroll(rememberScrollState())
+                .nuvioVerticalScroll(rememberScrollState())
                 .padding(start = 40.dp, end = 36.dp, top = 40.dp, bottom = 42.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
@@ -1117,7 +1124,7 @@ private fun WidePersonDetailSkeleton(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .verticalScroll(rememberScrollState())
+                .nuvioVerticalScroll(rememberScrollState())
                 .padding(start = 40.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(34.dp),
         ) {
@@ -1200,7 +1207,7 @@ private fun PersonDetailError(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
-            ) {
+             modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.material3.ButtonDefaults.shape)) {
                 Text(stringResource(Res.string.action_retry))
             }
         }

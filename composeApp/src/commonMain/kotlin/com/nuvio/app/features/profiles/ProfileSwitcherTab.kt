@@ -1,5 +1,12 @@
 package com.nuvio.app.features.profiles
 
+import com.nuvio.app.core.ui.AppPopup
+
+import com.nuvio.app.isDesktop
+
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteTextInputGuard
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -17,6 +24,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +59,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.nuvio.app.core.ui.navigationGlassFeedback
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -222,7 +231,7 @@ fun ProfileSwitcherTab(
     Box(
         modifier = modifier
             .onGloballyPositioned { triggerCoordinates = it }
-            .clickable(
+            .remoteNavigationTarget().clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = {
@@ -277,7 +286,7 @@ fun ProfileSwitcherTab(
             var opensBelow by remember { mutableStateOf(popupBelowAnchor) }
             var availableHeight by remember { mutableStateOf<Dp?>(null) }
             val dismissPopup = { if (pinProfile != null) pinProfile = null else showPopup = false }
-            Popup(
+            AppPopup(
                 popupPositionProvider = remember(density, popupBelowAnchor) {
                     ProfilePopupPositionProvider(
                         margin = with(density) { 16.dp.roundToPx() },
@@ -414,19 +423,15 @@ private fun SidebarProfileSwitcherRow(
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val interaction = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(40.dp)
             .clip(tokens.shapes.compactCard)
-            .background(
-                if (isActive) {
-                    tokens.colors.overlaySelected
-                } else {
-                    tokens.colors.surface.copy(alpha = 0f)
-                },
-            )
-            .clickable(onClick = onClick)
+            .navigationGlassFeedback(interaction, tokens.shapes.compactCard, isActive)
+            .hoverable(interaction)
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -469,12 +474,15 @@ private fun SidebarAddProfileRow(
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val interaction = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(40.dp)
             .clip(tokens.shapes.compactCard)
-            .clickable(onClick = onClick)
+            .navigationGlassFeedback(interaction, tokens.shapes.compactCard)
+            .hoverable(interaction)
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -561,6 +569,7 @@ private fun SidebarCompactPinEntry(
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(focusRequester)
+            .remoteTextInputGuard()
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -581,7 +590,7 @@ private fun SidebarCompactPinEntry(
                     else -> false
                 }
             }
-            .padding(vertical = 4.dp),
+            .padding(horizontal = if (isDesktop) 16.dp else 0.dp, vertical = if (isDesktop) 16.dp else 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(
@@ -589,19 +598,22 @@ private fun SidebarCompactPinEntry(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            val backInteraction = remember { MutableInteractionSource() }
             Box(
                 modifier = Modifier
-                    .size(30.dp)
+                    .size(if (isDesktop) 48.dp else 30.dp)
                     .clip(tokens.shapes.avatar)
-                    .background(tokens.colors.surfaceCard)
-                    .clickable(onClick = onCancel),
+                    .background(tokens.colors.textPrimary.copy(alpha = tokens.opacity.subtle))
+                    .navigationGlassFeedback(backInteraction, tokens.shapes.avatar)
+                    .hoverable(backInteraction)
+                    .remoteNavigationTarget(shape = tokens.shapes.avatar).clickable(interactionSource = backInteraction, indication = null, onClick = onCancel),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                     contentDescription = stringResource(Res.string.action_back),
                     tint = tokens.colors.textPrimary,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(if (isDesktop) 24.dp else 16.dp),
                 )
             }
             Text(
@@ -678,6 +690,7 @@ private fun SidebarCompactPinKeypad(
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
             ) {
                 row.forEach { key ->
+                    val interaction = remember { MutableInteractionSource() }
                     when (key) {
                         "" -> Spacer(modifier = Modifier.size(30.dp))
                         "⌫" -> {
@@ -685,8 +698,10 @@ private fun SidebarCompactPinKeypad(
                                 modifier = Modifier
                                     .size(30.dp)
                                     .clip(tokens.shapes.avatar)
-                                    .background(tokens.colors.surface)
-                                    .clickable(onClick = onBackspace),
+                                    .background(tokens.colors.textPrimary.copy(alpha = tokens.opacity.subtle))
+                                    .navigationGlassFeedback(interaction, tokens.shapes.avatar)
+                                    .hoverable(interaction)
+                                    .remoteNavigationTarget(shape = tokens.shapes.avatar).clickable(interactionSource = interaction, indication = null, onClick = onBackspace),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
@@ -702,8 +717,10 @@ private fun SidebarCompactPinKeypad(
                                 modifier = Modifier
                                     .size(30.dp)
                                     .clip(tokens.shapes.avatar)
-                                    .background(tokens.colors.surface)
-                                    .clickable { onDigit(key) },
+                                    .background(tokens.colors.textPrimary.copy(alpha = tokens.opacity.subtle))
+                                    .navigationGlassFeedback(interaction, tokens.shapes.avatar)
+                                    .hoverable(interaction)
+                                    .remoteNavigationTarget(shape = tokens.shapes.avatar).clickable(interactionSource = interaction, indication = null) { onDigit(key) },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
@@ -829,7 +846,7 @@ fun NativeProfileSwitcherPopup(
                 .width(anchorWidth),
         ) {
             if (popupVisible && profiles.isNotEmpty() && !isSwitchingProfile) {
-                Popup(
+                AppPopup(
                     alignment = Alignment.BottomCenter,
                     offset = IntOffset(0, with(density) { -NuvioTokens.Space.s64.roundToPx() }),
                     properties = PopupProperties(focusable = true),
@@ -949,7 +966,7 @@ private fun PopupAddProfileBubble(
                 scaleY = itemScale.value
             }
             .clip(tokens.shapes.compactCard)
-            .clickable(
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
@@ -1043,7 +1060,7 @@ private fun PopupProfileBubble(
                 scaleY = itemScale.value * pressScale
             }
             .clip(tokens.shapes.compactCard)
-            .clickable(
+            .remoteNavigationTarget(shape = tokens.shapes.compactCard).clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,

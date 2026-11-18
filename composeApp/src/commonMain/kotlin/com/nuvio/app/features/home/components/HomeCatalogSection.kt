@@ -7,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import com.nuvio.app.core.ui.NuvioShelfSection
-import com.nuvio.app.core.ui.NuvioViewAllPillSize
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.isDesktop
 import com.nuvio.app.features.home.HomeCatalogSection
@@ -23,6 +22,7 @@ fun HomeCatalogRowSection(
     watchedKeys: Set<String> = emptySet(),
     fullyWatchedSeriesKeys: Set<String> = emptySet(),
     sectionPadding: Dp? = null,
+    useGutterLayout: Boolean = false,
     onViewAllClick: (() -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
@@ -35,6 +35,7 @@ fun HomeCatalogRowSection(
             fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
+            useGutterLayout = useGutterLayout,
             onViewAllClick = onViewAllClick,
             onPosterClick = onPosterClick,
             onPosterLongClick = onPosterLongClick,
@@ -48,6 +49,7 @@ fun HomeCatalogRowSection(
                 fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
+                useGutterLayout = useGutterLayout,
                 onViewAllClick = onViewAllClick,
                 onPosterClick = onPosterClick,
                 onPosterLongClick = onPosterLongClick,
@@ -64,6 +66,7 @@ private fun HomeCatalogRowSectionContent(
     fullyWatchedSeriesKeys: Set<String>,
     modifier: Modifier,
     sectionPadding: Dp,
+    useGutterLayout: Boolean,
     onViewAllClick: (() -> Unit)?,
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
@@ -76,9 +79,10 @@ private fun HomeCatalogRowSectionContent(
         modifier = modifier,
         headerHorizontalPadding = sectionPadding,
         rowContentPadding = PaddingValues(horizontal = sectionPadding),
+        useGutterLayout = useGutterLayout,
         onViewAllClick = onViewAllClick,
         onTitleClick = onViewAllClick?.takeIf { isDesktop },
-        viewAllPillSize = NuvioViewAllPillSize.Compact,
+        showRowNavigationControls = true,
         key = { item -> item.stableKey() },
     ) { item ->
         HomePosterCard(

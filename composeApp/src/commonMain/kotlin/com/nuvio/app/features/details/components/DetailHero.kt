@@ -1,6 +1,10 @@
 package com.nuvio.app.features.details.components
 
-import com.nuvio.app.core.ui.NuvioDesktopAnimation
+import androidx.compose.foundation.Image
+
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.navigationGlassSource
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -49,14 +53,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.graphicsLayer
-import com.nuvio.app.core.ui.NuvioDesktopImageScaling
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
 import com.nuvio.app.core.ui.featherArtwork
 import com.nuvio.app.core.ui.heroStretchHeight
 import com.nuvio.app.core.ui.heroStretchZoom
 import com.nuvio.app.features.details.MetaDetails
-import com.nuvio.app.features.tmdb.originalTmdbImageUrl
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -85,6 +87,8 @@ fun DetailHero(
     onHeroTrailerEnded: () -> Unit = {},
     onHeroTrailerError: () -> Unit = {},
     modifier: Modifier = Modifier,
+    backdropPlaceholder: Painter? = null,
+    logoPlaceholder: Painter? = null,
 ) {
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth(),
@@ -135,11 +139,11 @@ fun DetailHero(
                 ) {
                     val imageUrl = meta.background ?: meta.poster
                     val backdropScale = if (isTablet) 1f else 1.08f
-                    if (imageUrl != null) {
-                        AsyncImage(
-                            model = if (isDesktop) originalTmdbImageUrl(imageUrl) else imageUrl,
+                    if (imageUrl != null || backdropPlaceholder != null) {
+                        DetailBackdropImage(
+                            model = imageUrl,
                             contentDescription = meta.name,
-                            desktopAnimation = NuvioDesktopAnimation.Always,
+                            carriedArtwork = backdropPlaceholder,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .fillMaxWidth()
@@ -149,10 +153,10 @@ fun DetailHero(
                                     translationY = scrollOffset() * 0.5f
                                     scaleX = backdropScale
                                     scaleY = backdropScale
-                                },
+                                }
+                                .navigationGlassSource(),
                             alignment = if (isTablet) Alignment.TopCenter else Alignment.Center,
                             contentScale = ContentScale.Crop,
-                            desktopImageScaling = NuvioDesktopImageScaling.Disabled,
                             onSuccess = { state ->
                                 onBackdropLoaded(
                                     state.painter,
@@ -194,7 +198,7 @@ fun DetailHero(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable(
+                            .remoteNavigationTarget().clickable(
                                 enabled = heroTrailerReady,
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -239,6 +243,7 @@ fun DetailHero(
                             .fillMaxWidth()
                             .height(if (isTablet) 360.dp else 320.dp)
                             .align(Alignment.BottomCenter)
+                            .navigationGlassSource(zIndex = 0.5f)
                             .background(
                                 Brush.verticalGradient(
                                     colorStops = arrayOf(
@@ -262,14 +267,22 @@ fun DetailHero(
                         .padding(bottom = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    if (logoUrl != null && !logoLoadError) {
+                    val logoModifier = Modifier
+                        .fillMaxWidth(if (isTablet) 0.56f else 0.6f)
+                        .widthIn(max = contentMaxWidth)
+                        .height(if (isTablet) 72.dp else 80.dp)
+                    if (logoPlaceholder != null) {
+                        Image(
+                            painter = logoPlaceholder,
+                            contentDescription = stringResource(Res.string.detail_logo_content_description, meta.name),
+                            modifier = logoModifier,
+                            contentScale = ContentScale.Fit,
+                        )
+                    } else if (logoUrl != null && !logoLoadError) {
                         AsyncImage(
                             model = logoUrl,
                             contentDescription = stringResource(Res.string.detail_logo_content_description, meta.name),
-                            modifier = Modifier
-                                .fillMaxWidth(if (isTablet) 0.56f else 0.6f)
-                                .widthIn(max = contentMaxWidth)
-                                .height(if (isTablet) 72.dp else 80.dp),
+                            modifier = logoModifier,
                             alignment = Alignment.Center,
                             contentScale = ContentScale.Fit,
                             onError = { logoLoadError = true },

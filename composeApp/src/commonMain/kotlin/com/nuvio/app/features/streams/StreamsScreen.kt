@@ -1,5 +1,12 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.core.ui.AppPopup
+
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+import com.nuvio.app.core.ui.LocalRemoteNavigationRole
+import com.nuvio.app.core.ui.RemoteNavigationRole
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -7,6 +14,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,7 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.border
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -48,15 +57,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import com.nuvio.app.core.ui.ActionMenuAction
+import com.nuvio.app.features.remote.RemoteCardMenus
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,7 +80,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
@@ -76,9 +87,14 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.nuvio.app.core.build.AppFeaturePolicy
+import com.nuvio.app.core.ui.desktopBackButtonTopPadding
 import com.nuvio.app.core.ui.ArtworkBackdrop
 import com.nuvio.app.core.ui.LocalOnBackdrop
 import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.navigationGlassSource
+import com.nuvio.app.core.ui.navigationGlass
+import com.nuvio.app.core.ui.navigationGlassFeedback
+import com.nuvio.app.core.ui.DarkGlassPanelContent
 import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
 import com.nuvio.app.core.ui.NuvioBottomSheetActionRow
 import com.nuvio.app.core.ui.NuvioBottomSheetDivider
@@ -93,6 +109,10 @@ import com.nuvio.app.core.ui.rememberArtworkBackdrop
 import com.nuvio.app.core.ui.platformTouchScroll
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
+import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.MetadataInfoPanel
+import com.nuvio.app.features.plugins.PluginIdDiagnostics
+import com.nuvio.app.features.plugins.pluginContentId
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -108,12 +128,15 @@ import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.details.MetaScreenBackgroundMode
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.features.watchprogress.savedMetadataForContent
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watched.watchedItemKeys
 import com.nuvio.app.isDesktop
 import com.nuvio.app.navigation.LocalUseNativeNavigation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -137,18 +160,21 @@ fun StreamsScreen(
     episodeNumber: Int? = null,
     episodeTitle: String? = null,
     episodeThumbnail: String? = null,
+    description: String? = null,
     resumePositionMs: Long? = null,
     resumeProgressFraction: Float? = null,
     manualSelection: Boolean = false,
     startFromBeginning: Boolean = false,
     showLoadingScreen: Boolean = false,
-    onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit = { _, _, _ -> },
+    carriedBackdrop: androidx.compose.ui.graphics.painter.Painter? = null,
+    onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?, startFromBeginning: Boolean) -> Unit = { _, _, _, _ -> },
     onStreamActionOpen: (
         stream: StreamItem,
         openExternally: Boolean,
         resumePositionMs: Long?,
         resumeProgressFraction: Float?,
-    ) -> Unit = { _, _, _, _ -> },
+        startFromBeginning: Boolean,
+    ) -> Unit = { _, _, _, _, _ -> },
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -197,17 +223,30 @@ fun StreamsScreen(
         seasonNumber = seasonNumber,
         episodeNumber = episodeNumber,
     )
+    var restartSelected by remember(type, videoId, parentMetaId, seasonNumber, episodeNumber) {
+        mutableStateOf(startFromBeginning)
+    }
+    val availableResumeState = resolveStreamResumeState(
+        progress = episodeProgress,
+        initialPositionMs = resumePositionMs,
+        initialProgressFraction = resumeProgressFraction,
+        startFromBeginning = false,
+    )
+    val resumeControls: @Composable (Modifier) -> Unit = { bannerModifier ->
+        ResumeBanner(
+            positionMs = availableResumeState.positionMs,
+            progressFraction = availableResumeState.progressFraction,
+            startFromBeginning = restartSelected,
+            onStartFromBeginningChange = { restartSelected = it },
+            modifier = bannerModifier,
+        )
+    }
     val storedProgress = if (startFromBeginning) {
         null
     } else {
         episodeProgress
     }
-    val resumeState = resolveStreamResumeState(
-        progress = episodeProgress,
-        initialPositionMs = resumePositionMs,
-        initialProgressFraction = resumeProgressFraction,
-        startFromBeginning = startFromBeginning,
-    )
+    val resumeState = availableResumeState.forPlayback(restartSelected)
     val effectiveResumePositionMs = resumeState.positionMs
     val effectiveResumeProgressFraction = resumeState.progressFraction
 
@@ -255,7 +294,57 @@ fun StreamsScreen(
         )
     }
 
-    if (showLoadingScreen) return
+    // Desktop keeps the list beneath so the loading screen can fade in over it rather than cut to it.
+    if (showLoadingScreen && !isDesktop) return
+
+    val metadataState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
+    val pluginIds by PluginIdDiagnostics.resolutions.collectAsStateWithLifecycle()
+    val metadata = metadataState.meta?.takeIf {
+        it.type == parentMetaType && (it.id == parentMetaId || it.provenance.requestedId == parentMetaId)
+    } ?: MetaDetailsRepository.peek(parentMetaType, parentMetaId)
+    val metadataInfoContent: (@Composable () -> Unit)? = if (metaScreenSettings.showMetadataInfo) {
+        {
+            MetadataInfoPanel(
+                meta = metadata,
+                requestedId = parentMetaId,
+                savedMetadata = episodeProgress?.metadataSnapshot
+                    ?: watchProgressUiState.entries.savedMetadataForContent(parentMetaId, parentMetaType),
+                playbackId = videoId,
+                season = seasonNumber,
+                episode = episodeNumber,
+                isFromCache = if (metadata != null) true else null,
+                pluginResolutions = pluginIds.filterKeys { it.startsWith(PluginIdDiagnostics.key(
+                    pluginContentId(videoId, seasonNumber, episodeNumber), type, seasonNumber, episodeNumber,
+                ) + "|") }.values.toList(),
+                showPluginRequest = uiState.groups.any { it.addonId.startsWith("plugin:") || it.addonId.startsWith("plugin-repo:") },
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+        }
+    } else null
+
+    // The phone remote lists these sources and plays one through this page, like a tap here.
+    val remoteStreamsKey = "$type:$videoId"
+    SideEffect {
+        com.nuvio.app.features.remote.RemoteAppBridge.publishStreams(
+            com.nuvio.app.features.remote.RemoteAppBridge.StreamsActions(
+                key = remoteStreamsKey,
+                title = title,
+                logo = logo,
+                background = background ?: poster,
+                episode = if (seasonNumber != null && episodeNumber != null) {
+                    "S$seasonNumber E$episodeNumber" + (episodeTitle?.let { " · $it" } ?: "")
+                } else null,
+                resumeMs = availableResumeState.positionMs?.takeIf { it > 0 },
+                startFromBeginning = restartSelected,
+                setStartFromBeginning = { restartSelected = it },
+                select = { stream -> onStreamSelected(stream, effectiveResumePositionMs, effectiveResumeProgressFraction, restartSelected) },
+                reload = { reloadStreams() },
+            ),
+        )
+    }
+    androidx.compose.runtime.DisposableEffect(remoteStreamsKey) {
+        onDispose { com.nuvio.app.features.remote.RemoteAppBridge.clearStreams(remoteStreamsKey) }
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -266,6 +355,8 @@ fun StreamsScreen(
 
         if (isTabletLayout) {
             TabletStreamsLayout(
+                metadataInfoContent = metadataInfoContent,
+                description = description,
                 isEpisode = isEpisode,
                 title = title,
                 logo = logo,
@@ -280,9 +371,10 @@ fun StreamsScreen(
                 appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
+                resumeControls = resumeControls,
                 dominantColorEnabled = dominantColorEnabled,
                 onStreamSelected = { stream, positionMs, progressFraction ->
-                    onStreamSelected(stream, positionMs, progressFraction)
+                    onStreamSelected(stream, positionMs, progressFraction, restartSelected)
                 },
                 onStreamLongPress = { stream ->
                     streamActionsTarget = StreamActionsTarget(stream = stream)
@@ -291,9 +383,12 @@ fun StreamsScreen(
                     streamActionsTarget = StreamActionsTarget(stream = stream, anchorInRoot = position)
                 },
                 onRefresh = reloadStreams,
+                carriedBackdrop = carriedBackdrop,
             )
         } else {
             MobileStreamsLayout(
+                metadataInfoContent = metadataInfoContent,
+                description = description,
                 isEpisode = isEpisode,
                 backgroundMode = streamDisplaySettings.backgroundMode,
                 title = title,
@@ -308,8 +403,9 @@ fun StreamsScreen(
                 appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
+                resumeControls = resumeControls,
                 onStreamSelected = { stream, positionMs, progressFraction ->
-                    onStreamSelected(stream, positionMs, progressFraction)
+                    onStreamSelected(stream, positionMs, progressFraction, restartSelected)
                 },
                 onStreamLongPress = { stream ->
                     streamActionsTarget = StreamActionsTarget(stream = stream)
@@ -328,11 +424,13 @@ fun StreamsScreen(
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                 .padding(
                     start = if (isDesktop) desktopPageHorizontalPaddingForWidth(maxWidth.value) else 12.dp,
-                    top = if (isDesktop) 32.dp else 8.dp,
+                    top = if (isDesktop) desktopBackButtonTopPadding else 8.dp,
                 ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             NuvioBackButton(
+                usePageStyle = true,
+                keyboardNavigationEnabled = false,
                 onClick = onBack,
                 modifier = if (isDesktop) Modifier else Modifier.size(40.dp),
                 containerColor = if (isDesktop) {
@@ -351,6 +449,7 @@ fun StreamsScreen(
 
         StreamActionsHost(
             target = streamActionsTarget,
+            remoteStreamsKey = remoteStreamsKey,
             useDesktopContextMenu = isDesktop,
             externalPlayerSupported = AppFeaturePolicy.externalPlayerSupported,
             externalPlayerEnabled = AppFeaturePolicy.externalPlayerSupported && playerSettings.externalPlayerEnabled,
@@ -450,6 +549,7 @@ fun StreamsScreen(
                     openExternally,
                     effectiveResumePositionMs,
                     effectiveResumeProgressFraction,
+                    restartSelected,
                 )
             },
         )
@@ -458,6 +558,8 @@ fun StreamsScreen(
 
 @Composable
 private fun MobileStreamsLayout(
+    metadataInfoContent: (@Composable () -> Unit)? = null,
+    description: String?,
     isEpisode: Boolean,
     backgroundMode: StreamBackgroundMode,
     title: String,
@@ -472,6 +574,7 @@ private fun MobileStreamsLayout(
     appendInstantServiceToDefaultName: Boolean,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
+    resumeControls: @Composable (Modifier) -> Unit,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
     onStreamLongPress: (StreamItem) -> Unit,
     onStreamSecondaryClick: (StreamItem, Offset) -> Unit,
@@ -481,8 +584,17 @@ private fun MobileStreamsLayout(
     val cinematic = backgroundMode == StreamBackgroundMode.Cinematic && heroArtwork != null
     Box(modifier = modifier.fillMaxSize()) {
         if (cinematic) {
-            ArtworkBackdrop(image = rememberArtworkBackdrop(heroArtwork))
+            Box(Modifier.fillMaxSize().navigationGlassSource()) {
+                ArtworkBackdrop(image = rememberArtworkBackdrop(heroArtwork))
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = if (isEpisode) 0.9f else 0.82f)),
+                )
+            }
         }
+
+        val streamBlendColor = MaterialTheme.colorScheme.background
 
         CompositionLocalProvider(LocalOnBackdrop provides cinematic) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -507,30 +619,67 @@ private fun MobileStreamsLayout(
                         logo = logo,
                     )
                 }
-                if ((resumePositionMs != null && resumePositionMs > 0L) || (resumeProgressFraction != null && resumeProgressFraction > 0f)) {
-                    ResumeBanner(
-                        positionMs = resumePositionMs,
-                        progressFraction = resumeProgressFraction,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    )
+
+                if (!description.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Black.copy(alpha = 0.68f))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    ) {
+                        StreamSynopsis(description)
+                    }
                 }
-                ProviderFilterRow(
-                    groups = uiState.groups,
-                    selectedFilter = uiState.selectedFilter,
-                    onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
-                    onRefresh = onRefresh,
-                )
-                StreamList(
-                    uiState = uiState,
-                    debridEnabled = debridEnabled,
-                    appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
-                    onStreamSelected = onStreamSelected,
-                    onStreamLongPress = onStreamLongPress,
-                    onStreamSecondaryClick = onStreamSecondaryClick,
-                    resumePositionMs = resumePositionMs,
-                    resumeProgressFraction = resumeProgressFraction,
-                    modifier = Modifier.weight(1f),
-                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) {
+                    if (isEpisode && backgroundMode == StreamBackgroundMode.Cinematic) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(132.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            streamBlendColor.copy(alpha = 0.98f),
+                                            streamBlendColor.copy(alpha = 0.84f),
+                                            streamBlendColor.copy(alpha = 0.52f),
+                                            Color.Transparent,
+                                        ),
+                                    ),
+                                ),
+                        )
+                    }
+
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        resumeControls(Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                        metadataInfoContent?.invoke()
+                        ProviderFilterRow(
+                            desktopDragMomentumEnabled = true,
+                            groups = uiState.groups,
+                            selectedFilter = uiState.selectedFilter,
+                            onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
+                            onRefresh = onRefresh,
+                        )
+
+                        StreamList(
+                            uiState = uiState,
+                            debridEnabled = debridEnabled,
+                            appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
+                            onStreamSelected = onStreamSelected,
+                            onStreamLongPress = onStreamLongPress,
+                            onStreamSecondaryClick = onStreamSecondaryClick,
+                            resumePositionMs = resumePositionMs,
+                            resumeProgressFraction = resumeProgressFraction,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
         }
     }
@@ -540,6 +689,9 @@ internal data class StreamResumeState(
     val positionMs: Long? = null,
     val progressFraction: Float? = null,
 )
+
+internal fun StreamResumeState.forPlayback(startFromBeginning: Boolean): StreamResumeState =
+    if (startFromBeginning) StreamResumeState(positionMs = 0L) else this
 
 internal fun resolveStreamResumeState(
     progress: WatchProgressEntry?,
@@ -555,10 +707,13 @@ internal fun resolveStreamResumeState(
     return StreamResumeState(positionMs = position, progressFraction = fraction)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ResumeBanner(
     positionMs: Long?,
     progressFraction: Float? = null,
+    startFromBeginning: Boolean,
+    onStartFromBeginningChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val resumeText = when {
@@ -576,15 +731,40 @@ internal fun ResumeBanner(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .background(backdropControlColor(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)))
+            .then(
+                if (LocalStreamResultsGlass.current) {
+                    Modifier.streamResultsSurface().streamResultsBorder(RoundedCornerShape(18.dp))
+                } else {
+                    Modifier.background(backdropControlColor(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)))
+                },
+            )
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Text(
-            text = resumeText,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
-        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.remoteNavigationGroup(),
+        ) {
+            Text(
+                text = resumeText,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.CenterVertically),
+            )
+            StreamFilterChip(
+                isSelected = !startFromBeginning,
+                onClick = { onStartFromBeginningChange(false) },
+                label = stringResource(Res.string.action_resume),
+                modifier = Modifier.align(Alignment.CenterVertically),
+            )
+            StreamFilterChip(
+                isSelected = startFromBeginning,
+                onClick = { onStartFromBeginningChange(true) },
+                label = stringResource(Res.string.cw_action_start_from_beginning),
+                modifier = Modifier.align(Alignment.CenterVertically),
+            )
+        }
     }
 }
 
@@ -789,6 +969,49 @@ internal fun StreamList(
     val checkingMoreAddonsText = stringResource(Res.string.streams_checking_more_addons)
     val formatStreamSize = rememberStreamSizeLabelFormat()
     val sharedStream = LocalSharedStream.current
+    val resultsNavigation = LocalStreamResultsNavigation.current
+    val firstResult = remember(streamSections, sharedStream, debridEnabled, uiState.selectedFilter) {
+        if (sharedStream != null) {
+            "shared_stream" to 0
+        } else {
+            var index = 0
+            var first: Pair<String, Int>? = null
+            streamSections.forEach { section ->
+                if (section.group.streams.isNotEmpty() || section.group.isLoading) {
+                    if (uiState.selectedFilter == null) index++
+                    section.sources.forEach { source ->
+                        if (section.showSourceHeaders) index++
+                        source.streams.forEach { item ->
+                            if (first == null && item.stream.isFocusableStreamResult(debridEnabled)) {
+                                first = item.lazyKey to index
+                            }
+                            index++
+                        }
+                    }
+                }
+            }
+            first
+        }
+    }
+    SideEffect { resultsNavigation?.firstResult = firstResult?.first }
+    val pendingFocus = resultsNavigation?.pending
+    LaunchedEffect(uiState.selectedFilter, pendingFocus, firstResult) {
+        if (resultsNavigation == null || pendingFocus == null || pendingFocus.filter != uiState.selectedFilter) {
+            return@LaunchedEffect
+        }
+        listState.scrollToItem(0)
+        val (key, index) = firstResult ?: return@LaunchedEffect
+        // Materialize the first usable card even when headers or disabled cards fill the viewport.
+        if (index > 0) listState.scrollToItem(index)
+        val requester = snapshotFlow {
+            resultsNavigation.requesters[StreamResultsFocusKey(false, key)]
+        }.filterNotNull().first()
+        withFrameNanos { }
+        if (resultsNavigation.pending === pendingFocus) {
+            requester.requestFocus()
+            resultsNavigation.pending = null
+        }
+    }
     val streamBadgeSettings by remember {
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
@@ -803,11 +1026,14 @@ internal fun StreamList(
         listState.scrollToItem(0)
     }
 
-    CompositionLocalProvider(LocalStreamSizeLabelFormat provides formatStreamSize) {
+    CompositionLocalProvider(
+        LocalStreamSizeLabelFormat provides formatStreamSize,
+        LocalRemoteNavigationRole provides RemoteNavigationRole.StreamSource,
+    ) {
     Box(modifier = modifier.fillMaxWidth()) {
-        LazyColumn(
+        NuvioLazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.remoteNavigationGroup().then(Modifier.fillMaxSize()),
             contentPadding = PaddingValues(
                 horizontal = 12.dp,
                 vertical = 12.dp,
@@ -823,6 +1049,8 @@ internal fun StreamList(
                             fetchingText = fetchingText,
                         )
                         StreamCard(
+                            modifier = Modifier.streamResultsFocus(isTab = false, id = "shared_stream"),
+                            desktopDragMomentumEnabled = true,
                             stream = shared.stream,
                             enabled = true,
                             appendInstantServiceToDefaultName = false,
@@ -993,6 +1221,8 @@ private fun LazyListScope.streamSection(
                     !AppFeaturePolicy.p2pEnabled &&
                     !(debridEnabled && stream.isAddonDebridCandidate)
             StreamCard(
+                modifier = Modifier.streamResultsFocus(isTab = false, id = renderItem.lazyKey),
+                desktopDragMomentumEnabled = true,
                 stream = stream,
                 enabled = isSelectable || isUnsupportedTorrentStream,
                 appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
@@ -1021,6 +1251,10 @@ private fun LazyListScope.streamSection(
         }
     }
 }
+
+private fun StreamItem.isFocusableStreamResult(debridEnabled: Boolean): Boolean =
+    isSelectableForPlayback(debridEnabled) ||
+        (needsLocalDebridResolve && !AppFeaturePolicy.p2pEnabled && !(debridEnabled && isAddonDebridCandidate))
 
 internal fun streamSectionRenderKey(group: AddonStreamGroup): String = buildString {
     append("stream_section")
@@ -1122,6 +1356,7 @@ private data class StreamActionsTarget(
 @Composable
 private fun StreamActionsHost(
     target: StreamActionsTarget?,
+    remoteStreamsKey: String,
     useDesktopContextMenu: Boolean,
     externalPlayerSupported: Boolean,
     externalPlayerEnabled: Boolean,
@@ -1131,6 +1366,16 @@ private fun StreamActionsHost(
     onDownload: (StreamItem) -> Unit,
     onOpen: (StreamItem, openExternally: Boolean) -> Unit,
 ) {
+    RemoteCardMenus.Provide { menu ->
+        if (menu is RemoteCardMenus.Target.Source && menu.streamsKey == remoteStreamsKey) {
+            val stream = menu.stream
+            if (stream.playableDirectUrl != null || stream.shouldOpenExternally || stream.isAddonDebridCandidate) {
+                desktopStreamActions(
+                    stream, externalPlayerSupported, externalPlayerEnabled, showDownloadAction, onCopyLink, onDownload, onOpen,
+                )
+            } else emptyList()
+        } else null
+    }
     if (target == null) return
 
     if (useDesktopContextMenu) {
@@ -1160,11 +1405,49 @@ private fun StreamActionsHost(
     }
 }
 
-private data class DesktopStreamAction(
-    val icon: ImageVector,
-    val title: String,
-    val onClick: () -> Unit,
-)
+@Composable
+private fun desktopStreamActions(
+    stream: StreamItem,
+    externalPlayerSupported: Boolean,
+    externalPlayerEnabled: Boolean,
+    showDownloadAction: Boolean,
+    onCopyLink: (StreamItem) -> Unit,
+    onDownload: (StreamItem) -> Unit,
+    onOpen: (StreamItem, openExternally: Boolean) -> Unit,
+): List<ActionMenuAction> =
+    buildList {
+        add(
+            ActionMenuAction(
+                icon = Icons.Rounded.ContentCopy,
+                label = stringResource(Res.string.streams_copy_link),
+                onSelected = { onCopyLink(stream) },
+            ),
+        )
+        if (externalPlayerSupported) {
+            add(
+                ActionMenuAction(
+                    icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                    label = stringResource(
+                        if (externalPlayerEnabled) {
+                            Res.string.streams_open_internal_player
+                        } else {
+                            Res.string.streams_open_external_player
+                        },
+                    ),
+                    onSelected = { onOpen(stream, !externalPlayerEnabled) },
+                ),
+            )
+        }
+        if (showDownloadAction) {
+            add(
+                ActionMenuAction(
+                    icon = Icons.Rounded.Download,
+                    label = stringResource(Res.string.streams_download_file),
+                    onSelected = { onDownload(stream) },
+                ),
+            )
+        }
+    }
 
 @Composable
 private fun DesktopStreamActionsMenu(
@@ -1181,41 +1464,11 @@ private fun DesktopStreamActionsMenu(
     val density = LocalDensity.current
     val edgeMarginPx = with(density) { 8.dp.roundToPx() }
     val menuShape = RoundedCornerShape(8.dp)
-    val actions = buildList {
-        add(
-            DesktopStreamAction(
-                icon = Icons.Rounded.ContentCopy,
-                title = stringResource(Res.string.streams_copy_link),
-                onClick = { onCopyLink(stream) },
-            ),
-        )
-        if (externalPlayerSupported) {
-            add(
-                DesktopStreamAction(
-                    icon = Icons.AutoMirrored.Rounded.OpenInNew,
-                    title = stringResource(
-                        if (externalPlayerEnabled) {
-                            Res.string.streams_open_internal_player
-                        } else {
-                            Res.string.streams_open_external_player
-                        },
-                    ),
-                    onClick = { onOpen(stream, !externalPlayerEnabled) },
-                ),
-            )
-        }
-        if (showDownloadAction) {
-            add(
-                DesktopStreamAction(
-                    icon = Icons.Rounded.Download,
-                    title = stringResource(Res.string.streams_download_file),
-                    onClick = { onDownload(stream) },
-                ),
-            )
-        }
-    }
+    val actions = desktopStreamActions(
+        stream, externalPlayerSupported, externalPlayerEnabled, showDownloadAction, onCopyLink, onDownload, onOpen,
+    )
 
-    Popup(
+    AppPopup(
         popupPositionProvider = remember(anchorInRoot, edgeMarginPx) {
             StreamActionsPopupPositionProvider(
                 pointerPosition = IntOffset(
@@ -1232,9 +1485,7 @@ private fun DesktopStreamActionsMenu(
             modifier = Modifier
                 .platformTouchScroll()
                 .width(244.dp)
-                .shadow(elevation = 14.dp, shape = menuShape)
-                .clip(menuShape)
-                .background(MaterialTheme.colorScheme.surface)
+                .navigationGlass(shape = menuShape, panel = true)
                 .border(
                     width = 1.dp,
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
@@ -1242,14 +1493,16 @@ private fun DesktopStreamActionsMenu(
                 )
                 .padding(4.dp),
         ) {
-            actions.forEach { action ->
-                DesktopStreamActionRow(
-                    action = action,
-                    onSelected = {
-                        onDismiss()
-                        action.onClick()
-                    },
-                )
+            DarkGlassPanelContent {
+                actions.forEach { action ->
+                    DesktopStreamActionRow(
+                        action = action,
+                        onSelected = {
+                            onDismiss()
+                            action.onSelected()
+                        },
+                    )
+                }
             }
         }
     }
@@ -1257,11 +1510,10 @@ private fun DesktopStreamActionsMenu(
 
 @Composable
 private fun DesktopStreamActionRow(
-    action: DesktopStreamAction,
+    action: ActionMenuAction,
     onSelected: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
     val rowShape = RoundedCornerShape(5.dp)
 
     Row(
@@ -1269,15 +1521,9 @@ private fun DesktopStreamActionRow(
             .fillMaxWidth()
             .height(38.dp)
             .clip(rowShape)
-            .background(
-                if (isHovered) {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.09f)
-                } else {
-                    Color.Transparent
-                },
-            )
+            .navigationGlassFeedback(interactionSource, rowShape)
             .hoverable(interactionSource)
-            .clickable(
+            .remoteNavigationTarget(shape = rowShape).clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onSelected,
@@ -1293,7 +1539,7 @@ private fun DesktopStreamActionRow(
             modifier = Modifier.size(17.dp),
         )
         Text(
-            text = action.title,
+            text = action.label,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,

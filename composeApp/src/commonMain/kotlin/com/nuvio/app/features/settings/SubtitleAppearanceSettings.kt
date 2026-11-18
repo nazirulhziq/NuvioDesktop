@@ -120,9 +120,10 @@ internal fun SubtitleAppearanceSettings(
                 )
                 SettingsSliderRow(
                     title = stringResource(Res.string.subtitle_outline_width),
-                    value = style.outlineWidth, valueText = { it.toString() },
-                    valueRange = subtitleOutlineWidthRange, step = 1, isTablet = isTablet, enabled = enabled,
-                    onValueChange = { onStyleChanged(style.copy(outlineWidth = it)) },
+                    value = SubtitleOutlineWidths.indexOf(normalizeSubtitleOutlineWidth(style.outlineWidth)),
+                    valueText = { SubtitleOutlineWidths[it].outlineWidthLabel() },
+                    valueRange = SubtitleOutlineWidths.indices, step = 1, isTablet = isTablet, enabled = enabled,
+                    onValueChange = { onStyleChanged(style.copy(outlineWidth = SubtitleOutlineWidths[it])) },
                 )
             }
             SettingsGroupDivider(isTablet)

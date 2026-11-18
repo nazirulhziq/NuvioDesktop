@@ -3,8 +3,10 @@ package com.nuvio.app.features.home
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.collectMappedAsState
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaExternalRating
@@ -12,6 +14,8 @@ import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.mdblist.MdbListMetadataService
 import com.nuvio.app.features.mdblist.MdbListSettings
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
+import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.remote.RemoteAppBridge
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +43,10 @@ internal data class HomeHeroMeta(
     val ratings: List<MetaExternalRating> = emptyList(),
 )
 
-internal object HomeHeroMetaRepository {
+internal class HomeHeroMetaRepository(
+    private val detailsLoader: suspend (MetaPreview) -> MetaDetails? = ::fetchHomeHeroDetails,
+    private val ratingsLoader: suspend (MetaPreview, MdbListSettings, suspend () -> MetaDetails?) -> List<MetaExternalRating> = ::fetchHomeHeroRatings,
+) {
     private val dispatcher = Dispatchers.Default.limitedParallelism(1)
     private val _metas = MutableStateFlow<Map<String, HomeHeroMeta>>(emptyMap())
     val metas: StateFlow<Map<String, HomeHeroMeta>> = _metas.asStateFlow()
@@ -62,10 +69,10 @@ internal object HomeHeroMetaRepository {
     ) {
         val key = item.stableKey()
         coroutineScope {
-            val details = async { permits.withPermit { fetchDetails(item) } }
+            val details = async { permits.withPermit { detailsLoader(item) } }
             launch {
                 val ratings = ratingSettings
-                    ?.let { settings -> fetchRatings(item, settings) { details.await() } }
+                    ?.let { settings -> ratingsLoader(item, settings) { details.await() } }
                     .orEmpty()
                 update(key) { meta -> meta.copy(ratings = ratings) }
             }
@@ -77,70 +84,57 @@ internal object HomeHeroMetaRepository {
     private fun update(key: String, transform: (HomeHeroMeta) -> HomeHeroMeta) {
         _metas.update { metas -> metas + (key to transform(metas[key] ?: HomeHeroMeta())) }
     }
+}
 
-    private suspend fun fetchDetails(item: MetaPreview): MetaDetails? =
-        try {
-            MetaDetailsRepository.fetch(type = item.type, id = item.id)
-        } catch (error: Throwable) {
-            if (error is CancellationException) throw error
-            null
-        }
+internal suspend fun fetchHomeHeroDetails(item: MetaPreview): MetaDetails? =
+    try {
+        MetaDetailsRepository.fetch(type = item.type, id = item.id)
+    } catch (error: Throwable) {
+        if (error is CancellationException) throw error
+        null
+    }
 
-    private suspend fun fetchRatings(
-        item: MetaPreview,
-        settings: MdbListSettings,
-        details: suspend () -> MetaDetails?,
-    ): List<MetaExternalRating> {
-        val preview = MetaDetails(id = item.id, type = item.type, name = item.name)
-        val meta = if (MdbListMetadataService.shouldFetchForMeta(preview, item.id, settings)) {
-            preview
-        } else {
-            details() ?: return emptyList()
-        }
-        return try {
-            withTimeoutOrNull(RATINGS_TIMEOUT_MS) {
-                MdbListMetadataService.enrichMeta(
-                    meta = meta,
-                    fallbackItemId = item.id,
-                    settings = settings,
-                ).externalRatings
-            }.orEmpty()
-        } catch (error: Throwable) {
-            if (error is CancellationException) throw error
-            emptyList()
-        }
+internal suspend fun fetchHomeHeroRatings(
+    item: MetaPreview,
+    settings: MdbListSettings,
+    details: suspend () -> MetaDetails?,
+): List<MetaExternalRating> {
+    val preview = MetaDetails(id = item.id, type = item.type, name = item.name, imdbId = item.imdbId)
+    val meta = if (MdbListMetadataService.shouldFetchForMeta(preview, item.id, settings)) {
+        preview
+    } else {
+        details() ?: return emptyList()
+    }
+    return try {
+        withTimeoutOrNull(RATINGS_TIMEOUT_MS) {
+            MdbListMetadataService.enrichMeta(
+                meta = meta,
+                fallbackItemId = item.id,
+                settings = settings,
+            ).externalRatings
+        }.orEmpty()
+    } catch (error: Throwable) {
+        if (error is CancellationException) throw error
+        emptyList()
     }
 }
 
 internal fun MetaPreview.withHeroMeta(meta: HomeHeroMeta): MetaPreview {
     val details = meta.details
     return copy(
+        releaseInfo = releaseInfo?.takeIf { it.isNotBlank() }
+            ?: details?.releaseInfo?.takeIf { it.isNotBlank() },
         genres = details?.genres?.takeIf { it.isNotEmpty() } ?: genres,
         imdbRating = details?.imdbRating?.takeIf { it.isNotBlank() } ?: imdbRating,
+        imdbId = details?.imdbId?.takeIf { it.isNotBlank() }
+            ?: MdbListMetadataService.extractImdbId(details?.id)
+            ?: imdbId,
         runtime = details?.runtime?.takeIf { it.isNotBlank() } ?: runtime,
         status = details?.status?.takeIf { it.isNotBlank() } ?: status,
         ageRating = details?.ageRating?.takeIf { it.isNotBlank() } ?: ageRating,
         language = details?.language?.takeIf { it.isNotBlank() } ?: language,
         externalRatings = meta.ratings,
     )
-}
-
-@Composable
-internal fun HomeHeroMetaLoadEffect(items: List<MetaPreview>) {
-    val mdbListSettings by remember {
-        MdbListSettingsRepository.ensureLoaded()
-        MdbListSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val tmdbSettings by remember {
-        TmdbSettingsRepository.ensureLoaded()
-        TmdbSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val showMdbListRatings = mdbListSettings.isActive && mdbListSettings.showOnHero
-
-    LaunchedEffect(items, mdbListSettings, tmdbSettings) {
-        delay(LOAD_DEBOUNCE_MS)
-        HomeHeroMetaRepository.load(items, mdbListSettings.takeIf { showMdbListRatings })
-    }
 }
 
 @Composable
@@ -153,17 +147,49 @@ internal fun rememberHomeHeroState(items: List<MetaPreview>): HomeHeroState {
         MetaScreenSettingsRepository.ensureLoaded()
         MetaScreenSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    val metas by HomeHeroMetaRepository.metas.collectAsStateWithLifecycle()
+    val tmdbSettings by remember {
+        TmdbSettingsRepository.ensureLoaded()
+        TmdbSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val activeProfile by ProfileRepository.state.collectMappedAsState { it.activeProfile }
+    // Each profile/settings scope owns its results, including requests cancelled during a switch.
+    val repository = remember(activeProfile, mdbListSettings, tmdbSettings) {
+        HomeHeroMetaRepository()
+    }
+    val metas = key(repository) {
+        val currentMetas by repository.metas.collectAsStateWithLifecycle()
+        currentMetas
+    }
     val showMdbListRatings = mdbListSettings.isActive && mdbListSettings.showOnHero
 
-    val heroItems = remember(items, metas) {
-        items.map { item -> metas[item.stableKey()]?.let(item::withHeroMeta) ?: item }
+    LaunchedEffect(items, repository) {
+        delay(LOAD_DEBOUNCE_MS)
+        repository.load(items, mdbListSettings.takeIf { showMdbListRatings })
     }
+
+    val heroItems = remember(items, metas) {
+        items.map { item -> metas[item.stableKey()]?.let(item::withHeroMeta) ?: item.copy(externalRatings = emptyList()) }
+    }
+    // The phone remote shows the carousel with the same details and ratings.
+    LaunchedEffect(heroItems) { RemoteAppBridge.publishHeroItems(heroItems) }
     return HomeHeroState(
         items = heroItems,
         showImdbRating = metaScreenSettings.showOverallRatings,
         showMdbListRatings = showMdbListRatings,
     )
+}
+
+internal data class HomeHeroRatings(
+    val external: List<MetaExternalRating>,
+    val imdb: String?,
+)
+
+internal fun MetaPreview.heroRatings(showImdbRating: Boolean, showMdbListRatings: Boolean): HomeHeroRatings {
+    val external = externalRatings.takeIf { showMdbListRatings }.orEmpty()
+    val imdb = imdbRating?.trim()
+        ?.takeIf { showImdbRating && external.isEmpty() }
+        ?.takeIf { raw -> raw.toDoubleOrNull()?.let { it > 0.0 } == true }
+    return HomeHeroRatings(external, imdb)
 }
 
 private const val DETAILS_FETCH_CONCURRENCY = 4

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.ui.frostedGlassSecondaryContentColor
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Replay10
@@ -42,6 +45,9 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.rememberCoroutineScope
+import com.nuvio.app.features.player.seekpreview.LocalSeekPreviewInteraction
+import com.nuvio.app.features.player.seekpreview.seekPreviewInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -106,6 +112,7 @@ internal fun PlayerControlsShell(
     onInteraction: () -> Unit = {},
     showPlaybackControls: Boolean = true,
     onLockToggle: () -> Unit,
+    onMinimize: (() -> Unit)? = null,
     onBack: () -> Unit,
     onPartyClick: (() -> Unit)? = null,
     partyActive: Boolean = false,
@@ -128,6 +135,7 @@ internal fun PlayerControlsShell(
     parentalWarnings: List<ParentalWarning> = emptyList(),
     showParentalGuide: Boolean = false,
     onParentalGuideAnimationComplete: () -> Unit = {},
+    seekPreviewContent: (@Composable () -> Unit)? = null,
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     horizontalSafePadding: androidx.compose.ui.unit.Dp,
@@ -239,6 +247,7 @@ internal fun PlayerControlsShell(
                     showParentalGuide = showParentalGuide,
                     onParentalGuideAnimationComplete = onParentalGuideAnimationComplete,
                     onLockToggle = onLockToggle,
+                    onMinimize = onMinimize,
                     onVideoSettingsClick = onVideoSettingsClick,
                     onOpenInExternalPlayer = onOpenInExternalPlayer,
                     onPartyClick = onPartyClick,
@@ -259,6 +268,7 @@ internal fun PlayerControlsShell(
                     PlayerToolbar(
                         isLocked = isLocked,
                         onLockToggle = onLockToggle,
+                        onMinimize = onMinimize,
                         onBack = onBack,
                         onPartyClick = onPartyClick,
                         partyActive = partyActive,
@@ -310,6 +320,7 @@ internal fun PlayerControlsShell(
                     displayedPositionMs = displayedPositionMs,
                     metrics = metrics,
                     resizeMode = resizeMode,
+                    seekPreviewContent = seekPreviewContent,
                     onScrubChange = onScrubChange,
                     onScrubFinished = onScrubFinished,
                     onResizeModeClick = onResizeModeClick,
@@ -348,16 +359,31 @@ internal fun PlayerControlsShell(
                         )
                     }
                     PlayerChapterTitle(chapters = chapters, positionMs = displayedPositionMs)
-                    PlayerTimeline(
-                        snapshot = playbackSnapshot,
-                        displayedPositionMs = displayedPositionMs,
-                        onScrubChange = onScrubChange,
-                        onScrubFinished = {
-                            onInteraction()
-                            onScrubFinished(it)
-                        },
-                        chapters = chapters,
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.BottomCenter,
+                    ) {
+                        PlayerTimeline(
+                            snapshot = playbackSnapshot,
+                            chapters = chapters,
+                            displayedPositionMs = displayedPositionMs,
+                            onScrubChange = onScrubChange,
+                            onScrubFinished = {
+                                onInteraction()
+                                onScrubFinished(it)
+                            },
+                        )
+                        seekPreviewContent?.let { preview ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 36.dp),
+                                contentAlignment = Alignment.BottomCenter,
+                            ) {
+                                preview()
+                            }
+                        }
+                    }
                     PlayerControlActions(
                         playbackSnapshot = playbackSnapshot,
                         displayedPositionMs = displayedPositionMs,
@@ -401,6 +427,7 @@ private fun PlayerHeader(
     showParentalGuide: Boolean,
     onParentalGuideAnimationComplete: () -> Unit,
     onLockToggle: () -> Unit,
+    onMinimize: (() -> Unit)? = null,
     onVideoSettingsClick: (() -> Unit)?,
     onOpenInExternalPlayer: (() -> Unit)?,
     onPartyClick: (() -> Unit)?,
@@ -466,7 +493,7 @@ private fun PlayerHeader(
                                 fontSize = metrics.metadataSize,
                                 lineHeight = metrics.metadataSize * 1.25f,
                             ),
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = frostedGlassSecondaryContentColor(Color.White.copy(alpha = 0.7f)),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -477,7 +504,7 @@ private fun PlayerHeader(
                                 lineHeight = metrics.metadataSize * 1.25f,
                                 fontStyle = FontStyle.Italic,
                             ),
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = frostedGlassSecondaryContentColor(Color.White.copy(alpha = 0.7f)),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -542,6 +569,15 @@ private fun PlayerHeader(
                             buttonSize = metrics.headerIconSize + 16.dp,
                             iconSize = metrics.headerIconSize,
                             onClick = onVideoSettingsClick,
+                        )
+                    }
+                    if (onMinimize != null && !isLocked) {
+                        PlayerHeaderIconButton(
+                            icon = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = stringResource(Res.string.compose_player_minimize),
+                            buttonSize = metrics.headerIconSize + 16.dp,
+                            iconSize = metrics.headerIconSize,
+                            onClick = onMinimize,
                         )
                     }
                     NuvioBackButton(
@@ -685,6 +721,7 @@ private fun ProgressControls(
     displayedPositionMs: Long,
     metrics: PlayerLayoutMetrics,
     resizeMode: PlayerResizeMode,
+    seekPreviewContent: (@Composable () -> Unit)? = null,
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     onResizeModeClick: () -> Unit,
@@ -709,14 +746,29 @@ private fun ProgressControls(
             positionMs = displayedPositionMs,
             modifier = Modifier.padding(horizontal = 14.dp),
         )
-        PlayerSeekBar(
-            durationMs = playbackSnapshot.durationMs,
-            displayedPositionMs = displayedPositionMs,
-            metrics = metrics,
-            onScrubChange = onScrubChange,
-            onScrubFinished = onScrubFinished,
-            chapters = chapters,
-        )
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            PlayerSeekBar(
+                durationMs = playbackSnapshot.durationMs,
+                chapters = chapters,
+                displayedPositionMs = displayedPositionMs,
+                metrics = metrics,
+                onScrubChange = onScrubChange,
+                onScrubFinished = onScrubFinished,
+            )
+            seekPreviewContent?.let { preview ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 36.dp),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    preview()
+                }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -792,20 +844,33 @@ internal fun PlayerSeekBar(
     modifier: Modifier = Modifier,
     chapters: List<PlayerChapter> = emptyList(),
 ) {
+    val previewInteraction = LocalSeekPreviewInteraction.current
+    val previewScope = rememberCoroutineScope()
     val seekDurationMs = durationMs.coerceAtLeast(1L)
     val seekDescription = stringResource(Res.string.player_seek_position)
     val seekState = remember(seekDurationMs) { SliderState(trackRange = 0f..seekDurationMs.toFloat()) }
-    seekState.value = displayedPositionMs.coerceIn(0L, seekDurationMs).toFloat()
+    var pendingScrubPosition by remember(seekDurationMs) { mutableStateOf<Long?>(null) }
+    seekState.value = (pendingScrubPosition ?: displayedPositionMs).coerceIn(0L, seekDurationMs).toFloat()
     Column(modifier = modifier) {
         Slider(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(metrics.sliderTouchHeight)
+                .seekPreviewInput(durationMs)
                 .graphicsLayer(scaleY = metrics.sliderScaleY)
                 .semantics { contentDescription = seekDescription },
             state = seekState,
-            onValueChange = { value -> onScrubChange(value.toLong()) },
-            onValueChangeFinished = { onScrubFinished(displayedPositionMs.coerceIn(0L, seekDurationMs)) },
+            onValueChange = { value ->
+                val position = value.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L))
+                pendingScrubPosition = position
+                if (previewInteraction?.pointerPressed == false) previewInteraction.keyboard(position, previewScope)
+                onScrubChange(position)
+            },
+            onValueChangeFinished = {
+                val target = pendingScrubPosition ?: seekState.value.toLong()
+                pendingScrubPosition = null
+                onScrubFinished(target.coerceIn(0L, durationMs.coerceAtLeast(0L)))
+            },
             enabled = durationMs > 0L,
             track = { sliderState -> PlayerProgressTrack(sliderState, chapters, durationMs) },
         )

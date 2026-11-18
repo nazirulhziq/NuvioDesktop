@@ -27,14 +27,15 @@ import java.util.UUID
 private const val OpcodeHandshake = 0
 private const val OpcodeFrame = 1
 
-private val discordIpcJson = Json {
+internal val discordIpcJson = Json {
     ignoreUnknownKeys = true
-    explicitNulls = true
+    explicitNulls = false
+    encodeDefaults = true
 }
 
 @Serializable
 private data class HandshakePayload(
-    val v: Int,
+    val v: Int = 1,
     @SerialName("client_id") val clientId: String,
 )
 
@@ -143,7 +144,7 @@ internal class DiscordIpcClient(private val clientId: String) {
         if (pipe != null) return@withContext true
         val opened = openTransport() ?: return@withContext false
         try {
-            writeFrame(opened, OpcodeHandshake, discordIpcJson.encodeToString(HandshakePayload(v = 1, clientId = clientId)))
+            writeFrame(opened, OpcodeHandshake, discordIpcJson.encodeToString(HandshakePayload(clientId = clientId)))
             val (opcode, payload) = readFrame(opened)
             val evt = discordIpcJson.parseToJsonElement(payload).jsonObject["evt"]?.jsonPrimitive?.contentOrNull
             check(opcode == OpcodeFrame && evt == "READY") { "unexpected handshake response: opcode=$opcode evt=$evt" }

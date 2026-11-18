@@ -1,5 +1,7 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,6 +42,7 @@ import com.nuvio.app.features.player.PlayerEngineController
 import com.nuvio.app.features.trailer.TrailerPlaybackState
 import com.nuvio.app.features.trailer.TrailerPlayer
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
+import com.nuvio.app.isDesktop
 import com.nuvio.app.isIos
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
@@ -121,15 +124,17 @@ fun TrailerPlayerPopup(
     }
 
     val exitFullscreen = {
-        if (isIos) {
-            playbackState.controller?.pause()
-            onDismiss()
+        if (isIos || isDesktop) {
+            releasePlayerThen {
+                restoreAppFullscreen()
+                onDismiss()
+            }
         } else {
             toggleFullscreen()
         }
     }
 
-    if (isIos || fullscreen) {
+    if (isIos || isDesktop || fullscreen) {
         LockPlayerToLandscape()
         FullscreenPlayerDialog(onDismiss = exitFullscreen) {
             TrailerPlayer(
@@ -147,7 +152,20 @@ fun TrailerPlayerPopup(
                         onDismiss()
                     }
                 },
-                onToggleFullscreen = exitFullscreen,
+                onToggleFullscreen = {
+                    if (isDesktop) {
+                        toggleFullscreenAction()
+                    } else {
+                        exitFullscreen()
+                    }
+                },
+                onEscapeFullscreen = {
+                    if (isDesktop && appFullscreen) {
+                        toggleFullscreenAction()
+                    } else {
+                        exitFullscreen()
+                    }
+                },
             )
         }
         return
@@ -198,14 +216,14 @@ fun TrailerPlayerPopup(
                     }
                 }
 
-                IconButton(onClick = toggleFullscreen) {
+                IconButton(onClick = toggleFullscreen, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                     Icon(
                         imageVector = Icons.Rounded.Fullscreen,
                         contentDescription = stringResource(Res.string.trailer_enter_fullscreen),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                IconButton(onClick = dismissSheet) {
+                IconButton(onClick = dismissSheet, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.foundation.shape.CircleShape)) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = stringResource(Res.string.trailer_close),

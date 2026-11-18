@@ -9,7 +9,8 @@ data class P2pSettingsUiState(
     val p2pEnabled: Boolean = false,
     val enableUpload: Boolean = true,
     val hideTorrentStats: Boolean = false,
-    val torrentProfile: P2pTorrentProfile = P2pTorrentProfile.BALANCED,
+    val showTorrentStatsOverlay: Boolean = true,
+    val torrentProfile: P2pTorrentProfile = P2pTorrentProfile.FAST,
     val cacheSize: P2pCacheSize = P2pCacheSize.GB_2,
 )
 
@@ -24,6 +25,8 @@ enum class P2pCacheSize(val bytes: Long) {
     GB_2(2L * 1024L * 1024L * 1024L),
     GB_5(5L * 1024L * 1024L * 1024L),
     GB_10(10L * 1024L * 1024L * 1024L),
+    GB_20(20L * 1024L * 1024L * 1024L),
+    GB_50(50L * 1024L * 1024L * 1024L),
 }
 
 data class P2pCacheUiState(
@@ -50,7 +53,8 @@ object P2pSettingsRepository {
     private var p2pEnabled = false
     private var enableUpload = true
     private var hideTorrentStats = false
-    private var torrentProfile = P2pTorrentProfile.BALANCED
+    private var showTorrentStatsOverlay = true
+    private var torrentProfile = P2pTorrentProfile.FAST
     private var cacheSize = P2pCacheSize.GB_2
 
     fun ensureLoaded() {
@@ -67,7 +71,8 @@ object P2pSettingsRepository {
         p2pEnabled = false
         enableUpload = true
         hideTorrentStats = false
-        torrentProfile = P2pTorrentProfile.BALANCED
+        showTorrentStatsOverlay = true
+        torrentProfile = P2pTorrentProfile.FAST
         cacheSize = P2pCacheSize.GB_2
         publish()
     }
@@ -96,6 +101,14 @@ object P2pSettingsRepository {
         publish()
     }
 
+    fun setShowTorrentStatsOverlay(enabled: Boolean) {
+        ensureLoaded()
+        if (showTorrentStatsOverlay == enabled) return
+        showTorrentStatsOverlay = enabled
+        P2pSettingsStorage.saveShowTorrentStatsOverlay(enabled)
+        publish()
+    }
+
     fun setTorrentProfile(profile: P2pTorrentProfile) {
         ensureLoaded()
         if (torrentProfile == profile) return
@@ -117,9 +130,10 @@ object P2pSettingsRepository {
         p2pEnabled = P2pSettingsStorage.loadP2pEnabled() ?: false
         enableUpload = P2pSettingsStorage.loadEnableUpload() ?: true
         hideTorrentStats = P2pSettingsStorage.loadHideTorrentStats() ?: false
+        showTorrentStatsOverlay = P2pSettingsStorage.loadShowTorrentStatsOverlay() ?: true
         torrentProfile = P2pSettingsStorage.loadTorrentProfile()
             ?.let { stored -> P2pTorrentProfile.entries.firstOrNull { it.name == stored } }
-            ?: P2pTorrentProfile.BALANCED
+            ?: P2pTorrentProfile.FAST
         cacheSize = P2pSettingsStorage.loadCacheSize()
             ?.let { stored -> P2pCacheSize.entries.firstOrNull { it.name == stored } }
             ?: P2pCacheSize.GB_2
@@ -131,6 +145,7 @@ object P2pSettingsRepository {
             p2pEnabled = p2pEnabled,
             enableUpload = enableUpload,
             hideTorrentStats = hideTorrentStats,
+            showTorrentStatsOverlay = showTorrentStatsOverlay,
             torrentProfile = torrentProfile,
             cacheSize = cacheSize,
         )
@@ -144,6 +159,8 @@ internal expect object P2pSettingsStorage {
     fun saveEnableUpload(enabled: Boolean)
     fun loadHideTorrentStats(): Boolean?
     fun saveHideTorrentStats(enabled: Boolean)
+    fun loadShowTorrentStatsOverlay(): Boolean?
+    fun saveShowTorrentStatsOverlay(enabled: Boolean)
     fun loadTorrentProfile(): String?
     fun saveTorrentProfile(profile: String)
     fun loadCacheSize(): String?
@@ -179,7 +196,7 @@ internal fun buildP2pMagnetUri(infoHash: String, trackers: List<String>): String
     return "magnet:?xt=$topic$trackerParameters"
 }
 
-private fun String.encodeP2pQueryValue(): String = buildString {
+internal fun String.encodeP2pQueryValue(): String = buildString {
     for (byte in this@encodeP2pQueryValue.encodeToByteArray()) {
         val value = byte.toInt() and 0xff
         if ((value in 'a'.code..'z'.code) ||

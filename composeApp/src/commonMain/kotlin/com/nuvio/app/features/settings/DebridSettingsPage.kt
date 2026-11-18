@@ -1,5 +1,8 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.remoteNavigationTarget
+import com.nuvio.app.core.ui.remoteNavigationGroup
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -10,7 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.nuvio.app.core.ui.NuvioLazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -570,7 +573,7 @@ private fun DebridLearnMoreFooter(
             .padding(top = if (isTablet) 4.dp else 0.dp, bottom = if (isTablet) 10.dp else 6.dp),
         contentAlignment = Alignment.Center,
     ) {
-        TextButton(onClick = onClick) {
+        TextButton(onClick = onClick, modifier = Modifier.remoteNavigationTarget(shape = androidx.compose.material3.ButtonDefaults.shape)) {
             Text(stringResource(Res.string.settings_debrid_learn_more))
         }
     }
@@ -662,9 +665,9 @@ private fun DebridTemplateDialog(
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it },
-            modifier = Modifier
+            modifier = (Modifier
                 .fillMaxWidth()
-                .heightIn(min = 140.dp, max = 280.dp),
+                .heightIn(min = 140.dp, max = 280.dp)).remoteNavigationTarget(textField = true),
             minLines = 5,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
@@ -709,7 +712,7 @@ private fun DebridPreferenceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
+            .remoteNavigationTarget().clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1010,10 +1013,10 @@ private fun <T> DebridSingleChoiceDialog(
         onDismissRequest = onDismiss,
         title = title,
     ) {
-        LazyColumn(
-            modifier = Modifier
+        NuvioLazyColumn(
+            modifier = Modifier.remoteNavigationGroup().then(Modifier
                 .fillMaxWidth()
-                .heightIn(max = 420.dp),
+                .heightIn(max = 420.dp)),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(options) { option ->
@@ -1045,10 +1048,10 @@ private fun <T> DebridMultiChoiceDialog(
         onDismissRequest = onDismiss,
         title = title,
     ) {
-        LazyColumn(
-            modifier = Modifier
+        NuvioLazyColumn(
+            modifier = Modifier.remoteNavigationGroup().then(Modifier
                 .fillMaxWidth()
-                .heightIn(max = 420.dp),
+                .heightIn(max = 420.dp)),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(values) { option ->
@@ -1105,9 +1108,9 @@ private fun DebridTextListDialog(
         OutlinedTextField(
             value = value,
             onValueChange = { value = it },
-            modifier = Modifier
+            modifier = (Modifier
                 .fillMaxWidth()
-                .heightIn(min = 120.dp),
+                .heightIn(min = 120.dp)).remoteNavigationTarget(textField = true),
             minLines = 4,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
@@ -1456,7 +1459,7 @@ private fun DebridDeviceAuthDialog(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
+                        .remoteNavigationTarget(shape = RoundedCornerShape(12.dp)).clickable {
                             clipboardManager.setText(AnnotatedString(activeSession.userCode))
                             statusMessage = codeCopiedMessage
                         },
@@ -1634,7 +1637,7 @@ private fun DebridApiKeyDialog(
                 draft = it
                 validationMessage = null
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = (Modifier.fillMaxWidth()).remoteNavigationTarget(textField = true),
             singleLine = true,
             placeholder = { Text(placeholder) },
             colors = OutlinedTextFieldDefaults.colors(

@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,6 +67,8 @@ data class FolderDetailUiState(
     val selectedTabIndex: Int = 0,
     val isLoading: Boolean = true,
     val showAllTab: Boolean = true,
+    val collectionId: String? = null,
+    val folderId: String? = null,
 ) {
     val selectedTab: FolderTab?
         get() = tabs.getOrNull(selectedTabIndex)
@@ -123,13 +126,13 @@ object FolderDetailRepository {
 
         val collection = CollectionRepository.getCollection(collectionId)
         if (collection == null) {
-            _uiState.value = FolderDetailUiState(isLoading = false)
+            _uiState.value = FolderDetailUiState(isLoading = false, collectionId = collectionId, folderId = folderId)
             return
         }
 
         val folder = collection.folders.find { it.id == folderId }
         if (folder == null) {
-            _uiState.value = FolderDetailUiState(isLoading = false)
+            _uiState.value = FolderDetailUiState(isLoading = false, collectionId = collectionId, folderId = folderId)
             return
         }
 
@@ -231,6 +234,8 @@ object FolderDetailRepository {
             selectedTabIndex = 0,
             isLoading = true,
             showAllTab = showAll,
+            collectionId = collectionId,
+            folderId = folderId,
         )
 
         // Load catalog data for each source
@@ -270,6 +275,10 @@ object FolderDetailRepository {
         activeFolderId = null
         activeShowCatalogType = null
         _uiState.value = FolderDetailUiState()
+    }
+
+    internal fun clear(collectionId: String, folderId: String) {
+        if (activeCollectionId == collectionId && activeFolderId == folderId) clear()
     }
 
     fun loadMoreSelectedTab() {
@@ -359,6 +368,7 @@ object FolderDetailRepository {
                     repo.ensureLoaded()
                     repo.patternForScreen(com.nuvio.app.core.poster.CustomPosterScreen.COLLECTIONS)
                 }
+                ensureActive()
                 updateTab(index) { tab ->
                     val mergedItems = if (reset) {
                         page.items
@@ -386,6 +396,7 @@ object FolderDetailRepository {
                 }
                 rebuildAllTab()
             }.onFailure { error ->
+                ensureActive()
                 log.e(error) { "Failed to load source ${currentTab.catalogId}" }
                 updateTab(index) { tab ->
                     tab.copy(
@@ -440,15 +451,26 @@ object FolderDetailRepository {
         _uiState.value = current.copy(tabs = updatedTabs)
     }
 
-    fun getCatalogSectionsForRows(): List<HomeCatalogSection> {
-        val current = _uiState.value
-        val folder = current.folder ?: return emptyList()
-        val collectionId = activeCollectionId ?: return emptyList()
+    internal fun getRowSlots(state: FolderDetailUiState = _uiState.value): List<FolderRowSlot> {
+        val collectionId = state.collectionId ?: return emptyList()
+        return folderRowSlots(state, collectionId)
+    }
 
-        return current.tabs.filter { !it.isAllTab && it.items.isNotEmpty() }.mapNotNull { tab ->
+    fun getCatalogSectionsForRows(): List<HomeCatalogSection> =
+        getRowSlots().mapNotNull { it.section }.filter { it.items.isNotEmpty() }
+}
+
+internal data class FolderRowSlot(val key: String, val tab: FolderTab, val section: HomeCatalogSection?)
+
+/** Reserve every configured source, including failed or still-loading sources. */
+internal fun folderRowSlots(state: FolderDetailUiState, collectionId: String): List<FolderRowSlot> {
+    val folder = state.folder ?: return emptyList()
+    return state.tabs.filterNot { it.isAllTab }.mapIndexed { sourceIndex, tab ->
+        val key = "collection_${collectionId}_folder_${folder.id}_source_$sourceIndex"
+        val section = run {
             val directSource = tab.source?.let { it.isTmdb || it.isTrakt } == true
             val target = if (directSource) {
-                val sourceKey = tab.sourceKey ?: return@mapNotNull null
+                val sourceKey = tab.sourceKey ?: return@run null
                 CatalogTarget.CollectionSource(
                     collectionId = collectionId,
                     folderId = folder.id,
@@ -457,7 +479,7 @@ object FolderDetailRepository {
                     supportsPagination = tab.supportsPagination,
                 )
             } else {
-                val manifestUrl = tab.manifestUrl ?: return@mapNotNull null
+                val manifestUrl = tab.manifestUrl ?: return@run null
                 CatalogTarget.Addon(
                     manifestUrl = manifestUrl,
                     contentType = tab.type,
@@ -467,7 +489,7 @@ object FolderDetailRepository {
                 )
             }
             HomeCatalogSection(
-                key = "folder_${folder.id}_${tab.label}",
+                key = key,
                 title = tab.label,
                 subtitle = tab.typeLabel,
                 addonName = "",
@@ -477,6 +499,7 @@ object FolderDetailRepository {
                 hasMore = tab.canLoadMore,
             )
         }
+        FolderRowSlot(key, tab, section)
     }
 }
 

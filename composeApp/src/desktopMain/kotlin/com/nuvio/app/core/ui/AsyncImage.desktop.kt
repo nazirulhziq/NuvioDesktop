@@ -2,51 +2,40 @@ package com.nuvio.app.core.ui
 
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.DefaultAlpha
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asComposeImageBitmap
-import androidx.compose.ui.graphics.asSkiaBitmap
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
-import coil3.BitmapImage
-import coil3.Image
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
+import coil3.compose.ConstraintsSizeResolver
 import coil3.compose.LocalPlatformContext
+import coil3.compose.useExistingImageAsPlaceholder
 import coil3.request.ImageRequest
 import coil3.request.NullRequestDataException
-import org.jetbrains.skia.Bitmap
-import org.jetbrains.skia.FilterMipmap
-import org.jetbrains.skia.FilterMode
-import org.jetbrains.skia.Image as SkiaImage
-import org.jetbrains.skia.MipmapMode
-import kotlin.math.max
-import kotlin.math.roundToInt
+import coil3.size.Dimension
+import coil3.size.SizeResolver
+import coil3.size.Scale
+import kotlinx.coroutines.delay
+import coil3.size.Size as CoilSize
 
-private const val MinCustomDownscaleRatio = 1.08f
-private const val MaxDesktopSourceSizePx = 1536
-private const val MaxScaledBitmapPixels = 1_250_000L
-
-private val IsWindowsDesktop: Boolean =
-    System.getProperty("os.name")
-        ?.startsWith("Windows", ignoreCase = true)
-        ?: false
+// ConstraintsSizeResolver already reports physical pixels, including fractional display density.
+// Posters reserve hover headroom (DesktopDecodeHeadroom); heroes supply a larger allowance through request extras.
 
 private val AlwaysPlaying: () -> Boolean = { true }
 private val NeverPlaying: () -> Boolean = { false }
@@ -76,7 +65,7 @@ internal actual fun NuvioAsyncImage(
     // Hover tracking only exists for On hover, so the common case pays nothing for it.
     val hoverSource = remember { MutableInteractionSource() }
     val hovered: State<Boolean> =
-        if (desktopAnimation == NuvioDesktopAnimation.OnHover) hoverSource.collectIsHoveredAsState() else NeverHovered
+        if (desktopAnimation == NuvioDesktopAnimation.OnHover) hoverSource.collectIsRemoteHoveredAsState() else NeverHovered
     val playing: () -> Boolean = when (desktopAnimation) {
         NuvioDesktopAnimation.Always -> AlwaysPlaying
         NuvioDesktopAnimation.OnHover -> remember(hovered) { { hovered.value } }
@@ -87,21 +76,43 @@ internal actual fun NuvioAsyncImage(
     val animated = desktopAnimation != NuvioDesktopAnimation.Off
 
     val context = LocalPlatformContext.current
-    val effectiveDesktopImageScaling = remember(desktopImageScaling) {
-        if (IsWindowsDesktop) desktopImageScaling else NuvioDesktopImageScaling.Disabled
+    val constraintsSizeResolver = remember { ConstraintsSizeResolver() }
+    val automaticSize = desktopImageScaling != NuvioDesktopImageScaling.Disabled &&
+        (model !is ImageRequest || model.defined.sizeResolver == null)
+    val headroom = (model as? ImageRequest)?.extras?.get(ArtworkHeadroomKey) ?: DesktopDecodeHeadroom
+    var measuredSize by remember { mutableStateOf(IntSize.Zero) }
+    var initialSize by remember(model, headroom) { mutableStateOf<CoilSize?>(null) }
+    var requestedSize by remember(model, headroom) { mutableStateOf<CoilSize?>(null) }
+    LaunchedEffect(measuredSize, model, automaticSize, headroom) {
+        if (!automaticSize || measuredSize.width <= 0 || measuredSize.height <= 0) return@LaunchedEffect
+        val target = desktopDecodeSize(CoilSize(measuredSize.width, measuredSize.height), headroom)
+        if (initialSize == null) {
+            // The initial constraint-aware request already covers this size. Do not cancel its fetch.
+            initialSize = target
+            return@LaunchedEffect
+        }
+        val current = requestedSize ?: initialSize
+        val upgraded = desktopArtworkUpgradeSize(current, target)
+        if (upgraded != current) {
+            delay(150)
+            requestedSize = upgraded
+        }
     }
-    val requestModel = remember(context, model, effectiveDesktopImageScaling, animated) {
+    val requestModel = remember(context, model, desktopImageScaling, constraintsSizeResolver, animated, contentScale, requestedSize, headroom) {
         model.withDesktopImageOptions(
             context = context,
-            highQualitySize = effectiveDesktopImageScaling != NuvioDesktopImageScaling.Disabled,
+            highQualitySize = desktopImageScaling != NuvioDesktopImageScaling.Disabled,
+            scale = if (contentScale == ContentScale.Fit || contentScale == ContentScale.Inside) Scale.FIT else Scale.FILL,
+            resolver = constraintsSizeResolver,
             animated = animated,
+            requestedSize = requestedSize,
+            headroom = headroom,
         )
     }
     val transform: (AsyncImagePainter.State) -> AsyncImagePainter.State = remember(
         placeholder,
         error,
         fallback,
-        effectiveDesktopImageScaling,
         playing,
     ) {
         transform@{ state ->
@@ -114,9 +125,7 @@ internal actual fun NuvioAsyncImage(
                     if (image is AnimatedSkiaImage) {
                         return@transform state.copy(painter = image.painter(playing))
                     }
-                    image.toScaledBitmapPainter(effectiveDesktopImageScaling)
-                        ?.let { state.copy(painter = it) }
-                        ?: state
+                    state
                 }
                 is AsyncImagePainter.State.Error -> {
                     val fallbackPainter = if (state.result.throwable is NullRequestDataException) {
@@ -149,7 +158,7 @@ internal actual fun NuvioAsyncImage(
         model = requestModel,
         imageLoader = imageLoader ?: SingletonImageLoader.get(context),
         contentDescription = contentDescription,
-        modifier = imageModifier,
+        modifier = imageModifier.then(constraintsSizeResolver).onSizeChanged { measuredSize = it },
         transform = transform,
         onState = onState,
         alignment = alignment,
@@ -161,165 +170,61 @@ internal actual fun NuvioAsyncImage(
     )
 }
 
-/**
- * Prepares the request. Animated playback is opt-in; the memory-cache key records it so an animated and a
- * still copy of one URL never share an entry.
- */
+internal fun Any?.withDesktopHighQualitySize(
+    context: PlatformContext,
+    resolver: SizeResolver,
+    scale: Scale = Scale.FIT,
+    requestedSize: CoilSize? = null,
+    headroom: Double = DesktopDecodeHeadroom,
+): Any? {
+    if (this == null) return null
+    if (this is ImageRequest && defined.sizeResolver != null) return this
+
+    val builder = if (this is ImageRequest) newBuilder() else ImageRequest.Builder(context).data(this)
+    if (this !is ImageRequest || defined.scale == null) builder.scale(scale)
+    return builder.apply {
+        if (requestedSize != null) {
+            size(requestedSize)
+            useExistingImageAsPlaceholder(true)
+        } else {
+            size(object : SizeResolver {
+                override suspend fun size(): CoilSize = desktopDecodeSize(resolver.size(), headroom)
+            })
+        }
+    }.build()
+}
+
+internal fun desktopDecodeSize(size: CoilSize, headroom: Double = DesktopDecodeHeadroom): CoilSize {
+    fun Dimension.withHeadroom(): Dimension = when (this) {
+        is Dimension.Pixels -> Dimension.Pixels(desktopDecodeEdge(px, headroom))
+        else -> this
+    }
+    return CoilSize(size.width.withHeadroom(), size.height.withHeadroom())
+}
+
+/** Retain adequate results when shrinking; upgrade each axis when the display needs more detail. */
+internal fun desktopArtworkUpgradeSize(current: CoilSize?, target: CoilSize): CoilSize {
+    if (current == null) return target
+    fun larger(a: Dimension, b: Dimension): Dimension =
+        if (a is Dimension.Pixels && b is Dimension.Pixels) Dimension.Pixels(maxOf(a.px, b.px)) else b
+    return CoilSize(larger(current.width, target.width), larger(current.height, target.height))
+}
+
+/** Keeps constraint-aware sizing and separates animated requests in Coil's memory cache. */
 private fun Any?.withDesktopImageOptions(
     context: PlatformContext,
     highQualitySize: Boolean,
+    scale: Scale,
+    resolver: SizeResolver,
     animated: Boolean,
+    requestedSize: CoilSize?,
+    headroom: Double,
 ): Any? {
-    if (this == null) return null
-    if (!highQualitySize && !animated) return this
-
-    val builder = if (this is ImageRequest) {
-        newBuilder()
-    } else {
-        ImageRequest.Builder(context).data(this)
-    }
-    builder.apply {
-        if (highQualitySize) size(MaxDesktopSourceSizePx)
-        if (animated) {
-            extras[NuvioAnimatedImageKey] = true
-            memoryCacheKeyExtra("nuvio.animated", "true")
-        }
-    }
-    return builder.build()
-}
-
-private fun Image.toScaledBitmapPainter(desktopImageScaling: NuvioDesktopImageScaling): Painter? {
-    if (desktopImageScaling == NuvioDesktopImageScaling.Disabled) return null
-
-    return (this as? BitmapImage)
-        ?.bitmap
-        ?.asComposeImageBitmap()
-        ?.let { imageBitmap -> ScaledBitmapPainter(imageBitmap) }
-}
-
-private class ScaledBitmapPainter(
-    private val image: ImageBitmap,
-) : Painter() {
-    private var cachedSize: IntSize? = null
-    private var cachedBitmap: ImageBitmap? = null
-    private var alpha: Float = DefaultAlpha
-    private var colorFilter: ColorFilter? = null
-
-    override val intrinsicSize: Size =
-        Size(image.width.toFloat(), image.height.toFloat())
-
-    override fun DrawScope.onDraw() {
-        val drawSize = IntSize(
-            width = size.width.roundToInt().coerceAtLeast(1),
-            height = size.height.roundToInt().coerceAtLeast(1),
-        )
-        if (!shouldUseScaledBitmap(drawSize)) {
-            drawSource(drawSize)
-            return
-        }
-
-        val cacheSize = drawSize.cacheSize()
-        if (cacheSize.pixelCount() > MaxScaledBitmapPixels) {
-            drawSource(drawSize)
-            return
-        }
-
-        val bitmap = scaledBitmap(cacheSize)
-
-        drawImage(
-            image = bitmap,
-            srcOffset = IntOffset.Zero,
-            srcSize = cacheSize,
-            dstOffset = IntOffset.Zero,
-            dstSize = drawSize,
-            alpha = alpha,
-            colorFilter = colorFilter,
-            filterQuality = if (cacheSize == drawSize) FilterQuality.None else FilterQuality.Medium,
-        )
-    }
-
-    override fun applyAlpha(alpha: Float): Boolean {
-        this.alpha = alpha
-        return true
-    }
-
-    override fun applyColorFilter(colorFilter: ColorFilter?): Boolean {
-        this.colorFilter = colorFilter
-        return true
-    }
-
-    private fun scaledBitmap(size: IntSize): ImageBitmap {
-        cachedBitmap?.let { bitmap ->
-            if (cachedSize == size) return bitmap
-        }
-        return image.scale(size.width, size.height).also { bitmap ->
-            cachedSize = size
-            cachedBitmap = bitmap
-        }
-    }
-
-    private fun DrawScope.drawSource(drawSize: IntSize) {
-        drawImage(
-            image = image,
-            srcOffset = IntOffset.Zero,
-            srcSize = IntSize(image.width, image.height),
-            dstOffset = IntOffset.Zero,
-            dstSize = drawSize,
-            alpha = alpha,
-            colorFilter = colorFilter,
-            filterQuality = FilterQuality.High,
-        )
-    }
-
-    private fun shouldUseScaledBitmap(drawSize: IntSize): Boolean {
-        if (drawSize.pixelCount() > MaxScaledBitmapPixels) return false
-
-        val widthScale = image.width.toFloat() / drawSize.width.toFloat()
-        val heightScale = image.height.toFloat() / drawSize.height.toFloat()
-        return max(widthScale, heightScale) >= MinCustomDownscaleRatio
-    }
-
-    private fun IntSize.cacheSize(): IntSize {
-        val quantum = cacheQuantum()
-        return IntSize(
-            width = width.roundUpTo(quantum),
-            height = height.roundUpTo(quantum),
-        )
-    }
-
-    private fun IntSize.cacheQuantum(): Int {
-        val longestSide = max(width, height)
-        return when {
-            longestSide >= 1200 -> 16
-            longestSide >= 600 -> 8
-            longestSide >= 200 -> 4
-            else -> 2
-        }
-    }
-
-    private fun Int.roundUpTo(quantum: Int): Int =
-        ((this + quantum - 1) / quantum) * quantum
-
-    private fun IntSize.pixelCount(): Long =
-        width.toLong() * height.toLong()
-
-    private fun ImageBitmap.scale(width: Int, height: Int): ImageBitmap {
-        val image = SkiaImage.makeFromBitmap(asSkiaBitmap())
-        return try {
-            image.scale(width, height)
-        } finally {
-            image.close()
-        }
-    }
-
-    private fun SkiaImage.scale(width: Int, height: Int): ImageBitmap {
-        val bitmap = Bitmap()
-        bitmap.allocN32Pixels(width, height)
-        scalePixels(
-            bitmap.peekPixels()!!,
-            FilterMipmap(FilterMode.LINEAR, MipmapMode.LINEAR),
-            false,
-        )
-        return bitmap.asComposeImageBitmap()
-    }
+    val sizedModel = if (highQualitySize) withDesktopHighQualitySize(context, resolver, scale, requestedSize, headroom) else this
+    if (sizedModel == null || !animated) return sizedModel
+    val builder = if (sizedModel is ImageRequest) sizedModel.newBuilder() else ImageRequest.Builder(context).data(sizedModel)
+    return builder.apply {
+        extras[NuvioAnimatedImageKey] = true
+        memoryCacheKeyExtra("nuvio.animated", "true")
+    }.build()
 }
