@@ -165,7 +165,7 @@ fun main(args: Array<String>) {
 
         SwingWindow(
             onCloseRequest = closeApplication,
-            title = if (smokePlayerUrl == null) "NuvioCodeineXO" else "NuvioCodeineXO Player Smoke",
+            title = if (smokePlayerUrl == null) "Nuvio Desktop Enhanced" else "Nuvio Desktop Enhanced Player Smoke",
             state = windowState,
             icon = painterResource(appIconState.selected.transparentPreviewResource),
             init = ::configureMacosWindowBeforePeer,

@@ -51,9 +51,13 @@ jobs:
         shell: bash
         run: |
           # Gradle declares local.properties as a task input, so it must exist.
-          # Supabase/Trakt/MDBList keys stay empty: the app builds with those
-          # defaults, only the online account features stay disabled.
-          : > local.properties
+          # Nuvio account login needs the public backend config; these are
+          # client-side publishable values that ship inside every Nuvio build.
+          cat > local.properties <<'PROPS'
+          NUVIO_SUPABASE_URL=https://api.nuvio.tv
+          NUVIO_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI
+          NUVIO_SUPABASE_FALLBACK_URL=https://api-two.nuvioapp.space
+          PROPS
 
       - name: Install WebView2 SDK
         shell: pwsh
