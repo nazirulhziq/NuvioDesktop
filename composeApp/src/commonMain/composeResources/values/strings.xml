@@ -2784,4 +2784,5 @@
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
     </plurals>
+    <string name="compose_nav_live_tv">Live TV</string>
 </resources>

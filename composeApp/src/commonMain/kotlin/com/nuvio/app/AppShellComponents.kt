@@ -82,6 +82,7 @@ import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryScreen
+import com.nuvio.app.features.livetv.LiveTvScreen
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySortOption
 import com.nuvio.app.features.player.PlayerBackReleaseGuard
@@ -107,6 +108,7 @@ import com.nuvio.app.navigation.NuvioNavigator
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.app_brand_name
 import nuvio.composeapp.generated.resources.compose_nav_home
@@ -167,9 +169,12 @@ internal data class AppTabRequests(
     val searchScrollToTopRequests: Flow<Unit>,
     val libraryScrollToTopRequests: Flow<Unit>,
     val settingsRootActionRequests: Flow<Unit>,
+    val liveTvScrollToTopRequests: Flow<Unit> = emptyFlow(),
 )
 
 internal data class AppTabActions(
+    val onLiveTvChannelClick: ((com.nuvio.app.features.livetv.LiveTvChannel) -> Unit)? = null,
+    val onLiveTvVodClick: ((com.nuvio.app.features.livetv.LiveTvVodPlayback) -> Unit)? = null,
     val onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     val onPosterClick: ((MetaPreview) -> Unit)? = null,
     val onPosterLongClick: ((MetaPreview) -> Unit)? = null,
@@ -291,6 +296,15 @@ internal fun AppTabHost(
                     onPreviewLongClick = actions.onPosterLongClick,
                     onDownloadsClick = actions.onDownloadsClick,
                     disintegrationRequest = state.libraryDisintegrationRequest,
+                )
+            }
+
+            AppScreenTab.LiveTv -> {
+                LiveTvScreen(
+                    modifier = contentModifier,
+                    scrollToTopRequests = requests.liveTvScrollToTopRequests,
+                    onChannelClick = { channel -> actions.onLiveTvChannelClick?.invoke(channel) },
+                    onVodClick = { vod -> actions.onLiveTvVodClick?.invoke(vod) },
                 )
             }
 

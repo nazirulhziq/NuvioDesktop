@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -55,6 +56,7 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_nav_home
+import nuvio.composeapp.generated.resources.compose_nav_live_tv
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_profile
 import nuvio.composeapp.generated.resources.compose_nav_search
@@ -159,6 +161,12 @@ internal fun MainTabsDestination(
                 onClick = { onTabSelected(AppScreenTab.Library) },
                 drawable = Res.drawable.sidebar_library,
                 label = stringResource(Res.string.compose_nav_library),
+            ),
+            FloatingNavigationItem(
+                selected = selectedTab == AppScreenTab.LiveTv,
+                onClick = { onTabSelected(AppScreenTab.LiveTv) },
+                icon = Icons.Filled.LiveTv,
+                label = stringResource(Res.string.compose_nav_live_tv),
             ),
             FloatingNavigationItem(
                 selected = selectedTab == AppScreenTab.Settings,

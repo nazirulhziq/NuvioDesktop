@@ -266,6 +266,7 @@ internal fun MainAppContent(
         val searchScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val searchListState = rememberLazyListState()
         val libraryScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+        val liveTvScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val settingsRootActionRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
 
         LaunchedEffect(ownsAppRuntime) {
@@ -442,6 +443,7 @@ internal fun MainAppContent(
                 searchScrollToTopRequests.tryEmit(Unit)
             }
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.LiveTv -> liveTvScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
     }
@@ -1453,12 +1455,14 @@ internal fun MainAppContent(
                             homeScrollToTopRequests,
                             searchScrollToTopRequests,
                             libraryScrollToTopRequests,
+                            liveTvScrollToTopRequests,
                             settingsRootActionRequests,
                         ) {
                             AppTabRequests(
                                 homeScrollToTopRequests = homeScrollToTopRequests,
                                 searchScrollToTopRequests = searchScrollToTopRequests,
                                 libraryScrollToTopRequests = libraryScrollToTopRequests,
+                                liveTvScrollToTopRequests = liveTvScrollToTopRequests,
                                 settingsRootActionRequests = settingsRootActionRequests,
                             )
                         },
