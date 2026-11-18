@@ -82,6 +82,7 @@ fun NuvioScreen(
     horizontalPadding: Dp = MaterialTheme.nuvio.spacing.screenHorizontal,
     topPadding: Dp? = null,
     listState: LazyListState = rememberLazyListState(),
+    @Suppress("UNUSED_PARAMETER") autoHidesNativeTabBar: Boolean = false,
     content: LazyListScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
