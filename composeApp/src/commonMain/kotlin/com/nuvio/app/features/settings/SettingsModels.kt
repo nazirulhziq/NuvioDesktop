@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
@@ -221,6 +222,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.Watch,
         parentPage = ContentDiscovery,
     ),
+    LiveTv(
+        titleRes = Res.string.compose_settings_page_live_tv,
+        category = SettingsCategory.Watch,
+        parentPage = ContentDiscovery,
+    ),
     MediaServer(
         titleRes = Res.string.compose_settings_page_media_server,
         category = SettingsCategory.Watch,
@@ -293,6 +299,7 @@ internal val SettingsPage.icon: ImageVector
         SettingsPage.PosterCustomization -> Icons.Default.RoundedCorner
         SettingsPage.ContentDiscovery -> Icons.Default.Explore
         SettingsPage.Addons -> Icons.Default.Extension
+        SettingsPage.LiveTv -> Icons.Default.LiveTv
         SettingsPage.Plugins -> Icons.Default.Power
         SettingsPage.MediaServers -> Icons.Default.Dns
         SettingsPage.MediaServer -> Icons.Default.Dns

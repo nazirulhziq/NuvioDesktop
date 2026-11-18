@@ -498,6 +498,12 @@ internal fun settingsSearchEntries(
         ),
     )
     addPage(
+        page = SettingsPage.LiveTv,
+        key = "live-tv",
+        title = stringResource(Res.string.compose_settings_page_live_tv),
+        description = stringResource(Res.string.live_tv_empty_title),
+    )
+    addPage(
         page = SettingsPage.MediaServers,
         key = "media-servers",
         title = stringResource(Res.string.compose_settings_page_media_servers),
