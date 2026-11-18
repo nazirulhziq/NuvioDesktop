@@ -1293,7 +1293,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
-            packageName = "Nuvio"
+            packageName = "Nuvio Desktop Enhanced"
             packageVersion = desktopReleasePackageVersion
             vendor = "Nuvio Media"
             if (isMacHost) {
@@ -1355,7 +1355,8 @@ compose.desktop {
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon-transparent.png"))
                 debMaintainer = "contact@nuvio.tv"
                 shortcut = true
-                menuGroup = "Nuvio"
+                packageName = "nuvio-desktop-enhanced"
+                menuGroup = "Nuvio Desktop Enhanced"
                 appCategory = "AudioVideo"
             }
         }
