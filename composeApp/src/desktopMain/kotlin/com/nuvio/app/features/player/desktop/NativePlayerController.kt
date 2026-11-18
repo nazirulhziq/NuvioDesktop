@@ -524,7 +524,7 @@ internal class NativePlayerController(
                             else if (parsed.issues.isEmpty()) parsed.nativeOptions() else null
                         NativePlayerBridge.createWindows(host, source, audio, headers, play, position, controls, decoder, rtx, options, sink)
                     } else {
-                        NativePlayerBridge.create(host, source, audio, headers, play, position, controls, decoder, rtx, sink)
+                        NativePlayerBridge.create(host, source, audio, headers, play, position, controls, decoder, rtx, false, sink)
                     }
                 }
                 // Windows only: play a local master trimmed to the top variant, and offer its

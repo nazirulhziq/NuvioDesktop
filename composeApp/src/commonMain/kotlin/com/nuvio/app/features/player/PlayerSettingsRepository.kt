@@ -126,6 +126,7 @@ data class PlayerSettingsUiState(
     val iosSaturation: Int = 0,
     val iosGamma: Int = 0,
     val nvidiaRtxSuperResolutionEnabled: Boolean = false,
+    val nvidiaRtxHdrEnabled: Boolean = false,
     val animeUpscalerOption: AnimeUpscalerOption = AnimeUpscalerOption.OFF,
     val animeUpscalerEnabled: Boolean = false,
     val animeUpscalerMode: AnimeUpscalerMode = AnimeUpscalerMode.FAST,
@@ -262,6 +263,7 @@ object PlayerSettingsRepository {
     private var iosSaturation = 0
     private var iosGamma = 0
     private var nvidiaRtxSuperResolutionEnabled = false
+    private var nvidiaRtxHdrEnabled = false
     private var animeUpscalerOption = AnimeUpscalerOption.OFF
     private var animeUpscalerEnabled = false
     private var animeUpscalerMode = AnimeUpscalerMode.FAST
@@ -387,6 +389,7 @@ object PlayerSettingsRepository {
         iosSaturation = 0
         iosGamma = 0
         nvidiaRtxSuperResolutionEnabled = false
+        nvidiaRtxHdrEnabled = false
         animeUpscalerOption = AnimeUpscalerOption.OFF
         animeUpscalerEnabled = false
         animeUpscalerMode = AnimeUpscalerMode.FAST
@@ -1321,6 +1324,13 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveNvidiaRtxSuperResolutionEnabled(enabled)
     }
 
+    fun setNvidiaRtxHdrEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (nvidiaRtxHdrEnabled == enabled) return
+        nvidiaRtxHdrEnabled = enabled
+        publish()
+    }
+
     fun setAnimeUpscalerOption(option: AnimeUpscalerOption) {
         ensureLoaded()
         if (animeUpscalerOption == option) return
@@ -1775,6 +1785,7 @@ object PlayerSettingsRepository {
             iosSaturation = iosSaturation,
             iosGamma = iosGamma,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
+            nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
             animeUpscalerOption = animeUpscalerOption,
             animeUpscalerEnabled = animeUpscalerEnabled,
             animeUpscalerMode = animeUpscalerMode,

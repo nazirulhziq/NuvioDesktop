@@ -203,9 +203,12 @@ internal data class AppTabRequests(
     val searchScrollToTopRequests: Flow<Unit>,
     val libraryScrollToTopRequests: Flow<Unit>,
     val settingsRootActionRequests: Flow<Unit>,
+    val liveTvScrollToTopRequests: Flow<Unit> = kotlinx.coroutines.flow.emptyFlow(),
 )
 
 internal data class AppTabActions(
+    val onLiveTvChannelClick: ((com.nuvio.app.features.livetv.LiveTvChannel) -> Unit)? = null,
+    val onLiveTvVodClick: ((com.nuvio.app.features.livetv.LiveTvVodPlayback) -> Unit)? = null,
     val onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     val onPosterClick: ((MetaPreview) -> Unit)? = null,
     val onPosterLongClick: ((MetaPreview) -> Unit)? = null,
@@ -340,6 +343,15 @@ internal fun AppTabHost(
                     onPreviewLongClick = actions.onPosterLongClick,
                     onDownloadsClick = actions.onDownloadsClick,
                     disintegrationRequest = state.libraryDisintegrationRequest,
+                )
+            }
+
+            AppScreenTab.LiveTv -> {
+                com.nuvio.app.features.livetv.LiveTvScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    scrollToTopRequests = requests.liveTvScrollToTopRequests,
+                    onChannelClick = { channel -> actions.onLiveTvChannelClick?.invoke(channel) },
+                    onVodClick = { vod -> actions.onLiveTvVodClick?.invoke(vod) },
                 )
             }
 

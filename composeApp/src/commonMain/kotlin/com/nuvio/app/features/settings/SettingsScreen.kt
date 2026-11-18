@@ -653,6 +653,7 @@ private fun MobileSettingsScreen(
                     }
                     SettingsPage.LicensesAttributions -> onLicensesAttributionsClick()
                     SettingsPage.ContinueWatching -> onContinueWatchingClick()
+                    SettingsPage.LiveTv -> onAddonsClick()
                     SettingsPage.Addons -> onAddonsClick()
                     SettingsPage.Plugins -> {
                         if (AppFeaturePolicy.pluginsEnabled) {
@@ -843,6 +844,10 @@ private fun MobileSettingsScreen(
                     onAddonsClick = onAddonsClick,
                     onPluginsClick = onPluginsClick,
                     onMediaServersClick = { onPageChange(SettingsPage.MediaServers) },
+                )
+                SettingsPage.LiveTv -> liveTvSettingsContent(
+                    isTablet = false,
+                    uiState = com.nuvio.app.features.livetv.LiveTvRepository.uiState.value,
                 )
                 SettingsPage.Addons -> addonsSettingsContent()
                 SettingsPage.MediaServers -> mediaServersSettingsContent(
@@ -1266,7 +1271,11 @@ private fun TabletSettingsScreen(
                                     onPluginsClick = { openInlinePage(SettingsPage.Plugins) },
                                     onMediaServersClick = { openInlinePage(SettingsPage.MediaServers) },
                                 )
-                                SettingsPage.Addons -> addonsSettingsContent()
+                        SettingsPage.LiveTv -> liveTvSettingsContent(
+                            isTablet = true,
+                            uiState = com.nuvio.app.features.livetv.LiveTvRepository.uiState.value,
+                        )
+                        SettingsPage.Addons -> addonsSettingsContent()
                                 SettingsPage.MediaServers -> mediaServersSettingsContent(
                                     isTablet = true,
                                     onServerClick = { openInlinePage(SettingsPage.MediaServer) },

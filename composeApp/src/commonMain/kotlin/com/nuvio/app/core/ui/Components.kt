@@ -95,6 +95,7 @@ fun NuvioScreen(
     listState: LazyListState = rememberLazyListState(),
     backgroundColor: Color = MaterialTheme.nuvio.colors.background,
     sidebarContentInset: Dp = 0.dp,
+    @Suppress("UNUSED_PARAMETER") autoHidesNativeTabBar: Boolean = false,
     content: LazyListScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
