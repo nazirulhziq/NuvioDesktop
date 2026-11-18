@@ -662,7 +662,7 @@
 
 /* CodeineXO Controls Row */
 .player.ui-codeinexo .codeine-action-row {
-  --codeine-control-size: 40px;
+  --codeine-control-size: 44px;
   --codeine-control-gap: 4px;
   margin-top: 4px;
   display: flex;
@@ -772,8 +772,8 @@
 .player.ui-codeinexo .codeine-volume-btn svg,
 .player.ui-codeinexo .codeine-action-btn svg {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   display: block;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.50));
 }
@@ -1049,8 +1049,8 @@
   .player.ui-codeinexo .codeine-volume-btn svg,
   .player.ui-codeinexo .codeine-action-btn svg,
   .player.ui-codeinexo .codeine-back-button svg {
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
   }
   .player.ui-codeinexo .codeine-volume-control:hover .codeine-volume-slider,
   .player.ui-codeinexo .codeine-volume-control:focus-within .codeine-volume-slider,
