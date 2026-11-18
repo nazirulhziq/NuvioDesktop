@@ -115,6 +115,7 @@ import com.nuvio.app.features.home.HomeRepository
 import com.nuvio.app.features.home.buildAddonCatalogRefreshSignature
 import com.nuvio.app.features.home.opensDetails
 import com.nuvio.app.features.home.components.shouldBlurContinueWatchingArtwork
+import com.nuvio.app.features.livetv.LiveTvRepository
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.LibrarySection
@@ -1489,6 +1490,29 @@ internal fun MainAppContent(
                         },
                         actions = { isTabletLayout ->
                             AppTabActions(
+                                onLiveTvChannelClick = { channel ->
+                                    coroutineScope.launch {
+                                        val prepared = runCatching {
+                                            LiveTvRepository.prepareForPlayback(channel)
+                                        }.getOrDefault(channel)
+                                        val launch = PlayerLaunch(
+                                            profileId = activePlaybackProfileId,
+                                            title = prepared.name,
+                                            sourceUrl = prepared.streamUrl,
+                                            sourceHeaders = prepared.headers,
+                                            streamType = prepared.streamType ?: "live",
+                                            logo = prepared.logoUrl,
+                                            streamTitle = prepared.name,
+                                            providerName = prepared.playlistName ?: "Live TV",
+                                            parentMetaId = prepared.id,
+                                            parentMetaType = "live",
+                                        )
+                                        val launchId = PlayerLaunchStore.put(launch)
+                                        navController.navigate(
+                                            PlayerRoute(launchId = launchId, title = launch.title),
+                                        )
+                                    }
+                                },
                                 onCatalogClick = onCatalogClick,
                                 onPosterClick = navController::openPreview,
                                 onPosterLongClick = { meta ->
