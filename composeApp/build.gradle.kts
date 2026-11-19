@@ -1472,11 +1472,14 @@ fun publishWindowsMsiOutput(release: Boolean) {
 
     val distributionName = if (release) "main-release" else "main"
     val outputDir = layout.buildDirectory.dir("compose/binaries/$distributionName/msi").get().asFile
-    val finalMsi = outputDir.resolve("NuvioCodeineXO-$desktopReleaseVersionName.msi")
-    val defaultMsi = outputDir.resolve("NuvioCodeineXO-$desktopReleasePackageVersion.msi")
+    val packageNamePrefix = "Nuvio Desktop Enhanced"
+    val finalMsi = outputDir.resolve("$packageNamePrefix-$desktopReleaseVersionName.msi")
+    val defaultMsi = outputDir.resolve("$packageNamePrefix-$desktopReleasePackageVersion.msi")
+    val previousDefaultMsi = outputDir.resolve("NuvioCodeineXO-$desktopReleasePackageVersion.msi")
     val legacyDefaultMsi = outputDir.resolve("Nuvio-$desktopReleasePackageVersion.msi")
     val legacyNamedMsi = outputDir.resolve("Nuvio-Windows-$windowsPlayerBridgeArch-$desktopReleaseVersionName.msi")
     val sourceMsi = defaultMsi.takeIf { it.exists() }
+        ?: previousDefaultMsi.takeIf { it.exists() }
         ?: legacyDefaultMsi.takeIf { it.exists() }
         ?: legacyNamedMsi.takeIf { it.exists() }
         ?: finalMsi.takeIf { it.exists() }
