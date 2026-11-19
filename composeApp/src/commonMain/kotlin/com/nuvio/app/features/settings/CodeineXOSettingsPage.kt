@@ -105,25 +105,14 @@ internal fun LazyListScope.codeineXOSettingsContent(
     if (section == null) {
     item {
         val tokens = MaterialTheme.nuvio
-        val clipboardManager = LocalClipboardManager.current
+        val githubUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
         SettingsGroup(isTablet = isTablet) {
             SettingsNavigationRow(
-                title = "DM me on Discord @ codeine_xo to report issues",
-                description = null,
+                title = "Report an issue on GitHub",
+                description = "Opens nazirulhziq/NuvioDesktop issues",
                 icon = Icons.Rounded.Chat,
                 isTablet = isTablet,
-                trailingContent = {
-                    Icon(
-                        imageVector = Icons.Rounded.ContentCopy,
-                        contentDescription = "Copy Discord username",
-                        tint = tokens.colors.textMuted,
-                        modifier = Modifier.size(if (isTablet) 20.dp else 18.dp),
-                    )
-                },
-                onClick = {
-                    clipboardManager.setText(AnnotatedString("codeine_xo"))
-                    NuvioToastController.show("Copied @codeine_xo to clipboard")
-                },
+                onClick = { githubUriHandler.openUri("https://github.com/nazirulhziq/NuvioDesktop/issues") },
             )
         }
     }

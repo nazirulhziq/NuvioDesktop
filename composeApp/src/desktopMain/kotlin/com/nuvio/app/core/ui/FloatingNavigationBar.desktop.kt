@@ -24,7 +24,7 @@ internal actual fun FloatingNavigationBar(
         scrollState = scrollState,
         hazeState = hazeState,
         contentPadding = contentPadding,
-        navBarStyle = if (compactSize || scrollState?.labelVisibility == 0f) NavBarStyle.COMPACT else NavBarStyle.EXPANDED,
+        navBarStyle = if (compactSize || scrollState?.labelVisibility == 0f) NavBarStyle.COMPACT else NavBarStyle.ADAPTIVE,
         glowEnabled = glowEnabled,
     )
 }

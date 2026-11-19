@@ -4,6 +4,8 @@ import com.nuvio.app.core.ui.LocalFrostedGlassEnabled
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import com.nuvio.app.core.ui.collectIsRemoteHoveredAsState
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Casino
 import nuvio.composeapp.generated.resources.picker_title
@@ -204,6 +207,7 @@ internal fun MainTabsDestination(
                         onProfileSelected = onProfileSelected,
                         onAddProfileRequested = onAddProfileRequested,
                         hazeState = navBarHazeState,
+                        openPopupOnClick = true,
                         onPopupStateChanged = { isTopProfileSwitcherOpen = it },
                         avatarSize = if (isDesktop && screenWidth < 800.dp) 26 else if (isDesktop && screenWidth > 1600.dp) 30 else 28,
                         popupBelowAnchor = if (isDesktop) false else isTabletLayout,
@@ -223,12 +227,6 @@ internal fun MainTabsDestination(
                 label = stringResource(Res.string.compose_nav_search),
             ),
             FloatingNavigationItem(
-                selected = randomPickerSelected,
-                onClick = onRandomPickerClick,
-                icon = Icons.Filled.Casino,
-                label = stringResource(Res.string.picker_title),
-            ),
-            FloatingNavigationItem(
                 selected = !randomPickerSelected && selectedTab == AppScreenTab.LiveTv,
                 onClick = { onTabSelected(AppScreenTab.LiveTv) },
                 icon = Icons.Filled.LiveTv,
@@ -239,6 +237,12 @@ internal fun MainTabsDestination(
                 onClick = { onTabSelected(AppScreenTab.Library) },
                 drawable = Res.drawable.sidebar_library,
                 label = stringResource(Res.string.compose_nav_library),
+            ),
+            FloatingNavigationItem(
+                selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
+                onClick = { onTabSelected(AppScreenTab.Settings) },
+                icon = Icons.Filled.Settings,
+                label = stringResource(Res.string.compose_nav_settings),
             ),
         )
 
@@ -386,24 +390,55 @@ internal fun MainTabsDestination(
                 }
 
                 if (isDesktop && !useNativeBottomTabs) {
-                    androidx.compose.material3.Surface(
+                    val exitInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    val exitHovered by exitInteraction.collectIsHoveredAsState()
+                    val exitAlpha by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (exitHovered) 1f else 0.6f,
+                        animationSpec = androidx.compose.animation.core.tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        label = "exit_alpha",
+                    )
+                    androidx.compose.foundation.layout.Row(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(
                                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 10.dp,
                                 start = 16.dp,
-                            ),
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.35f),
-                        shadowElevation = 4.dp,
+                            )
+                            .hoverable(exitInteraction),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        androidx.compose.material3.IconButton(
-                            onClick = { com.nuvio.app.core.ui.requestAppExitConfirmation() },
+                        androidx.compose.material3.Surface(
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                            color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.30f * exitAlpha),
+                            shadowElevation = 4.dp,
                         ) {
-                            androidx.compose.material3.Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Rounded.PowerSettingsNew,
-                                contentDescription = "Exit Nuvio",
-                                tint = androidx.compose.ui.graphics.Color.White,
+                            androidx.compose.material3.IconButton(
+                                onClick = { com.nuvio.app.core.ui.requestAppExitConfirmation() },
+                            ) {
+                                androidx.compose.material3.Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Rounded.PowerSettingsNew,
+                                    contentDescription = "Shutdown",
+                                    tint = androidx.compose.ui.graphics.Color.White.copy(alpha = exitAlpha),
+                                )
+                            }
+                        }
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = exitHovered,
+                            enter = androidx.compose.animation.fadeIn(
+                                androidx.compose.animation.core.tween(220),
+                            ) + androidx.compose.animation.slideInHorizontally(
+                                animationSpec = androidx.compose.animation.core.tween(220),
+                                initialOffsetX = { -it / 2 },
+                            ),
+                            exit = androidx.compose.animation.fadeOut(
+                                androidx.compose.animation.core.tween(200),
+                            ),
+                        ) {
+                            androidx.compose.material3.Text(
+                                text = "Shutdown",
+                                color = androidx.compose.ui.graphics.Color.White,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(start = 10.dp),
                             )
                         }
                     }
@@ -414,7 +449,7 @@ internal fun MainTabsDestination(
                         modifier = Modifier.align(Alignment.BottomCenter),
                         scrollState = navBarScrollState,
                         hazeState = navBarHazeState,
-                        compactSize = true,
+                        compactSize = false,
                         items = floatingNavigationItems,
                         glowEnabled = navBarGlowEnabled,
                     )
