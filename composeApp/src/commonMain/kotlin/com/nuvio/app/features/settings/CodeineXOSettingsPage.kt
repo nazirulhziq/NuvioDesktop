@@ -89,7 +89,7 @@ internal fun LazyListScope.codeineXOSettingsContent(
             ) {
                 SettingsGroup(isTablet = isTablet) {
                     SettingsNavigationRow(
-                        title = "Revisit CodeineXO Onboarding",
+                        title = "Revisit Setup Wizard",
                         description = "Re-run setup wizard or review and apply recommended presets",
                         icon = Icons.Rounded.AutoAwesome,
                         isTablet = isTablet,
@@ -155,7 +155,7 @@ internal fun LazyListScope.codeineXOSettingsContent(
         ) {
             SettingsGroup(isTablet = isTablet) {
                 SettingsSwitchRow(
-                    title = "CodeineXO Aura",
+                    title = "Nuvio Aura",
                     description = "Dynamic chromatic aurora ambient background",
                     checked = auraBackgroundEnabled,
                     isTablet = isTablet,

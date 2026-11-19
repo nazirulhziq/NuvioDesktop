@@ -429,7 +429,7 @@ private fun WelcomeStepContent(
         }.collectAsStateWithLifecycle()
         Image(
             painter = painterResource(iconState.selected.transparentPreviewResource),
-            contentDescription = "NuvioCodeineXO logo",
+            contentDescription = "Nuvio logo",
             modifier = Modifier.size(112.dp),
         )
 
@@ -585,7 +585,7 @@ private fun RecommendedSetupStepContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "One-click activation for the definitive CodeineXO streaming configuration.",
+            text = "One-click activation for the definitive streaming configuration.",
             style = MaterialTheme.typography.bodyLarge,
             color = tokens.colors.textSecondary,
             textAlign = TextAlign.Center,
@@ -634,7 +634,7 @@ private fun RecommendedSetupStepContent(
                         }
                         Column {
                             Text(
-                                text = "Apply Recommended CodeineXO Setup",
+                                text = "Apply Recommended Setup",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = tokens.colors.textPrimary,
                                 fontWeight = FontWeight.Bold,
@@ -884,7 +884,7 @@ private fun ReadyStepContent(
             FeatureHighlightRow(
                 icon = Icons.Rounded.Settings,
                 title = "Settings Re-access",
-                subtitle = "Open Settings > CodeineXO or General anytime to launch this setup wizard again.",
+                subtitle = "Open Settings > Player or General anytime to launch this setup wizard again.",
             )
         }
 
@@ -1053,7 +1053,7 @@ private fun RecommendedPresetReviewDialog(
                             OnboardingSectionTitle("Appearance")
                             OnboardingSettingsGroup {
                                 SettingsSwitchRow(
-                                    title = "CodeineXO Aura",
+                                    title = "Nuvio Aura",
                                     description = "Dynamic chromatic aurora ambient lighting",
                                     checked = state.auraBackgroundEnabled,
                                     isTablet = false,

@@ -538,7 +538,7 @@
     <string name="compose_settings_page_addons">Addons</string>
     <string name="compose_settings_page_advanced">Advanced</string>
     <string name="compose_settings_page_appearance">Layout</string>
-    <string name="compose_settings_page_codeine_xo">CodeineXO</string>
+    <string name="compose_settings_page_codeine_xo">Player</string>
     <string name="compose_settings_page_remote">Remote</string>
     <string name="compose_settings_remote_connect">Scan with your phone camera while connected to the same Wi-Fi.</string>
     <string name="compose_settings_remote_copy_url">Copy Remote URL</string>
@@ -1326,7 +1326,7 @@
     <string name="settings_playback_player_ui">Player UI</string>
     <string name="settings_playback_player_ui_official">Official UI</string>
     <string name="settings_playback_player_ui_official_description">Original player interface.</string>
-    <string name="settings_playback_player_ui_codeinexo">CodeineXO UI</string>
+    <string name="settings_playback_player_ui_codeinexo">Enhanced Player UI</string>
     <string name="settings_playback_player_ui_codeinexo_description">Sleek player interface with bottom seekbar and quick controls.</string>
     <string name="settings_playback_show_seekbar_while_seeking">Show Seekbar While Seeking</string>
     <string name="settings_playback_show_seekbar_while_seeking_description">Display only the seekbar when seeking while player controls are hidden.</string>
@@ -2938,4 +2938,5 @@
     <string name="settings_playback_nvidia_rtx_hdr">NVIDIA RTX HDR</string>
     <string name="settings_playback_nvidia_rtx_hdr_desc">Use RTX HDR tone mapping when playing on a supported NVIDIA GPU.</string>
     <string name="compose_settings_page_live_tv">Live TV</string>
+    <string name="compose_nav_live_tv">Live TV</string>
 </resources>

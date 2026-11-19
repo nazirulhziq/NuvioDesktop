@@ -199,6 +199,16 @@ fun ProfileSwitcherTab(
         }
     }
 
+    // Gentle spring on the avatar while the switcher is open (tap feedback).
+    val profileAvatarPressScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (showPopup) 0.9f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+        ),
+        label = "profileAvatarPressScale",
+    )
+
     // Popup entrance/exit animation
     val popupAlpha = remember { Animatable(0f) }
     val popupScale = remember { Animatable(0.96f) }
@@ -273,12 +283,19 @@ fun ProfileSwitcherTab(
         if (triggerContent != null) {
             triggerContent(selected)
         } else {
-            ActiveProfileMiniAvatar(
-                profile = activeProfile,
-                avatars = avatars,
-                selected = selected,
-                size = avatarSize,
-            )
+            androidx.compose.foundation.layout.Box(
+                modifier = androidx.compose.ui.Modifier.graphicsLayer {
+                    scaleX = profileAvatarPressScale
+                    scaleY = profileAvatarPressScale
+                },
+            ) {
+                ActiveProfileMiniAvatar(
+                    profile = activeProfile,
+                    avatars = avatars,
+                    selected = selected,
+                    size = avatarSize,
+                )
+            }
         }
 
         // Floating profile popup (stays composed during exit animation)

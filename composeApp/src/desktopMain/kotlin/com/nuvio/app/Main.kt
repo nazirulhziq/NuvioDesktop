@@ -1,5 +1,7 @@
 package com.nuvio.app
 
+import com.nuvio.app.core.ui.LocalAppExitRequest
+
 import com.nuvio.app.features.autosync.AutoSyncPreferencesDesktop
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import org.jetbrains.compose.resources.painterResource
+import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
@@ -266,6 +269,7 @@ fun main(args: Array<String>) {
 
             if (smokePlayerUrl == null) {
                 CompositionLocalProvider(
+                    LocalAppExitRequest provides { exitApplication() },
                     LocalAuroraRenderer provides { background, colors, intensity ->
                         rememberDesktopAuroraRenderer(window, background, colors, intensity)
                     },

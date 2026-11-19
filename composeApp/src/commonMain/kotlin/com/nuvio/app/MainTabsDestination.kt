@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Casino
 import nuvio.composeapp.generated.resources.picker_title
 import androidx.compose.material3.Scaffold
@@ -76,6 +78,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.compose_nav_library
+import nuvio.composeapp.generated.resources.compose_nav_live_tv
 import nuvio.composeapp.generated.resources.compose_nav_profile
 import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.compose_nav_settings
@@ -115,11 +118,9 @@ internal fun MainTabsDestination(
         } else {
             liquidGlassNativeTabBarSupported && liquidGlassNativeTabBarEnabled && initialHomeReady
         }
-        val useDesktopSidebar = isDesktop &&
-            isTabletLayout &&
-            !useNativeBottomTabs &&
-            desktopNavigationLayout == DesktopNavigationLayout.Sidebar
-        val useDesktopTopBar = isDesktop && !useNativeBottomTabs && !useDesktopSidebar
+        val useDesktopSidebar = false
+        val useDesktopTopBar = false
+        val useDesktopBottomDock = isDesktop && !useNativeBottomTabs
         val useFloatingTopBar = !isDesktop && isTabletLayout && !useNativeBottomTabs
         val homeCatalogSettingsUiState by remember { HomeCatalogSettingsRepository.uiState }.collectAsStateWithLifecycle()
         val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -192,6 +193,23 @@ internal fun MainTabsDestination(
         var isTopProfileSwitcherOpen by remember { mutableStateOf(false) }
         val floatingNavigationItems = listOf(
             FloatingNavigationItem(
+                selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
+                onClick = { onTabSelected(AppScreenTab.Settings) },
+                label = stringResource(if (isDesktop) Res.string.compose_nav_settings else Res.string.compose_nav_profile),
+                content = { onClick ->
+                    ProfileSwitcherTab(
+                        selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
+                        onClick = onClick,
+                        onProfileSelected = onProfileSelected,
+                        onAddProfileRequested = onAddProfileRequested,
+                        hazeState = navBarHazeState,
+                        onPopupStateChanged = { isTopProfileSwitcherOpen = it },
+                        avatarSize = if (isDesktop && screenWidth < 800.dp) 26 else if (isDesktop && screenWidth > 1600.dp) 30 else 28,
+                        popupBelowAnchor = isDesktop || isTabletLayout,
+                    )
+                },
+            ),
+            FloatingNavigationItem(
                 selected = !randomPickerSelected && selectedTab == AppScreenTab.Home,
                 onClick = { onTabSelected(AppScreenTab.Home) },
                 icon = Icons.Filled.Home,
@@ -210,27 +228,16 @@ internal fun MainTabsDestination(
                 label = stringResource(Res.string.picker_title),
             ),
             FloatingNavigationItem(
+                selected = !randomPickerSelected && selectedTab == AppScreenTab.LiveTv,
+                onClick = { onTabSelected(AppScreenTab.LiveTv) },
+                icon = Icons.Filled.LiveTv,
+                label = stringResource(Res.string.compose_nav_live_tv),
+            ),
+            FloatingNavigationItem(
                 selected = !randomPickerSelected && selectedTab == AppScreenTab.Library,
                 onClick = { onTabSelected(AppScreenTab.Library) },
                 drawable = Res.drawable.sidebar_library,
                 label = stringResource(Res.string.compose_nav_library),
-            ),
-            FloatingNavigationItem(
-                selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
-                onClick = { onTabSelected(AppScreenTab.Settings) },
-                label = stringResource(if (isDesktop) Res.string.compose_nav_settings else Res.string.compose_nav_profile),
-                content = { onClick ->
-                    ProfileSwitcherTab(
-                        selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
-                        onClick = onClick,
-                        onProfileSelected = onProfileSelected,
-                        onAddProfileRequested = onAddProfileRequested,
-                        hazeState = navBarHazeState,
-                        onPopupStateChanged = { isTopProfileSwitcherOpen = it },
-                        avatarSize = if (isDesktop && screenWidth < 800.dp) 26 else if (isDesktop && screenWidth > 1600.dp) 30 else 28,
-                        popupBelowAnchor = isDesktop || isTabletLayout,
-                    )
-                },
             ),
         )
 
@@ -374,6 +381,40 @@ internal fun MainTabsDestination(
                         glowEnabled = navBarGlowEnabled,
                         keepTransparentOnScroll = !randomPickerSelected &&
                             homeCatalogSettingsUiState.appInterface == AppInterface.PersistentHero,
+                    )
+                }
+
+                val exitRequest = com.nuvio.app.core.ui.LocalAppExitRequest.current
+                if (exitRequest != null) {
+                    androidx.compose.material3.Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(
+                                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 10.dp,
+                                end = 16.dp,
+                            ),
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f),
+                        shadowElevation = 6.dp,
+                    ) {
+                        androidx.compose.material3.IconButton(onClick = exitRequest) {
+                            androidx.compose.material3.Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Filled.Close,
+                                contentDescription = "Exit Nuvio",
+                                tint = androidx.compose.ui.graphics.Color.White,
+                            )
+                        }
+                    }
+                }
+
+                if (useDesktopBottomDock) {
+                    FloatingNavigationBar(
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        scrollState = navBarScrollState,
+                        hazeState = navBarHazeState,
+                        compactSize = true,
+                        items = floatingNavigationItems,
+                        glowEnabled = navBarGlowEnabled,
                     )
                 }
 

@@ -2595,6 +2595,26 @@ const resetSubtitleSelectionState = () => {
   pendingSubtitleOptionId = String(state.selectedSubtitleOptionId || (selected ? selected.id : ""));
 };
 
+const LANGUAGE_FLAG_EMOJI = {
+  en: "\u{1F1EC}\u{1F1E7}", ms: "\u{1F1F2}\u{1F1FE}", id: "\u{1F1EE}\u{1F1E9}", zh: "\u{1F1E8}\u{1F1F3}",
+  ja: "\u{1F1EF}\u{1F1F5}", ko: "\u{1F1F0}\u{1F1F7}", ar: "\u{1F1F8}\u{1F1E6}", hi: "\u{1F1EE}\u{1F1F3}",
+  es: "\u{1F1EA}\u{1F1F8}", fr: "\u{1F1EB}\u{1F1F7}", de: "\u{1F1E9}\u{1F1EA}", it: "\u{1F1EE}\u{1F1F9}",
+  pt: "\u{1F1F5}\u{1F1F9}", "pt-br": "\u{1F1E7}\u{1F1F7}", ru: "\u{1F1F7}\u{1F1FA}", th: "\u{1F1F9}\u{1F1ED}",
+  vi: "\u{1F1FB}\u{1F1F3}", tr: "\u{1F1F9}\u{1F1F7}", nl: "\u{1F1F3}\u{1F1F1}", pl: "\u{1F1F5}\u{1F1F1}",
+  sv: "\u{1F1F8}\u{1F1EA}", da: "\u{1F1E9}\u{1F1F0}", no: "\u{1F1F3}\u{1F1F4}", fi: "\u{1F1EB}\u{1F1EE}",
+  he: "\u{1F1EE}\u{1F1F1}", uk: "\u{1F1FA}\u{1F1E6}", cs: "\u{1F1E8}\u{1F1FF}", el: "\u{1F1EC}\u{1F1F7}",
+  ro: "\u{1F1F7}\u{1F1F4}", hu: "\u{1F1ED}\u{1F1FA}", fa: "\u{1F1EE}\u{1F1F7}", bn: "\u{1F1E7}\u{1F1E9}",
+  ta: "\u{1F1F1}\u{1F1F0}", te: "\u{1F1EE}\u{1F1F3}", ml: "\u{1F1F2}\u{1F1FE}", fil: "\u{1F1F5}\u{1F1ED}",
+  tl: "\u{1F1F5}\u{1F1ED}", sw: "\u{1F1F0}\u{1F1EA}", af: "\u{1F1FF}\u{1F1E6}", sr: "\u{1F1F7}\u{1F1F8}",
+  hr: "\u{1F1ED}\u{1F1F7}", bg: "\u{1F1E7}\u{1F1EC}", sk: "\u{1F1F8}\u{1F1F0}", sl: "\u{1F1F8}\u{1F1EE}",
+  lt: "\u{1F1F1}\u{1F1F9}", lv: "\u{1F1F1}\u{1F1FB}", et: "\u{1F1EA}\u{1F1EA}", ca: "\u{1F1EA}\u{1F1F8}",
+};
+const languageFlagEmoji = key => {
+  const normalized = String(key || "").toLowerCase();
+  if (!normalized || normalized.startsWith("__")) return "";
+  return LANGUAGE_FLAG_EMOJI[normalized] || LANGUAGE_FLAG_EMOJI[normalized.split("-")[0]] || "";
+};
+
 const appendSubtitleLanguageRow = item => {
   const row = document.createElement("button");
   row.type = "button";
@@ -2617,7 +2637,8 @@ const appendSubtitleLanguageRow = item => {
   });
   const label = document.createElement("span");
   label.className = "track-label";
-  label.textContent = item.label;
+  const flag = languageFlagEmoji(item.key);
+  label.textContent = flag ? `${flag}  ${item.label}` : item.label;
   row.appendChild(label);
   if (item.count > 0) {
     const count = document.createElement("span");
