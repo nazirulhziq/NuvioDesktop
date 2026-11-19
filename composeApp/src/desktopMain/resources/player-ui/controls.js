@@ -2615,6 +2615,28 @@ const languageFlagEmoji = key => {
   return LANGUAGE_FLAG_EMOJI[normalized] || LANGUAGE_FLAG_EMOJI[normalized.split("-")[0]] || "";
 };
 
+const LANGUAGE_NAME_FLAGS = {
+  english: "gb", british: "gb", american: "us", malay: "my", "bahasa melayu": "my", malaysian: "my",
+  indonesian: "id", "bahasa indonesia": "id", chinese: "cn", mandarin: "cn", cantonese: "hk",
+  japanese: "jp", korean: "kr", arabic: "sa", hindi: "in", tamil: "in", telugu: "in", malayalam: "in",
+  spanish: "es", french: "fr", german: "de", italian: "it", portuguese: "pt", "brazilian portuguese": "br",
+  russian: "ru", thai: "th", vietnamese: "vn", turkish: "tr", dutch: "nl", polish: "pl", swedish: "se",
+  danish: "dk", norwegian: "no", finnish: "fi", hebrew: "il", ukrainian: "ua", czech: "cz", greek: "gr",
+  romanian: "ro", hungarian: "hu", persian: "ir", farsi: "ir", bengali: "bd", filipino: "ph", tagalog: "ph",
+  swahili: "ke", afrikaans: "za", serbian: "rs", croatian: "hr", bulgarian: "bg", slovak: "sk",
+  slovenian: "si", lithuanian: "lt", latvian: "lv", estonian: "ee", catalan: "es", icelandic: "is",
+};
+const languageFlagCode = (key, label) => {
+  const rawKey = String(key || "").toLowerCase().trim();
+  const rawLabel = String(label || "").toLowerCase().trim();
+  if (rawKey && !rawKey.startsWith("__")) {
+    if (/^[a-z]{2}$/.test(rawKey)) return rawKey === "en" ? "gb" : rawKey;
+    if (/^[a-z]{2}-[a-z]{2}$/.test(rawKey)) return rawKey.split("-")[1];
+    if (LANGUAGE_NAME_FLAGS[rawKey]) return LANGUAGE_NAME_FLAGS[rawKey];
+  }
+  return LANGUAGE_NAME_FLAGS[rawLabel] || "";
+};
+
 const appendSubtitleLanguageRow = item => {
   const row = document.createElement("button");
   row.type = "button";
@@ -2637,8 +2659,20 @@ const appendSubtitleLanguageRow = item => {
   });
   const label = document.createElement("span");
   label.className = "track-label";
-  const flag = languageFlagEmoji(item.key);
-  label.textContent = flag ? `${flag}  ${item.label}` : item.label;
+  const flagCode = languageFlagCode(item.key, item.label);
+  if (flagCode) {
+    const flagImage = document.createElement("img");
+    flagImage.className = "track-flag";
+    flagImage.src = `https://flagcdn.com/24x18/${flagCode}.png`;
+    flagImage.alt = "";
+    flagImage.loading = "lazy";
+    flagImage.addEventListener("error", () => flagImage.remove());
+    label.appendChild(flagImage);
+  }
+  const labelText = document.createElement("span");
+  labelText.className = "track-label-text";
+  labelText.textContent = item.label;
+  label.appendChild(labelText);
   row.appendChild(label);
   if (item.count > 0) {
     const count = document.createElement("span");

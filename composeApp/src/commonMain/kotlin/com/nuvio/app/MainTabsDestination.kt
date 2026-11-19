@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LiveTv
@@ -205,7 +206,7 @@ internal fun MainTabsDestination(
                         hazeState = navBarHazeState,
                         onPopupStateChanged = { isTopProfileSwitcherOpen = it },
                         avatarSize = if (isDesktop && screenWidth < 800.dp) 26 else if (isDesktop && screenWidth > 1600.dp) 30 else 28,
-                        popupBelowAnchor = isDesktop || isTabletLayout,
+                        popupBelowAnchor = if (isDesktop) false else isTabletLayout,
                     )
                 },
             ),
@@ -384,22 +385,23 @@ internal fun MainTabsDestination(
                     )
                 }
 
-                val exitRequest = com.nuvio.app.core.ui.LocalAppExitRequest.current
-                if (exitRequest != null) {
+                if (isDesktop && !useNativeBottomTabs) {
                     androidx.compose.material3.Surface(
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
+                            .align(Alignment.TopStart)
                             .padding(
                                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 10.dp,
-                                end = 16.dp,
+                                start = 16.dp,
                             ),
                         shape = androidx.compose.foundation.shape.CircleShape,
-                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f),
-                        shadowElevation = 6.dp,
+                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.35f),
+                        shadowElevation = 4.dp,
                     ) {
-                        androidx.compose.material3.IconButton(onClick = exitRequest) {
+                        androidx.compose.material3.IconButton(
+                            onClick = { com.nuvio.app.core.ui.requestAppExitConfirmation() },
+                        ) {
                             androidx.compose.material3.Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Filled.Close,
+                                imageVector = androidx.compose.material.icons.Icons.Rounded.PowerSettingsNew,
                                 contentDescription = "Exit Nuvio",
                                 tint = androidx.compose.ui.graphics.Color.White,
                             )

@@ -1600,12 +1600,8 @@ internal fun MainAppContent(
             } else {
                 liquidGlassNativeTabBarSupported && liquidGlassNativeTabBarEnabled && initialHomeReady
             }
-            val useDesktopSidebar = isDesktop &&
-                isTabletLayout &&
-                !useNativeBottomTabs &&
-                desktopNavigationLayout == DesktopNavigationLayout.Sidebar &&
-                currentRoute !is PlayerRoute &&
-                currentRoute !is OnboardingRoute
+            // Sidebar removed: navigation lives in the floating bottom dock.
+            val useDesktopSidebar = false
             val isSubpage = currentRoute != null && currentRoute !is TabsRoute && currentRoute !is PlayerRoute && currentRoute !is OnboardingRoute
 
             val navBarStyleSetting by remember { ThemeSettingsRepository.navBarStyle }.collectAsStateWithLifecycle()

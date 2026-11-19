@@ -70,7 +70,7 @@ internal fun AppBrandWordmark(
         }
         Spacer(modifier = Modifier.width(12.dp))
         Text(
-            text = "NuvioCodeineXO",
+            text = "Nuvio",
             style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.Bold,
                 fontSize = 24.sp,
