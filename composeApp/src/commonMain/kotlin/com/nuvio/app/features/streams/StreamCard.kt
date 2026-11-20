@@ -421,3 +421,37 @@ private fun StreamItem.instantServiceLabel(): String? {
         .ifBlank { DebridProviders.displayName(status.providerId) }
     return "- $providerLabel Instant"
 }
+
+private val StreamLanguageCodePattern = Regex("^[A-Za-z]{2}(?:\\s*[/,|·]\\s*[A-Za-z]{2})*$")
+
+/** Returns country codes when the line is nothing but language codes ("GB / PL", "GB/IT"). */
+internal fun parseStreamLanguageCodes(text: String): List<String>? {
+    val trimmed = text.trim()
+    if (!StreamLanguageCodePattern.matches(trimmed)) return null
+    return trimmed.split('/', ',', '|', '·')
+        .map { it.trim().lowercase() }
+        .filter { it.length == 2 }
+        .distinct()
+        .takeIf { it.isNotEmpty() }
+}
+
+@Composable
+internal fun StreamLanguageFlags(codes: List<String>, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        codes.forEach { code ->
+            AsyncImage(
+                model = "https://flagcdn.com/24x18/" + code + ".png",
+                contentDescription = code.uppercase(),
+                modifier = Modifier
+                    .width(18.dp)
+                    .height(13.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
