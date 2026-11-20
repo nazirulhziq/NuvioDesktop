@@ -9,6 +9,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.nuvio.app.core.ui.collectIsRemoteHoveredAsState
 import androidx.compose.foundation.layout.Box
@@ -55,6 +56,10 @@ internal fun DesktopNavigationBar(
     if (items.isEmpty()) return
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsRemoteHoveredAsState()
+    // Mouse hover must drive the expansion even when the remote-navigation session
+    // has marked the cursor as hidden; otherwise the dock only opens on scroll/click.
+    val isPointerHovered by interactionSource.collectIsHoveredAsState()
+    val isAnyHovered = isHovered || isPointerHovered
     val isHomeSelected = items.first().selected
     val isSettingsSelected = items.last().selected
     val isScrolledAwayFromTop by remember(scrollState, isSettingsSelected) {
@@ -62,11 +67,11 @@ internal fun DesktopNavigationBar(
             (scrollState?.totalScrollOffset ?: 0f) > if (isSettingsSelected) 70f else 35f
         }
     }
-    val isFrosted = isHovered || profileSwitcherOpen ||
+    val isFrosted = isAnyHovered || profileSwitcherOpen ||
         ((isHomeSelected || isSettingsSelected) && isScrolledAwayFromTop &&
             !(isHomeSelected && keepTransparentOnScroll))
     val labelFraction by animateFloatAsState(
-        targetValue = desktopNavigationLabelFraction(navBarStyle, isHomeSelected, isHeroEnabled, isHovered, profileSwitcherOpen, isScrolledAwayFromTop),
+        targetValue = desktopNavigationLabelFraction(navBarStyle, isHomeSelected, isHeroEnabled, isAnyHovered, profileSwitcherOpen, isScrolledAwayFromTop),
         animationSpec = tween(320, easing = FastOutSlowInEasing),
         label = "desktop_nav_labels",
     )

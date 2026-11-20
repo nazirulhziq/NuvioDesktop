@@ -766,8 +766,8 @@ internal fun AppLoadingContent(
     val flight by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (settled) 1f else 0f,
         animationSpec = androidx.compose.animation.core.tween(
-            durationMillis = 900,
-            delayMillis = 550,
+            durationMillis = 1600,
+            delayMillis = 900,
             easing = androidx.compose.animation.core.FastOutSlowInEasing,
         ),
         label = "profile_load_flight",
