@@ -845,6 +845,7 @@ private fun MobileSettingsScreen(
                     onPluginsClick = onPluginsClick,
                     onMediaServersClick = { onPageChange(SettingsPage.MediaServers) },
                 )
+                SettingsPage.WatchStats -> watchStatsContent(isTablet = false)
                 SettingsPage.LiveTv -> liveTvSettingsContent(
                     isTablet = false,
                     uiState = com.nuvio.app.features.livetv.LiveTvRepository.uiState.value,
@@ -1271,6 +1272,7 @@ private fun TabletSettingsScreen(
                                     onPluginsClick = { openInlinePage(SettingsPage.Plugins) },
                                     onMediaServersClick = { openInlinePage(SettingsPage.MediaServers) },
                                 )
+                        SettingsPage.WatchStats -> watchStatsContent(isTablet = true)
                         SettingsPage.LiveTv -> liveTvSettingsContent(
                             isTablet = true,
                             uiState = com.nuvio.app.features.livetv.LiveTvRepository.uiState.value,

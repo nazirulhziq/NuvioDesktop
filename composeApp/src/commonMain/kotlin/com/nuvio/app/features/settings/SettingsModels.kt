@@ -235,6 +235,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.Watch,
         parentPage = ContentDiscovery,
     ),
+    WatchStats(
+        titleRes = Res.string.compose_settings_page_watch_stats,
+        category = SettingsCategory.Watch,
+        parentPage = Root,
+    ),
     LiveTv(
         titleRes = Res.string.compose_settings_page_live_tv,
         category = SettingsCategory.Watch,
@@ -314,6 +319,7 @@ internal val SettingsPage.icon: ImageVector
         SettingsPage.PosterCustomization -> Icons.Default.RoundedCorner
         SettingsPage.ContentDiscovery -> Icons.Default.Explore
         SettingsPage.Addons -> Icons.Default.Extension
+        SettingsPage.WatchStats -> Icons.Default.BarChart
         SettingsPage.LiveTv -> Icons.Default.LiveTv
         SettingsPage.Plugins -> Icons.Default.Power
         SettingsPage.MediaServers -> Icons.Default.Dns

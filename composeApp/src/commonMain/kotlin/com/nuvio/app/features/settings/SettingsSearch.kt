@@ -557,6 +557,12 @@ internal fun settingsSearchEntries(
         ),
     )
     addPage(
+        page = SettingsPage.WatchStats,
+        key = "watch-stats",
+        title = stringResource(Res.string.compose_settings_page_watch_stats),
+        description = "Titles watched, progress and total watch time",
+    )
+    addPage(
         page = SettingsPage.LiveTv,
         key = "live-tv",
         title = stringResource(Res.string.compose_settings_page_live_tv),

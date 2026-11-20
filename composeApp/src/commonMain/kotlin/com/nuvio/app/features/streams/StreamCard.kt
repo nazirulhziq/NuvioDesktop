@@ -225,18 +225,22 @@ internal fun StreamCard(
             val subtitle = stream.streamSubtitle
             if (!subtitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
-                val languageCodes = parseStreamLanguageCodes(subtitle)
-                if (languageCodes != null) {
-                    StreamLanguageFlags(codes = languageCodes, modifier = Modifier.height(14.dp))
-                } else {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            lineHeight = 18.sp,
-                        ),
-                        color = detailColor,
-                    )
+                val subtitleStyle = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                )
+                androidx.compose.foundation.layout.Column {
+                    subtitle.split('\n').forEach { line ->
+                        val languageCodes = parseStreamLanguageCodes(line)
+                        if (languageCodes != null) {
+                            StreamLanguageFlags(
+                                codes = languageCodes,
+                                modifier = Modifier.padding(top = 1.dp, bottom = 1.dp),
+                            )
+                        } else if (line.isNotBlank()) {
+                            Text(text = line, style = subtitleStyle, color = detailColor)
+                        }
+                    }
                 }
             }
 

@@ -92,6 +92,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -751,8 +752,25 @@ private fun TabletTopPillItem(
 @Composable
 internal fun AppLoadingContent(
     modifier: Modifier = Modifier,
+    profile: NuvioProfile? = null,
 ) {
     val tokens = MaterialTheme.nuvio
+    val avatars by com.nuvio.app.features.profiles.AvatarRepository.avatars.collectAsStateWithLifecycle()
+    var settled by remember(profile?.profileIndex) { mutableStateOf(false) }
+    LaunchedEffect(profile?.profileIndex) {
+        settled = false
+        kotlinx.coroutines.delay(120)
+        settled = true
+    }
+    val flight by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (settled) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 900,
+            delayMillis = 550,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        ),
+        label = "profile_load_flight",
+    )
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center,
@@ -760,10 +778,29 @@ internal fun AppLoadingContent(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AppBrandWordmark(
-                contentDescription = stringResource(Res.string.app_brand_name),
-                modifier = Modifier.height(48.dp),
-            )
+            if (profile != null) {
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier.graphicsLayer {
+                        translationX = 180.dp.toPx() * flight
+                        translationY = 260.dp.toPx() * flight
+                        scaleX = 1f - 0.62f * flight
+                        scaleY = 1f - 0.62f * flight
+                        alpha = 1f - 0.85f * flight
+                    },
+                ) {
+                    com.nuvio.app.features.profiles.ActiveProfileMiniAvatar(
+                        profile = profile,
+                        avatars = avatars,
+                        selected = true,
+                        size = 96,
+                    )
+                }
+            } else {
+                AppBrandWordmark(
+                    contentDescription = stringResource(Res.string.app_brand_name),
+                    modifier = Modifier.height(48.dp),
+                )
+            }
             Spacer(modifier = Modifier.height(tokens.spacing.sectionGap))
             NuvioLoadingIndicator()
         }
@@ -782,7 +819,7 @@ internal fun AppLaunchOverlay(
             profile = profile,
             modifier = Modifier.fillMaxSize(),
         )
-        AppLoadingContent(modifier = Modifier.fillMaxSize())
+        AppLoadingContent(modifier = Modifier.fillMaxSize(), profile = profile)
     }
 }
 

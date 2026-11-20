@@ -2939,4 +2939,5 @@
     <string name="settings_playback_nvidia_rtx_hdr_desc">Use RTX HDR tone mapping when playing on a supported NVIDIA GPU.</string>
     <string name="compose_settings_page_live_tv">Live TV</string>
     <string name="compose_nav_live_tv">Live TV</string>
+    <string name="compose_settings_page_watch_stats">Watch statistics</string>
 </resources>

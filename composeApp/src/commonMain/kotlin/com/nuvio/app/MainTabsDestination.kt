@@ -197,24 +197,6 @@ internal fun MainTabsDestination(
         var isTopProfileSwitcherOpen by remember { mutableStateOf(false) }
         val floatingNavigationItems = listOf(
             FloatingNavigationItem(
-                selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
-                onClick = { onTabSelected(AppScreenTab.Settings) },
-                label = stringResource(if (isDesktop) Res.string.compose_nav_settings else Res.string.compose_nav_profile),
-                content = { onClick ->
-                    ProfileSwitcherTab(
-                        selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
-                        onClick = onClick,
-                        onProfileSelected = onProfileSelected,
-                        onAddProfileRequested = onAddProfileRequested,
-                        hazeState = navBarHazeState,
-                        openPopupOnClick = true,
-                        onPopupStateChanged = { isTopProfileSwitcherOpen = it },
-                        avatarSize = if (isDesktop && screenWidth < 800.dp) 26 else if (isDesktop && screenWidth > 1600.dp) 30 else 28,
-                        popupBelowAnchor = if (isDesktop) false else isTabletLayout,
-                    )
-                },
-            ),
-            FloatingNavigationItem(
                 selected = !randomPickerSelected && selectedTab == AppScreenTab.Home,
                 onClick = { onTabSelected(AppScreenTab.Home) },
                 icon = Icons.Filled.Home,
@@ -237,6 +219,24 @@ internal fun MainTabsDestination(
                 onClick = { onTabSelected(AppScreenTab.Library) },
                 drawable = Res.drawable.sidebar_library,
                 label = stringResource(Res.string.compose_nav_library),
+            ),
+            FloatingNavigationItem(
+                selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
+                onClick = { onTabSelected(AppScreenTab.Settings) },
+                label = stringResource(if (isDesktop) Res.string.compose_nav_settings else Res.string.compose_nav_profile),
+                content = { onClick ->
+                    ProfileSwitcherTab(
+                        selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
+                        onClick = onClick,
+                        onProfileSelected = onProfileSelected,
+                        onAddProfileRequested = onAddProfileRequested,
+                        hazeState = navBarHazeState,
+                        openPopupOnClick = true,
+                        onPopupStateChanged = { isTopProfileSwitcherOpen = it },
+                        avatarSize = if (isDesktop && screenWidth < 800.dp) 26 else if (isDesktop && screenWidth > 1600.dp) 30 else 28,
+                        popupBelowAnchor = if (isDesktop) false else isTabletLayout,
+                    )
+                },
             ),
         )
 

@@ -24,6 +24,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -887,10 +888,10 @@ fun NativeProfileSwitcherPopup(
                             .padding(tokens.spacing.sheetPadding),
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(tokens.spacing.cardPadding),
-                                verticalAlignment = Alignment.Top,
+                            Column(
+                                modifier = Modifier.verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(tokens.spacing.cardPadding),
+                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 profiles.forEachIndexed { index, profile ->
                                     PopupProfileBubble(
