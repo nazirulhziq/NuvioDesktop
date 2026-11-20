@@ -27,7 +27,7 @@ import nuvio.composeapp.generated.resources.updates_debug_test_title
 import org.jetbrains.compose.resources.stringResource
 
 private const val PRIVACY_POLICY_URL = "https://nuvio.tv/privacy-policy"
-private const val GITHUB_REPO_URL = "https://github.com/codeineXO/NuvioCodeineXO"
+private const val GITHUB_REPO_URL = "https://github.com/nazirulhziq/NuvioDesktopEnhanced"
 
 internal fun LazyListScope.aboutSettingsContent(
     isTablet: Boolean,

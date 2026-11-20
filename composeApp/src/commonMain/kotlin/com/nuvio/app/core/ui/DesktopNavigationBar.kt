@@ -76,7 +76,7 @@ internal fun DesktopNavigationBar(
         label = "glass_elevation",
     )
     val surfaceColor by animateColorAsState(
-        targetValue = if (isFrosted) FrostedGlassTokens.TintColor else Color.White.copy(alpha = 0.04f),
+        targetValue = if (isFrosted) Color(0xE6141418) else Color.Black.copy(alpha = 0.72f),
         animationSpec = tween(320, easing = FastOutSlowInEasing),
         label = "desktop_nav_surface",
     )

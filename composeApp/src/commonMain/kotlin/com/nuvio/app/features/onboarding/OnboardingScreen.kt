@@ -436,7 +436,7 @@ private fun WelcomeStepContent(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Welcome to NuvioCodeineXO",
+            text = "Welcome to Nuvio Desktop Enhanced",
             style = MaterialTheme.typography.headlineLarge,
             color = tokens.colors.textPrimary,
             fontWeight = FontWeight.Bold,

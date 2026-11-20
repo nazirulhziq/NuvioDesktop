@@ -112,11 +112,11 @@ internal object DiscordPresenceManager {
     }
 }
 
-private const val AppActivityName = "NuvioCodeineXO"
+private const val AppActivityName = "Nuvio Desktop Enhanced"
 private const val StatusDisplayTypeDetails = 2
-private const val ForkDownloadUrl = "https://github.com/codeineXO/NuvioCodeineXO"
+private const val ForkDownloadUrl = "https://github.com/nazirulhziq/NuvioDesktopEnhanced"
 private const val DefaultAppIconUrl =
-    "https://raw.githubusercontent.com/codeineXO/NuvioCodeineXO/main/composeApp/src/commonMain/composeResources/drawable/app_icon_original_transparent.png?v=2"
+    "https://github.com/nazirulhziq/NuvioDesktopEnhanced/raw/main/composeApp/src/commonMain/composeResources/drawable/app_icon_original_transparent.png"
 private const val MaxPosterUrlLength = 400
 private const val ProxyContainWidth = 512
 private const val ProxyContainHeight = 512

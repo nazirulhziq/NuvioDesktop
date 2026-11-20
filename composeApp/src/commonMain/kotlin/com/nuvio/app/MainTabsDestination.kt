@@ -238,12 +238,6 @@ internal fun MainTabsDestination(
                 drawable = Res.drawable.sidebar_library,
                 label = stringResource(Res.string.compose_nav_library),
             ),
-            FloatingNavigationItem(
-                selected = !randomPickerSelected && selectedTab == AppScreenTab.Settings,
-                onClick = { onTabSelected(AppScreenTab.Settings) },
-                icon = Icons.Filled.Settings,
-                label = stringResource(Res.string.compose_nav_settings),
-            ),
         )
 
         Scaffold(
