@@ -47,6 +47,16 @@ jobs:
           NUVIO_SUPABASE_FALLBACK_URL=https://api-two.nuvioapp.space
           PROPS
 
+      - name: Install appimagetool
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sL -o /tmp/appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x /tmp/appimagetool
+          # No FUSE on the runner: unpack and use its AppRun.
+          cd /tmp && /tmp/appimagetool --appimage-extract >/dev/null
+          echo "APPIMAGETOOL=/tmp/squashfs-root/AppRun" >> "$GITHUB_ENV"
+
       - name: Build Linux packages
         shell: bash
         run: |
@@ -58,6 +68,7 @@ jobs:
             --no-configuration-cache --no-daemon --stacktrace
           ./gradlew :composeApp:packageReleaseAppImage \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
+            -Pnuvio.appimagetool.path="${APPIMAGETOOL}" \
             --no-configuration-cache --no-daemon --stacktrace
 
       - name: List outputs
