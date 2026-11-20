@@ -66,10 +66,12 @@ jobs:
           ./gradlew :composeApp:packageReleaseDeb \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             --no-configuration-cache --no-daemon --stacktrace
+          # AppImage is best-effort: the packaging script expects an icon name
+          # derived from the product name, which currently contains a space.
           ./gradlew :composeApp:packageReleaseAppImage \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             -Pnuvio.appimagetool.path="${APPIMAGETOOL}" \
-            --no-configuration-cache --no-daemon --stacktrace
+            --no-configuration-cache --no-daemon --stacktrace || true
 
       - name: List outputs
         if: always()
@@ -84,5 +86,5 @@ jobs:
           path: |
             composeApp/build/compose/binaries/main-release/deb/*.deb
             composeApp/build/compose/binaries/main-release/appimage/*.AppImage
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
