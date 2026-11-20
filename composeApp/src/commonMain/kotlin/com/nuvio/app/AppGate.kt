@@ -690,7 +690,10 @@ internal fun AppGate(
                     exit = fadeOut(tween(180)),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    AppLoadingContent(modifier = Modifier.fillMaxSize())
+                    AppLoadingContent(
+                        modifier = Modifier.fillMaxSize(),
+                        profile = switchingProfile ?: profileState.activeProfile,
+                    )
                 }
             }
         }

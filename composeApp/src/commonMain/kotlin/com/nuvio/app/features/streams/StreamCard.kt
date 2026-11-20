@@ -225,23 +225,11 @@ internal fun StreamCard(
             val subtitle = stream.streamSubtitle
             if (!subtitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
-                val subtitleStyle = MaterialTheme.typography.bodySmall.copy(
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp,
+                StreamSubtitleText(
+                    subtitle = subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp),
+                    color = detailColor,
                 )
-                androidx.compose.foundation.layout.Column {
-                    subtitle.split('\n').forEach { line ->
-                        val languageCodes = parseStreamLanguageCodes(line)
-                        if (languageCodes != null) {
-                            StreamLanguageFlags(
-                                codes = languageCodes,
-                                modifier = Modifier.padding(top = 1.dp, bottom = 1.dp),
-                            )
-                        } else if (line.isNotBlank()) {
-                            Text(text = line, style = subtitleStyle, color = detailColor)
-                        }
-                    }
-                }
             }
 
             if (hasBadges && badgePlacement == StreamBadgePlacement.BOTTOM) {
@@ -456,6 +444,39 @@ internal fun StreamLanguageFlags(codes: List<String>, modifier: Modifier = Modif
                     .clip(RoundedCornerShape(2.dp)),
                 contentScale = ContentScale.Crop,
             )
+        }
+    }
+}
+
+private val StreamLanguageRunRegex = Regex("([A-Za-z]{2}(?:\\s*[/|,]\\s*[A-Za-z]{2})+)")
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun StreamSubtitleText(
+    subtitle: String,
+    style: androidx.compose.ui.text.TextStyle,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    androidx.compose.foundation.layout.Column {
+        subtitle.split('\n').forEach { line ->
+            val parts = line.split(StreamLanguageRunRegex)
+            if (parts.size == 1) {
+                if (line.isNotBlank()) Text(text = line, style = style, color = color)
+            } else {
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    parts.forEach { part ->
+                        val codes = parseStreamLanguageCodes(part)
+                        if (codes != null) {
+                            StreamLanguageFlags(codes = codes)
+                        } else if (part.isNotBlank()) {
+                            Text(text = part.trim(), style = style, color = color)
+                        }
+                    }
+                }
+            }
         }
     }
 }

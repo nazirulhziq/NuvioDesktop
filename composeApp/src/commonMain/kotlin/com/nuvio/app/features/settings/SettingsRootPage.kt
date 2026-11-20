@@ -28,6 +28,13 @@ internal fun LazyListScope.settingsRootContent(
                             isTablet = isTablet,
                             onPageClick = onPageClick,
                         )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsPageRow(
+                            page = SettingsPage.WatchStats,
+                            description = Res.string.compose_settings_page_watch_stats,
+                            isTablet = isTablet,
+                            onPageClick = onPageClick,
+                        )
                         if (onSwitchProfileClick != null) {
                             SettingsGroupDivider(isTablet = isTablet)
                             SettingsNavigationRow(

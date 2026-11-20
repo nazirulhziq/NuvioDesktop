@@ -100,8 +100,9 @@ internal fun ProfilePopupContent(
     BoxWithConstraints(modifier.widthIn(max = 336.dp)) {
         val availableWidth = (maxWidth - 32.dp).coerceAtLeast(0.dp)
         val preferredColumns = if (items.size == 4) 2 else items.size.coerceAtMost(3)
-        val columns = ((availableWidth - 24.dp).value / 80f).toInt().coerceIn(1, preferredColumns.coerceAtLeast(1))
-        val width = (24.dp + 80.dp * columns).coerceAtMost(availableWidth)
+        // One profile per row, as requested.
+        val columns = 1
+        val width = 260.dp.coerceAtMost(availableWidth)
         val panelWidth = if (profiles.any { it.pinEnabled }) 264.dp.coerceAtMost(availableWidth) else width
         val popupHeight = (maxHeight * 0.65f).coerceAtMost(420.dp).coerceAtMost(availableHeight ?: maxHeight)
         Box(
