@@ -41,7 +41,18 @@ nuvio_linux_write_desktop_entry() {
     local root_dir="$1"
     local desktop_file="$root_dir/$NUVIO_LINUX_SHORTCUT_RELATIVE_PATH"
     mkdir -p "$(dirname "$desktop_file")"
-    nuvio_linux_write_desktop_entry_file "$desktop_file" "/opt/nuvio/bin/Nuvio %u" "/opt/nuvio/lib/Nuvio.png"
+
+    # Derive the installed paths from the package layout: the Debian package
+    # name can differ from the jpackage app name ("nuvio-desktop-enhanced"),
+    # which changes the /opt directory while the launcher was hardcoded.
+    local bin_relative icon_relative
+    bin_relative="$(cd "$root_dir" && find opt -type f -path '*/bin/Nuvio' 2>/dev/null | head -n 1)"
+    [[ -n "$bin_relative" ]] || bin_relative="$(cd "$root_dir" && find opt -type f -path '*/bin/*' -perm -u+x 2>/dev/null | head -n 1)"
+    icon_relative="$(cd "$root_dir" && find opt -type f -name '*.png' -path '*/lib/*' 2>/dev/null | head -n 1)"
+    [[ -n "$bin_relative" ]] || bin_relative="opt/nuvio/bin/Nuvio"
+    [[ -n "$icon_relative" ]] || icon_relative="opt/nuvio/lib/Nuvio.png"
+
+    nuvio_linux_write_desktop_entry_file "$desktop_file" "/${bin_relative} %u" "/${icon_relative}"
 }
 
 nuvio_linux_ensure_uri_handler() {
