@@ -51,13 +51,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew \
-            :composeApp:packageReleaseDeb \
-            :composeApp:packageReleaseAppImage \
+          # Separate invocations: both tasks write to the shared app dir and
+          # Gradle refuses to order them implicitly in one run.
+          ./gradlew :composeApp:packageReleaseDeb \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
-            --no-configuration-cache \
-            --no-daemon \
-            --stacktrace
+            --no-configuration-cache --no-daemon --stacktrace
+          ./gradlew :composeApp:packageReleaseAppImage \
+            -Pcompose.desktop.packaging.checkJdkVendor=false \
+            --no-configuration-cache --no-daemon --stacktrace
 
       - name: List outputs
         if: always()
