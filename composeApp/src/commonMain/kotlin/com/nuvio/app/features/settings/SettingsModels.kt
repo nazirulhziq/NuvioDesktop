@@ -319,7 +319,7 @@ internal val SettingsPage.icon: ImageVector
         SettingsPage.PosterCustomization -> Icons.Default.RoundedCorner
         SettingsPage.ContentDiscovery -> Icons.Default.Explore
         SettingsPage.Addons -> Icons.Default.Extension
-        SettingsPage.WatchStats -> Icons.Default.BarChart
+        SettingsPage.WatchStats -> Icons.Rounded.PlayArrow
         SettingsPage.LiveTv -> Icons.Default.LiveTv
         SettingsPage.Plugins -> Icons.Default.Power
         SettingsPage.MediaServers -> Icons.Default.Dns
