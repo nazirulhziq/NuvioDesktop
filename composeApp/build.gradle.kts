@@ -1888,11 +1888,16 @@ if (isLinuxHost) {
             doLast {
                 val effectiveLinuxPackageName = linuxPackageName.orNull ?: packageName.get().lowercase()
                 val effectiveLinuxAppRelease = linuxAppRelease.orNull ?: "1"
-                val artifactPrefix =
-                    "${effectiveLinuxPackageName}_${packageVersion.get()}-${effectiveLinuxAppRelease}_"
+                val artifactPrefixes = listOf(
+                    "${effectiveLinuxPackageName}_${packageVersion.get()}-${effectiveLinuxAppRelease}_",
+                    "${effectiveLinuxPackageName}_${packageVersion.get()}_",
+                )
+                val artifactPrefix = artifactPrefixes.joinToString(" | ")
                 val debs = destinationDir.get().asFile
                     .listFiles { file ->
-                        file.isFile && file.name.startsWith(artifactPrefix) && file.extension == "deb"
+                        file.isFile &&
+                            artifactPrefixes.any { prefix -> file.name.startsWith(prefix) } &&
+                            file.extension == "deb"
                     }
                     ?.sortedBy { it.name }
                     .orEmpty()
